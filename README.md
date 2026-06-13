@@ -5,7 +5,7 @@
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-1.5.4-purple)](https://developer.android.com/jetpack/compose)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-基于多源数据融合的糖尿病智能健康管理系统，面向青少年科技创新大赛。
+基于多源数据融合的糖尿病智能健康管理系统
 
 ---
 
