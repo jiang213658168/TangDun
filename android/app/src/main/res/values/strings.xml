@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">糖盾</string>
+    <string name="app_subtitle">基于多源数据融合的糖尿病智能健康管理系统</string>
+    <string name="nav_home">首页</string>
+    <string name="nav_meal">饮食</string>
+    <string name="nav_insulin">胰岛素</string>
+    <string name="nav_exercise">运动</string>
+    <string name="nav_prediction">预测</string>
+    <string name="nav_settings">我的</string>
+</resources>

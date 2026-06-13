@@ -1,0 +1,61 @@
+# Android
+android/app/build/
+android/build/
+android/.gradle/
+android/captures/
+android/*.iml
+android/.idea/
+android/local.properties
+*.hprof
+
+# Gradle
+.gradle/
+gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+android/app/build/outputs/
+
+# Python
+backend/__pycache__/
+backend/app/__pycache__/
+backend/**/__pycache__/
+backend/.pytest_cache/
+*.pyc
+
+# Flutter
+flutter/.dart_tool/
+flutter/build/
+flutter/.packages
+flutter/.metadata
+
+# Broadcast test
+broadcast-test/app/build/
+broadcast-test/.gradle/
+
+# API keys (don't commit real keys)
+*.env
+
+# External source code (not our project)
+xDrip-source/
+jadx-tool/
+jadx-master/
+*.zip
+
+# Large files
+*.apk
+*.hprof
+
+# Training data (too large for GitHub)
+backend/training/data/*.csv
+backend/training/data/*.pt

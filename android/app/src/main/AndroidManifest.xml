@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- 华为 Health Kit -->
+    <uses-permission android:name="com.huawei.hms.permission.READ_HEALTH_DATA"/>
+    <uses-permission android:name="com.huawei.hihealth.READ_DATA"/>
+
+    <!-- 网络 -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- 蓝牙 -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
+
+    <!-- 相机 -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+
+    <!-- 存储 -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" tools:ignore="ScopedStorage"/>
+
+    <!-- 通知 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- 前台服务 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+
+    <!-- xDrip+ 广播权限（xDrip+ 定义，我们需要持有才能收到带权限的广播） -->
+    <uses-permission android:name="com.eveningoutpost.dexdrip.permissions.RECEIVE_BG_ESTIMATE"/>
+
+    <application
+        android:name=".TangDunApp"
+        android:allowBackup="true"
+        android:icon="@drawable/ic_logo"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.TangDun"
+        android:networkSecurityConfig="@xml/network_security_config">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false">
+            <meta-data android:name="androidx.work.WorkManagerInitializer" android:value="androidx.startup"/>
+        </provider>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths"/>
+        </provider>
+
+        <!-- 后台保活服务 -->
+        <service
+            android:name=".sync.KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- xDrip+ 广播接收器 -->
+        <receiver android:name=".sync.DirectGlucoseBroadcastReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="com.eveningoutpost.dexdrip.BgEstimate"/>
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

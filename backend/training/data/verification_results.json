@@ -1,0 +1,19 @@
+{
+  "test_patients": 199,
+  "test_samples": 3498070,
+  "mae": 1.7670618295669556,
+  "rmse": 2.3844285011291504,
+  "clarke_zones": {
+    "A": 60.6,
+    "B": 20.4,
+    "C": 12.6,
+    "D": 6.4,
+    "E": 0.0
+  },
+  "clarke_a": 60.6,
+  "clarke_ab": 81.0,
+  "patient_mae_mean": 1.7487872838974,
+  "patient_mae_median": 1.750372290611267,
+  "patient_mae_min": 0.8678151965141296,
+  "patient_mae_max": 2.5347228050231934
+}

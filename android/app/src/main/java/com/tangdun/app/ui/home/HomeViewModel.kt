@@ -1,0 +1,303 @@
+package com.tangdun.app.ui.home
+
+import android.content.Context
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.tangdun.app.data.local.dao.AlertDao
+import com.tangdun.app.data.local.dao.GlucoseDao
+import com.tangdun.app.data.local.entity.AlertRecord
+import com.tangdun.app.data.local.entity.GlucoseRecord
+import com.tangdun.app.data.local.dao.InsulinDao
+import com.tangdun.app.domain.algorithm.AlertEngine
+import com.tangdun.app.domain.algorithm.CGMPreprocessor
+import com.tangdun.app.domain.algorithm.SmartAdvisor
+import com.tangdun.app.domain.algorithm.TrendCalculator
+import com.tangdun.app.sync.XDripManager
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.launch
+import java.util.*
+import javax.inject.Inject
+
+data class HomeUiState(
+    val isLoading: Boolean = true,
+    val currentGlucose: Double? = null,
+    val trend: String? = null,
+    val change30min: Double? = null,
+    val glucoseData: List<Pair<Long, Double>> = emptyList(),  // (timestamp_ms, glucose_mmol)
+    val records: List<GlucoseRecord> = emptyList(),
+    val alerts: List<AlertRecord> = emptyList(),
+    val advices: List<SmartAdvisor.Advice> = emptyList(),
+    val avgGlucose: Double? = null,
+    val tir: Double? = null,
+    val recordCount: Int = 0,
+    val isXDripConnected: Boolean = false,
+    val error: String? = null
+)
+
+@HiltViewModel
+class HomeViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val glucoseDao: GlucoseDao,
+    private val alertDao: AlertDao,
+    private val insulinDao: InsulinDao,
+    private val cgmPreprocessor: CGMPreprocessor,
+    private val alertEngine: AlertEngine,
+    private val smartAdvisor: SmartAdvisor,
+    private val trendCalculator: TrendCalculator
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(HomeUiState())
+    val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    private val xDripManager = XDripManager(context)
+
+    init {
+        loadData()
+        checkXDripStatus()
+        startXDripSync()
+
+        // 🔥 监听数据库变化，收到新血糖时自动刷新首页
+        viewModelScope.launch {
+            glucoseDao.getLatestFlow()
+                .filterNotNull()
+                .distinctUntilChanged { old, new -> old.timestamp == new.timestamp }
+                .collect { loadData() }
+        }
+    }
+
+    fun refresh() {
+        loadData()
+        checkXDripStatus()
+    }
+
+    /**
+     * 手动添加血糖记录
+     */
+    fun addGlucose(value: Double, source: String, timestamp: Long = System.currentTimeMillis(), scene: String = "other") {
+        viewModelScope.launch {
+            try {
+                // 计算趋势
+                val cal = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                }
+                val existing = glucoseDao.getTodayRecords(cal.timeInMillis)
+                val trend = if (existing.size >= 3) trendCalculator.calculateTrend(existing).arrow else null
+
+                val record = GlucoseRecord(
+                    timestamp = timestamp,
+                    value = value,
+                    source = source,
+                    trend = trend,
+                    scene = scene
+                )
+                glucoseDao.insert(record)
+
+                // 检查预警
+                checkAlerts(value)
+
+                // 刷新数据
+                loadData()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    /**
+     * 删除血糖记录
+     */
+    fun deleteGlucose(record: GlucoseRecord) {
+        viewModelScope.launch {
+            try {
+                glucoseDao.delete(record)
+                loadData()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    /**
+     * 编辑血糖记录
+     */
+    fun editGlucose(record: GlucoseRecord, newValue: Double) {
+        viewModelScope.launch {
+            try {
+                glucoseDao.update(record.copy(value = newValue))
+                loadData()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    private fun loadData() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+
+            try {
+                // 获取今日开始时间
+                val calendar = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val todayStart = calendar.timeInMillis
+
+                // 获取今日血糖记录
+                val records = glucoseDao.getTodayRecords(todayStart)
+
+                // 获取最新血糖
+                val latest = glucoseDao.getLatest()
+
+                // 趋势：优先用 xDrip+ 广播自带的（更准确），其次本地计算
+                val trend = latest?.trend
+                    ?: if (records.size >= 4) trendCalculator.calculateTrend(records).arrow
+                    else null
+
+                // 计算30分钟变化
+                val change30min = if (records.size >= 6) {
+                    val current = records.last().value
+                    val prev = records[records.size - 6].value
+                    current - prev
+                } else null
+
+                // 构建图表数据（时间戳，血糖值）
+                val glucoseData = records.map { record ->
+                    Pair(record.timestamp, record.value)
+                }
+
+                // 计算统计
+                val avgGlucose = if (records.isNotEmpty()) {
+                    records.map { it.value }.average()
+                } else null
+
+                val tir = if (records.isNotEmpty()) {
+                    val inRange = records.count { it.value in 3.9..10.0 }
+                    inRange.toDouble() / records.size * 100
+                } else null
+
+                // 获取未读预警
+                val alerts = alertDao.getUnread()
+
+                // 获取最近胰岛素记录
+                val recentInsulin = insulinDao.getSince(
+                    System.currentTimeMillis() - 4 * 3600 * 1000  // 最近4小时
+                )
+
+                // 计算智能建议
+                val advices = if (latest != null) {
+                    smartAdvisor.analyze(
+                        currentGlucose = latest.value,
+                        trend = trend,
+                        recentReadings = records,
+                        recentInsulin = recentInsulin
+                    )
+                } else {
+                    emptyList()
+                }
+
+                // 有数据就算连上了
+                val connected = _uiState.value.isXDripConnected || records.isNotEmpty()
+
+                _uiState.value = HomeUiState(
+                    isLoading = false,
+                    currentGlucose = latest?.value,
+                    trend = trend,
+                    change30min = change30min,
+                    glucoseData = glucoseData,
+                    records = records,
+                    alerts = alerts,
+                    advices = advices,
+                    avgGlucose = avgGlucose,
+                    tir = tir,
+                    recordCount = records.size,
+                    isXDripConnected = connected
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = e.message
+                )
+            }
+        }
+    }
+
+    /**
+     * 检查xDrip+是否可用
+     */
+    private fun checkXDripStatus() {
+        viewModelScope.launch {
+            try {
+                val isAvailable = xDripManager.isXDripAvailable()
+                _uiState.value = _uiState.value.copy(isXDripConnected = isAvailable)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isXDripConnected = false)
+            }
+        }
+    }
+
+    /**
+     * 启动xDrip+数据同步
+     */
+    private fun startXDripSync() {
+        viewModelScope.launch {
+            try {
+                val readings = xDripManager.getGlucoseHistory(hours = 24)
+                if (readings.isNotEmpty()) {
+                    var savedCount = 0
+                    for (reading in readings) {
+                        val existing = glucoseDao.getLatest()
+                        if (existing != null && existing.timestamp >= reading.timestamp) {
+                            continue
+                        }
+
+                        val record = GlucoseRecord(
+                            timestamp = reading.timestamp,
+                            value = reading.valueMmol,
+                            source = "xdrip",
+                            trend = reading.trend
+                        )
+                        glucoseDao.insert(record)
+                        savedCount++
+                    }
+
+                    if (savedCount > 0) {
+                        _uiState.value = _uiState.value.copy(isXDripConnected = true)
+                        loadData()
+                    }
+                }
+            } catch (e: Exception) {
+                // xDrip+不可用
+            }
+        }
+    }
+
+    /**
+     * 检查预警
+     */
+    private suspend fun checkAlerts(currentValue: Double) {
+        try {
+            val alerts = alertEngine.checkAll(
+                currentValue = currentValue,
+                trend = _uiState.value.trend,
+                predicted30min = null,
+                recentROC = null
+            )
+
+            for (alert in alerts) {
+                alertDao.insert(alert)
+            }
+        } catch (e: Exception) {
+            // 忽略
+        }
+    }
+}

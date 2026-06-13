@@ -1,0 +1,15 @@
+{
+  "train_patients": 29,
+  "val_patients": 10,
+  "test_patients": 10,
+  "best_epoch": 138,
+  "best_val_mae": 1.5883926153182983,
+  "test_mae": 1.5880550146102905,
+  "test_rmse": 2.1473276615142822,
+  "test_clarke_a": 65.18373245251858,
+  "features": 22,
+  "model": "TCN",
+  "normalization": "24h Causal Sliding Z-Score",
+  "prediction": "absolute_value",
+  "optimization": "virtual_events + patient_stats"
+}

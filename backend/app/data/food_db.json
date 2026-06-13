@@ -1,0 +1,1644 @@
+{
+  "foods": [
+    {
+      "id": "food_001",
+      "name": "白米饭",
+      "category": "谷物",
+      "nutrition_per_100g": {"carbs": 25.9, "calories": 116, "protein": 2.6, "fat": 0.3, "fiber": 0.3},
+      "gi": 83,
+      "common_portions": [{"name": "一碗", "grams": 200}, {"name": "半碗", "grams": 100}]
+    },
+    {
+      "id": "food_002",
+      "name": "糙米饭",
+      "category": "谷物",
+      "nutrition_per_100g": {"carbs": 23.5, "calories": 111, "protein": 2.7, "fat": 0.4, "fiber": 1.8},
+      "gi": 55,
+      "common_portions": [{"name": "一碗", "grams": 200}]
+    },
+    {
+      "id": "food_003",
+      "name": "面条",
+      "category": "谷物",
+      "nutrition_per_100g": {"carbs": 25.0, "calories": 110, "protein": 3.5, "fat": 0.5, "fiber": 0.8},
+      "gi": 81,
+      "common_portions": [{"name": "一碗", "grams": 250}, {"name": "小碗", "grams": 150}]
+    },
+    {
+      "id": "food_004",
+      "name": "馒头",
+      "category": "谷物",
+      "nutrition_per_100g": {"carbs": 47.0, "calories": 221, "protein": 7.0, "fat": 1.1, "fiber": 1.3},
+      "gi": 88,
+      "common_portions": [{"name": "一个", "grams": 100}]
+    },
+    {
+      "id": "food_005",
+      "name": "全麦面包",
+      "category": "谷物",
+      "nutrition_per_100g": {"carbs": 41.0, "calories": 247, "protein": 12.0, "fat": 3.5, "fiber": 6.0},
+      "gi": 51,
+      "common_portions": [{"name": "一片", "grams": 30}, {"name": "两片", "grams": 60}]
+    },
+    {
+      "id": "food_006",
+      "name": "白面包",
+      "category": "谷物",
+      "nutrition_per_100g": {"carbs": 49.0, "calories": 266, "protein": 9.0, "fat": 3.2, "fiber": 2.7},
+      "gi": 75,
+      "common_portions": [{"name": "一片", "grams": 30}]
+    },
+    {
+      "id": "food_007",
+      "name": "燕麦片",
+      "category": "谷物",
+      "nutrition_per_100g": {"carbs": 61.0, "calories": 367, "protein": 15.0, "fat": 6.7, "fiber": 8.5},
+      "gi": 55,
+      "common_portions": [{"name": "一碗", "grams": 40}]
+    },
+    {
+      "id": "food_008",
+      "name": "小米粥",
+      "category": "谷物",
+      "nutrition_per_100g": {"carbs": 8.4, "calories": 46, "protein": 1.4, "fat": 0.7, "fiber": 0.3},
+      "gi": 71,
+      "common_portions": [{"name": "一碗", "grams": 300}]
+    },
+    {
+      "id": "food_009",
+      "name": "玉米",
+      "category": "谷物",
+      "nutrition_per_100g": {"carbs": 19.9, "calories": 112, "protein": 4.0, "fat": 1.2, "fiber": 2.7},
+      "gi": 55,
+      "common_portions": [{"name": "一根", "grams": 200}]
+    },
+    {
+      "id": "food_010",
+      "name": "红薯",
+      "category": "谷物",
+      "nutrition_per_100g": {"carbs": 20.1, "calories": 86, "protein": 1.6, "fat": 0.1, "fiber": 1.6},
+      "gi": 77,
+      "common_portions": [{"name": "一个", "grams": 200}]
+    },
+    {
+      "id": "food_011",
+      "name": "土豆",
+      "category": "谷物",
+      "nutrition_per_100g": {"carbs": 16.5, "calories": 76, "protein": 2.0, "fat": 0.1, "fiber": 2.2},
+      "gi": 62,
+      "common_portions": [{"name": "一个", "grams": 150}]
+    },
+    {
+      "id": "food_012",
+      "name": "青菜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 2.0, "calories": 15, "protein": 1.5, "fat": 0.3, "fiber": 1.1},
+      "gi": 15,
+      "common_portions": [{"name": "一盘", "grams": 200}]
+    },
+    {
+      "id": "food_013",
+      "name": "西兰花",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 4.3, "calories": 34, "protein": 4.3, "fat": 0.6, "fiber": 2.6},
+      "gi": 15,
+      "common_portions": [{"name": "一盘", "grams": 200}]
+    },
+    {
+      "id": "food_014",
+      "name": "胡萝卜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 8.8, "calories": 41, "protein": 0.9, "fat": 0.2, "fiber": 2.8},
+      "gi": 39,
+      "common_portions": [{"name": "一根", "grams": 150}]
+    },
+    {
+      "id": "food_015",
+      "name": "西红柿",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 3.5, "calories": 18, "protein": 0.9, "fat": 0.2, "fiber": 1.2},
+      "gi": 15,
+      "common_portions": [{"name": "一个", "grams": 200}]
+    },
+    {
+      "id": "food_016",
+      "name": "黄瓜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 2.9, "calories": 15, "protein": 0.7, "fat": 0.1, "fiber": 0.5},
+      "gi": 15,
+      "common_portions": [{"name": "一根", "grams": 200}]
+    },
+    {
+      "id": "food_017",
+      "name": "菠菜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 3.6, "calories": 23, "protein": 2.9, "fat": 0.4, "fiber": 2.2},
+      "gi": 15,
+      "common_portions": [{"name": "一盘", "grams": 200}]
+    },
+    {
+      "id": "food_018",
+      "name": "白菜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 2.2, "calories": 13, "protein": 1.0, "fat": 0.1, "fiber": 1.0},
+      "gi": 15,
+      "common_portions": [{"name": "一盘", "grams": 200}]
+    },
+    {
+      "id": "food_019",
+      "name": "芹菜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 3.0, "calories": 14, "protein": 0.8, "fat": 0.1, "fiber": 1.4},
+      "gi": 15,
+      "common_portions": [{"name": "一盘", "grams": 200}]
+    },
+    {
+      "id": "food_020",
+      "name": "豆芽",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 3.7, "calories": 31, "protein": 3.0, "fat": 0.2, "fiber": 1.8},
+      "gi": 15,
+      "common_portions": [{"name": "一盘", "grams": 200}]
+    },
+    {
+      "id": "food_021",
+      "name": "苹果",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 13.5, "calories": 52, "protein": 0.3, "fat": 0.2, "fiber": 2.4},
+      "gi": 36,
+      "common_portions": [{"name": "一个", "grams": 200}]
+    },
+    {
+      "id": "food_022",
+      "name": "香蕉",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 22.8, "calories": 93, "protein": 1.1, "fat": 0.3, "fiber": 2.6},
+      "gi": 52,
+      "common_portions": [{"name": "一根", "grams": 120}]
+    },
+    {
+      "id": "food_023",
+      "name": "橙子",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 11.1, "calories": 47, "protein": 0.9, "fat": 0.1, "fiber": 2.4},
+      "gi": 43,
+      "common_portions": [{"name": "一个", "grams": 200}]
+    },
+    {
+      "id": "food_024",
+      "name": "葡萄",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 16.1, "calories": 69, "protein": 0.7, "fat": 0.4, "fiber": 0.9},
+      "gi": 46,
+      "common_portions": [{"name": "一串", "grams": 200}]
+    },
+    {
+      "id": "food_025",
+      "name": "西瓜",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 5.5, "calories": 25, "protein": 0.6, "fat": 0.2, "fiber": 0.3},
+      "gi": 76,
+      "common_portions": [{"name": "一块", "grams": 300}]
+    },
+    {
+      "id": "food_026",
+      "name": "草莓",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 7.1, "calories": 32, "protein": 0.7, "fat": 0.3, "fiber": 2.0},
+      "gi": 25,
+      "common_portions": [{"name": "一碗", "grams": 150}]
+    },
+    {
+      "id": "food_027",
+      "name": "猕猴桃",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 11.9, "calories": 61, "protein": 1.1, "fat": 0.5, "fiber": 3.0},
+      "gi": 52,
+      "common_portions": [{"name": "一个", "grams": 100}]
+    },
+    {
+      "id": "food_028",
+      "name": "柚子",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 9.5, "calories": 38, "protein": 0.8, "fat": 0.1, "fiber": 1.0},
+      "gi": 25,
+      "common_portions": [{"name": "一瓣", "grams": 100}]
+    },
+    {
+      "id": "food_029",
+      "name": "桃子",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 10.1, "calories": 39, "protein": 0.9, "fat": 0.3, "fiber": 1.5},
+      "gi": 28,
+      "common_portions": [{"name": "一个", "grams": 200}]
+    },
+    {
+      "id": "food_030",
+      "name": "梨",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 10.5, "calories": 50, "protein": 0.4, "fat": 0.1, "fiber": 3.1},
+      "gi": 38,
+      "common_portions": [{"name": "一个", "grams": 200}]
+    },
+    {
+      "id": "food_031",
+      "name": "猪肉(瘦)",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 1.5, "calories": 143, "protein": 20.3, "fat": 6.2, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 100}]
+    },
+    {
+      "id": "food_032",
+      "name": "猪肉(五花)",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 0.8, "calories": 395, "protein": 14.0, "fat": 37.0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 100}]
+    },
+    {
+      "id": "food_033",
+      "name": "牛肉",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 1.2, "calories": 125, "protein": 19.9, "fat": 4.2, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 100}]
+    },
+    {
+      "id": "food_034",
+      "name": "鸡肉",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 1.3, "calories": 167, "protein": 19.3, "fat": 9.4, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 100}]
+    },
+    {
+      "id": "food_035",
+      "name": "鸡胸肉",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 2.5, "calories": 133, "protein": 31.0, "fat": 3.6, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 100}]
+    },
+    {
+      "id": "food_036",
+      "name": "鸭肉",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 0.2, "calories": 240, "protein": 15.5, "fat": 19.7, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 100}]
+    },
+    {
+      "id": "food_037",
+      "name": "羊肉",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 0, "calories": 203, "protein": 19.0, "fat": 14.1, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 100}]
+    },
+    {
+      "id": "food_038",
+      "name": "鱼肉(鲈鱼)",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 0, "calories": 105, "protein": 18.6, "fat": 3.4, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 150}]
+    },
+    {
+      "id": "food_039",
+      "name": "虾",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 0, "calories": 87, "protein": 18.6, "fat": 0.8, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 100}]
+    },
+    {
+      "id": "food_040",
+      "name": "鸡蛋",
+      "category": "蛋奶",
+      "nutrition_per_100g": {"carbs": 1.1, "calories": 144, "protein": 13.3, "fat": 8.8, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一个", "grams": 60}]
+    },
+    {
+      "id": "food_041",
+      "name": "牛奶",
+      "category": "蛋奶",
+      "nutrition_per_100g": {"carbs": 4.8, "calories": 54, "protein": 3.0, "fat": 3.2, "fiber": 0},
+      "gi": 27,
+      "common_portions": [{"name": "一杯", "grams": 250}]
+    },
+    {
+      "id": "food_042",
+      "name": "酸奶",
+      "category": "蛋奶",
+      "nutrition_per_100g": {"carbs": 9.3, "calories": 72, "protein": 3.6, "fat": 2.7, "fiber": 0},
+      "gi": 36,
+      "common_portions": [{"name": "一杯", "grams": 200}]
+    },
+    {
+      "id": "food_043",
+      "name": "豆腐",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 2.8, "calories": 73, "protein": 8.1, "fat": 3.7, "fiber": 0.4},
+      "gi": 15,
+      "common_portions": [{"name": "一块", "grams": 150}]
+    },
+    {
+      "id": "food_044",
+      "name": "豆浆",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 1.2, "calories": 31, "protein": 2.9, "fat": 1.6, "fiber": 0.1},
+      "gi": 15,
+      "common_portions": [{"name": "一杯", "grams": 300}]
+    },
+    {
+      "id": "food_045",
+      "name": "黄豆",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 25.3, "calories": 359, "protein": 35.0, "fat": 16.0, "fiber": 15.5},
+      "gi": 18,
+      "common_portions": [{"name": "一把", "grams": 30}]
+    },
+    {
+      "id": "food_046",
+      "name": "绿豆",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 55.6, "calories": 316, "protein": 21.6, "fat": 0.8, "fiber": 6.4},
+      "gi": 27,
+      "common_portions": [{"name": "一碗", "grams": 50}]
+    },
+    {
+      "id": "food_047",
+      "name": "红豆",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 56.0, "calories": 309, "protein": 20.2, "fat": 0.6, "fiber": 7.7},
+      "gi": 33,
+      "common_portions": [{"name": "一碗", "grams": 50}]
+    },
+    {
+      "id": "food_048",
+      "name": "花生",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 16.1, "calories": 567, "protein": 25.8, "fat": 49.2, "fiber": 8.5},
+      "gi": 14,
+      "common_portions": [{"name": "一把", "grams": 30}]
+    },
+    {
+      "id": "food_049",
+      "name": "核桃",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 9.6, "calories": 627, "protein": 14.9, "fat": 58.8, "fiber": 6.7},
+      "gi": 15,
+      "common_portions": [{"name": "三个", "grams": 30}]
+    },
+    {
+      "id": "food_050",
+      "name": "杏仁",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 9.9, "calories": 578, "protein": 21.2, "fat": 49.4, "fiber": 12.5},
+      "gi": 15,
+      "common_portions": [{"name": "一把", "grams": 30}]
+    },
+    {
+      "id": "food_051",
+      "name": "薯片",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 53.0, "calories": 536, "protein": 7.0, "fat": 35.0, "fiber": 4.4},
+      "gi": 70,
+      "common_portions": [{"name": "一包", "grams": 50}]
+    },
+    {
+      "id": "food_052",
+      "name": "饼干",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 65.0, "calories": 450, "protein": 7.0, "fat": 16.0, "fiber": 2.0},
+      "gi": 70,
+      "common_portions": [{"name": "三块", "grams": 30}]
+    },
+    {
+      "id": "food_053",
+      "name": "巧克力",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 59.0, "calories": 546, "protein": 4.9, "fat": 31.0, "fiber": 7.0},
+      "gi": 49,
+      "common_portions": [{"name": "一块", "grams": 25}]
+    },
+    {
+      "id": "food_054",
+      "name": "冰淇淋",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 24.0, "calories": 207, "protein": 3.5, "fat": 11.0, "fiber": 0},
+      "gi": 61,
+      "common_portions": [{"name": "一个球", "grams": 80}]
+    },
+    {
+      "id": "food_055",
+      "name": "可乐",
+      "category": "饮品",
+      "nutrition_per_100g": {"carbs": 10.6, "calories": 42, "protein": 0, "fat": 0, "fiber": 0},
+      "gi": 63,
+      "common_portions": [{"name": "一罐", "grams": 330}]
+    },
+    {
+      "id": "food_056",
+      "name": "橙汁",
+      "category": "饮品",
+      "nutrition_per_100g": {"carbs": 10.4, "calories": 45, "protein": 0.7, "fat": 0.2, "fiber": 0.2},
+      "gi": 50,
+      "common_portions": [{"name": "一杯", "grams": 250}]
+    },
+    {
+      "id": "food_057",
+      "name": "苹果汁",
+      "category": "饮品",
+      "nutrition_per_100g": {"carbs": 11.3, "calories": 46, "protein": 0.1, "fat": 0.1, "fiber": 0.2},
+      "gi": 41,
+      "common_portions": [{"name": "一杯", "grams": 250}]
+    },
+    {
+      "id": "food_058",
+      "name": "绿茶",
+      "category": "饮品",
+      "nutrition_per_100g": {"carbs": 0, "calories": 1, "protein": 0, "fat": 0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一杯", "grams": 250}]
+    },
+    {
+      "id": "food_059",
+      "name": "咖啡(黑)",
+      "category": "饮品",
+      "nutrition_per_100g": {"carbs": 0, "calories": 2, "protein": 0.1, "fat": 0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一杯", "grams": 250}]
+    },
+    {
+      "id": "food_060",
+      "name": "红烧肉",
+      "category": "菜肴",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 350, "protein": 15.0, "fat": 30.0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 150}]
+    },
+    {
+      "id": "food_061",
+      "name": "宫保鸡丁",
+      "category": "菜肴",
+      "nutrition_per_100g": {"carbs": 8.0, "calories": 180, "protein": 18.0, "fat": 8.0, "fiber": 1.0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_062",
+      "name": "鱼香肉丝",
+      "category": "菜肴",
+      "nutrition_per_100g": {"carbs": 7.0, "calories": 150, "protein": 12.0, "fat": 8.0, "fiber": 1.0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_063",
+      "name": "麻婆豆腐",
+      "category": "菜肴",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 120, "protein": 8.0, "fat": 8.0, "fiber": 0.5},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_064",
+      "name": "清蒸鱼",
+      "category": "菜肴",
+      "nutrition_per_100g": {"carbs": 1.0, "calories": 100, "protein": 18.0, "fat": 3.0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_065",
+      "name": "炒青菜",
+      "category": "菜肴",
+      "nutrition_per_100g": {"carbs": 3.0, "calories": 50, "protein": 2.0, "fat": 4.0, "fiber": 1.5},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_066",
+      "name": "番茄炒蛋",
+      "category": "菜肴",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 100, "protein": 7.0, "fat": 6.0, "fiber": 0.8},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_067",
+      "name": "回锅肉",
+      "category": "菜肴",
+      "nutrition_per_100g": {"carbs": 4.0, "calories": 280, "protein": 12.0, "fat": 24.0, "fiber": 0.5},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 150}]
+    },
+    {
+      "id": "food_068",
+      "name": "水煮肉片",
+      "category": "菜肴",
+      "nutrition_per_100g": {"carbs": 3.0, "calories": 200, "protein": 15.0, "fat": 15.0, "fiber": 0.5},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 250}]
+    },
+    {
+      "id": "food_069",
+      "name": "糖醋排骨",
+      "category": "菜肴",
+      "nutrition_per_100g": {"carbs": 15.0, "calories": 250, "protein": 12.0, "fat": 15.0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_070",
+      "name": "饺子(猪肉)",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 25.0, "calories": 200, "protein": 8.0, "fat": 8.0, "fiber": 1.0},
+      "gi": 28,
+      "common_portions": [{"name": "10个", "grams": 200}]
+    },
+    {
+      "id": "food_071",
+      "name": "包子(猪肉)",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 28.0, "calories": 220, "protein": 8.0, "fat": 8.0, "fiber": 1.0},
+      "gi": 70,
+      "common_portions": [{"name": "一个", "grams": 100}]
+    },
+    {
+      "id": "food_072",
+      "name": "馄饨",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 22.0, "calories": 180, "protein": 7.0, "fat": 6.0, "fiber": 0.8},
+      "gi": 28,
+      "common_portions": [{"name": "一碗", "grams": 300}]
+    },
+    {
+      "id": "food_073",
+      "name": "炒饭",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 22.0, "calories": 180, "protein": 5.0, "fat": 8.0, "fiber": 0.5},
+      "gi": 75,
+      "common_portions": [{"name": "一碗", "grams": 300}]
+    },
+    {
+      "id": "food_074",
+      "name": "炒面",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 25.0, "calories": 200, "protein": 6.0, "fat": 8.0, "fiber": 0.8},
+      "gi": 75,
+      "common_portions": [{"name": "一盘", "grams": 300}]
+    },
+    {
+      "id": "food_075",
+      "name": "粥(大米)",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 9.0, "calories": 46, "protein": 1.0, "fat": 0.3, "fiber": 0.1},
+      "gi": 78,
+      "common_portions": [{"name": "一碗", "grams": 300}]
+    },
+    {
+      "id": "food_076",
+      "name": "油条",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 40.0, "calories": 386, "protein": 7.0, "fat": 22.0, "fiber": 1.0},
+      "gi": 75,
+      "common_portions": [{"name": "一根", "grams": 80}]
+    },
+    {
+      "id": "food_077",
+      "name": "烧饼",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 45.0, "calories": 320, "protein": 8.0, "fat": 10.0, "fiber": 1.5},
+      "gi": 70,
+      "common_portions": [{"name": "一个", "grams": 80}]
+    },
+    {
+      "id": "food_078",
+      "name": "煎饼",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 35.0, "calories": 250, "protein": 6.0, "fat": 10.0, "fiber": 1.0},
+      "gi": 70,
+      "common_portions": [{"name": "一个", "grams": 100}]
+    },
+    {
+      "id": "food_079",
+      "name": "三明治",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 25.0, "calories": 250, "protein": 10.0, "fat": 12.0, "fiber": 1.5},
+      "gi": 60,
+      "common_portions": [{"name": "一个", "grams": 150}]
+    },
+    {
+      "id": "food_080",
+      "name": "汉堡",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 28.0, "calories": 295, "protein": 15.0, "fat": 14.0, "fiber": 1.0},
+      "gi": 66,
+      "common_portions": [{"name": "一个", "grams": 200}]
+    },
+    {
+      "id": "food_081",
+      "name": "披萨",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 30.0, "calories": 266, "protein": 11.0, "fat": 10.0, "fiber": 2.0},
+      "gi": 60,
+      "common_portions": [{"name": "一块", "grams": 120}]
+    },
+    {
+      "id": "food_082",
+      "name": "方便面",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 55.0, "calories": 450, "protein": 9.0, "fat": 18.0, "fiber": 2.0},
+      "gi": 73,
+      "common_portions": [{"name": "一包", "grams": 100}]
+    },
+    {
+      "id": "food_083",
+      "name": "西瓜子",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 8.6, "calories": 557, "protein": 32.7, "fat": 44.8, "fiber": 4.5},
+      "gi": 15,
+      "common_portions": [{"name": "一把", "grams": 30}]
+    },
+    {
+      "id": "food_084",
+      "name": "瓜子(葵花)",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 570, "protein": 24.0, "fat": 49.0, "fiber": 5.0},
+      "gi": 15,
+      "common_portions": [{"name": "一把", "grams": 30}]
+    },
+    {
+      "id": "food_085",
+      "name": "开心果",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 17.0, "calories": 562, "protein": 20.0, "fat": 45.0, "fiber": 10.0},
+      "gi": 15,
+      "common_portions": [{"name": "一把", "grams": 30}]
+    },
+    {
+      "id": "food_086",
+      "name": "腰果",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 30.0, "calories": 553, "protein": 18.0, "fat": 44.0, "fiber": 3.0},
+      "gi": 22,
+      "common_portions": [{"name": "一把", "grams": 30}]
+    },
+    {
+      "id": "food_087",
+      "name": "葡萄干",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 79.0, "calories": 299, "protein": 3.1, "fat": 0.5, "fiber": 3.7},
+      "gi": 64,
+      "common_portions": [{"name": "一小把", "grams": 30}]
+    },
+    {
+      "id": "food_088",
+      "name": "红枣",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 67.0, "calories": 264, "protein": 3.2, "fat": 0.5, "fiber": 6.0},
+      "gi": 55,
+      "common_portions": [{"name": "三颗", "grams": 30}]
+    },
+    {
+      "id": "food_089",
+      "name": "蜂蜜",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 82.0, "calories": 304, "protein": 0.3, "fat": 0, "fiber": 0},
+      "gi": 58,
+      "common_portions": [{"name": "一勺", "grams": 20}]
+    },
+    {
+      "id": "food_090",
+      "name": "蛋糕",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 50.0, "calories": 350, "protein": 5.0, "fat": 15.0, "fiber": 0.5},
+      "gi": 67,
+      "common_portions": [{"name": "一块", "grams": 100}]
+    },
+    {
+      "id": "food_091",
+      "name": "月饼",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 55.0, "calories": 420, "protein": 8.0, "fat": 20.0, "fiber": 1.0},
+      "gi": 70,
+      "common_portions": [{"name": "一个", "grams": 100}]
+    },
+    {
+      "id": "food_092",
+      "name": "粽子",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 35.0, "calories": 200, "protein": 5.0, "fat": 5.0, "fiber": 0.5},
+      "gi": 75,
+      "common_portions": [{"name": "一个", "grams": 150}]
+    },
+    {
+      "id": "food_093",
+      "name": "汤圆",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 45.0, "calories": 280, "protein": 4.0, "fat": 8.0, "fiber": 0.5},
+      "gi": 75,
+      "common_portions": [{"name": "一碗", "grams": 200}]
+    },
+    {
+      "id": "food_094",
+      "name": "年糕",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 40.0, "calories": 220, "protein": 3.0, "fat": 1.0, "fiber": 0.3},
+      "gi": 85,
+      "common_portions": [{"name": "一块", "grams": 100}]
+    },
+    {
+      "id": "food_095",
+      "name": "粉丝",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 80.0, "calories": 335, "protein": 0.5, "fat": 0.1, "fiber": 0.5},
+      "gi": 85,
+      "common_portions": [{"name": "一碗", "grams": 100}]
+    },
+    {
+      "id": "food_096",
+      "name": "莲藕",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 11.5, "calories": 70, "protein": 1.9, "fat": 0.1, "fiber": 1.2},
+      "gi": 38,
+      "common_portions": [{"name": "一段", "grams": 150}]
+    },
+    {
+      "id": "food_097",
+      "name": "山药",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 12.4, "calories": 56, "protein": 1.9, "fat": 0.1, "fiber": 0.8},
+      "gi": 51,
+      "common_portions": [{"name": "一段", "grams": 150}]
+    },
+    {
+      "id": "food_098",
+      "name": "南瓜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 5.3, "calories": 26, "protein": 1.0, "fat": 0.1, "fiber": 0.8},
+      "gi": 75,
+      "common_portions": [{"name": "一块", "grams": 200}]
+    },
+    {
+      "id": "food_099",
+      "name": "冬瓜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 2.4, "calories": 12, "protein": 0.4, "fat": 0.2, "fiber": 0.7},
+      "gi": 15,
+      "common_portions": [{"name": "一块", "grams": 200}]
+    },
+    {
+      "id": "food_100",
+      "name": "苦瓜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 3.7, "calories": 19, "protein": 1.0, "fat": 0.2, "fiber": 2.8},
+      "gi": 15,
+      "common_portions": [{"name": "一根", "grams": 200}]
+    },
+    {
+      "id": "food_101",
+      "name": "茄子",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 4.9, "calories": 25, "protein": 1.0, "fat": 0.2, "fiber": 3.0},
+      "gi": 15,
+      "common_portions": [{"name": "一根", "grams": 200}]
+    },
+    {
+      "id": "food_102",
+      "name": "青椒",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 4.6, "calories": 20, "protein": 0.9, "fat": 0.2, "fiber": 1.7},
+      "gi": 15,
+      "common_portions": [{"name": "一个", "grams": 100}]
+    },
+    {
+      "id": "food_103",
+      "name": "洋葱",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 8.1, "calories": 40, "protein": 1.1, "fat": 0.1, "fiber": 1.7},
+      "gi": 10,
+      "common_portions": [{"name": "一个", "grams": 150}]
+    },
+    {
+      "id": "food_104",
+      "name": "木耳",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 6.0, "calories": 37, "protein": 1.5, "fat": 0.2, "fiber": 2.6},
+      "gi": 15,
+      "common_portions": [{"name": "一盘", "grams": 100}]
+    },
+    {
+      "id": "food_105",
+      "name": "香菇",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 5.2, "calories": 34, "protein": 2.2, "fat": 0.3, "fiber": 2.5},
+      "gi": 15,
+      "common_portions": [{"name": "五个", "grams": 100}]
+    },
+    {
+      "id": "food_106",
+      "name": "金针菇",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 32, "protein": 2.4, "fat": 0.4, "fiber": 2.7},
+      "gi": 15,
+      "common_portions": [{"name": "一把", "grams": 100}]
+    },
+    {
+      "id": "food_107",
+      "name": "海带",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 1.6, "calories": 12, "protein": 1.2, "fat": 0.1, "fiber": 0.5},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 100}]
+    },
+    {
+      "id": "food_108",
+      "name": "紫菜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 2.0, "calories": 26, "protein": 5.0, "fat": 0.5, "fiber": 1.0},
+      "gi": 15,
+      "common_portions": [{"name": "一张", "grams": 10}]
+    },
+    {
+      "id": "food_109",
+      "name": "芒果",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 14.9, "calories": 65, "protein": 0.8, "fat": 0.4, "fiber": 1.6},
+      "gi": 55,
+      "common_portions": [{"name": "一个", "grams": 200}]
+    },
+    {
+      "id": "food_110",
+      "name": "荔枝",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 16.5, "calories": 71, "protein": 0.8, "fat": 0.4, "fiber": 1.3},
+      "gi": 57,
+      "common_portions": [{"name": "十颗", "grams": 100}]
+    },
+    {
+      "id": "food_111",
+      "name": "龙眼",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 16.0, "calories": 73, "protein": 1.3, "fat": 0.1, "fiber": 1.1},
+      "gi": 53,
+      "common_portions": [{"name": "十颗", "grams": 100}]
+    },
+    {
+      "id": "food_112",
+      "name": "榴莲",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 27.1, "calories": 147, "protein": 1.5, "fat": 5.3, "fiber": 3.8},
+      "gi": 49,
+      "common_portions": [{"name": "一块", "grams": 100}]
+    },
+    {
+      "id": "food_113",
+      "name": "火龙果",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 11.0, "calories": 55, "protein": 1.1, "fat": 0.4, "fiber": 1.9},
+      "gi": 48,
+      "common_portions": [{"name": "一个", "grams": 300}]
+    },
+    {
+      "id": "food_114",
+      "name": "樱桃",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 12.8, "calories": 63, "protein": 1.1, "fat": 0.2, "fiber": 2.1},
+      "gi": 22,
+      "common_portions": [{"name": "一碗", "grams": 150}]
+    },
+    {
+      "id": "food_115",
+      "name": "李子",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 8.7, "calories": 46, "protein": 0.7, "fat": 0.3, "fiber": 1.4},
+      "gi": 24,
+      "common_portions": [{"name": "三个", "grams": 150}]
+    },
+    {
+      "id": "food_116",
+      "name": "柿子",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 18.6, "calories": 71, "protein": 0.6, "fat": 0.2, "fiber": 3.6},
+      "gi": 50,
+      "common_portions": [{"name": "一个", "grams": 200}]
+    },
+    {
+      "id": "food_117",
+      "name": "石榴",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 18.7, "calories": 83, "protein": 1.7, "fat": 1.2, "fiber": 4.0},
+      "gi": 35,
+      "common_portions": [{"name": "一个", "grams": 200}]
+    },
+    {
+      "id": "food_118",
+      "name": "山竹",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 17.9, "calories": 73, "protein": 0.6, "fat": 0.6, "fiber": 1.8},
+      "gi": 45,
+      "common_portions": [{"name": "三个", "grams": 100}]
+    },
+    {
+      "id": "food_119",
+      "name": "哈密瓜",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 7.9, "calories": 34, "protein": 0.8, "fat": 0.1, "fiber": 0.9},
+      "gi": 65,
+      "common_portions": [{"name": "一块", "grams": 200}]
+    },
+    {
+      "id": "food_120",
+      "name": "木瓜",
+      "category": "水果",
+      "nutrition_per_100g": {"carbs": 7.2, "calories": 43, "protein": 0.5, "fat": 0.3, "fiber": 1.7},
+      "gi": 58,
+      "common_portions": [{"name": "半个", "grams": 200}]
+    },
+    {
+      "id": "food_121",
+      "name": "酸奶(果味)",
+      "category": "蛋奶",
+      "nutrition_per_100g": {"carbs": 14.0, "calories": 90, "protein": 3.0, "fat": 2.5, "fiber": 0},
+      "gi": 41,
+      "common_portions": [{"name": "一杯", "grams": 200}]
+    },
+    {
+      "id": "food_122",
+      "name": "奶酪",
+      "category": "蛋奶",
+      "nutrition_per_100g": {"carbs": 3.4, "calories": 328, "protein": 25.7, "fat": 23.5, "fiber": 0},
+      "gi": 27,
+      "common_portions": [{"name": "一片", "grams": 30}]
+    },
+    {
+      "id": "food_123",
+      "name": "黄油",
+      "category": "蛋奶",
+      "nutrition_per_100g": {"carbs": 0.1, "calories": 735, "protein": 0.5, "fat": 81.1, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一块", "grams": 10}]
+    },
+    {
+      "id": "food_124",
+      "name": "毛豆",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 8.5, "calories": 131, "protein": 13.0, "fat": 5.0, "fiber": 5.2},
+      "gi": 15,
+      "common_portions": [{"name": "一碗", "grams": 100}]
+    },
+    {
+      "id": "food_125",
+      "name": "豆腐干",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 4.0, "calories": 140, "protein": 16.0, "fat": 7.0, "fiber": 0.5},
+      "gi": 15,
+      "common_portions": [{"name": "三片", "grams": 60}]
+    },
+    {
+      "id": "food_126",
+      "name": "腐竹",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 11.0, "calories": 459, "protein": 44.6, "fat": 21.7, "fiber": 1.0},
+      "gi": 15,
+      "common_portions": [{"name": "一根", "grams": 30}]
+    },
+    {
+      "id": "food_127",
+      "name": "豆皮",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 160, "protein": 18.0, "fat": 8.0, "fiber": 0.5},
+      "gi": 15,
+      "common_portions": [{"name": "一张", "grams": 50}]
+    },
+    {
+      "id": "food_128",
+      "name": "腊肉",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 1.5, "calories": 498, "protein": 11.8, "fat": 48.8, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "三片", "grams": 30}]
+    },
+    {
+      "id": "food_129",
+      "name": "香肠",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 300, "protein": 12.0, "fat": 25.0, "fiber": 0},
+      "gi": 28,
+      "common_portions": [{"name": "一根", "grams": 50}]
+    },
+    {
+      "id": "food_130",
+      "name": "火腿",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 1.5, "calories": 212, "protein": 16.6, "fat": 15.5, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "三片", "grams": 30}]
+    },
+    {
+      "id": "food_131",
+      "name": "带鱼",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 0, "calories": 127, "protein": 17.7, "fat": 4.9, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一块", "grams": 100}]
+    },
+    {
+      "id": "food_132",
+      "name": "三文鱼",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 0, "calories": 139, "protein": 20.4, "fat": 6.2, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一块", "grams": 100}]
+    },
+    {
+      "id": "food_133",
+      "name": "螃蟹",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 0, "calories": 95, "protein": 17.5, "fat": 2.6, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一只", "grams": 150}]
+    },
+    {
+      "id": "food_134",
+      "name": "贝类",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 3.0, "calories": 70, "protein": 13.0, "fat": 1.0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 100}]
+    },
+    {
+      "id": "food_135",
+      "name": "海参",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 0.5, "calories": 55, "protein": 16.5, "fat": 0.2, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一只", "grams": 50}]
+    },
+    {
+      "id": "food_136",
+      "name": "猪蹄",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 0.5, "calories": 260, "protein": 22.0, "fat": 18.8, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一只", "grams": 200}]
+    },
+    {
+      "id": "food_137",
+      "name": "鸡翅",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 0, "calories": 190, "protein": 17.4, "fat": 11.8, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "两个", "grams": 100}]
+    },
+    {
+      "id": "food_138",
+      "name": "鸡腿",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 0, "calories": 181, "protein": 16.0, "fat": 13.0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一个", "grams": 120}]
+    },
+    {
+      "id": "food_139",
+      "name": "猪肝",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 3.0, "calories": 129, "protein": 19.3, "fat": 3.5, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一份", "grams": 100}]
+    },
+    {
+      "id": "food_140",
+      "name": "猪血",
+      "category": "肉类",
+      "nutrition_per_100g": {"carbs": 0.9, "calories": 55, "protein": 12.2, "fat": 0.3, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一块", "grams": 100}]
+    },
+    {
+      "id": "food_141",
+      "name": "米线",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 25.0, "calories": 110, "protein": 2.0, "fat": 0.5, "fiber": 0.3},
+      "gi": 80,
+      "common_portions": [{"name": "一碗", "grams": 300}]
+    },
+    {
+      "id": "food_142",
+      "name": "河粉",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 24.0, "calories": 110, "protein": 2.0, "fat": 0.5, "fiber": 0.3},
+      "gi": 80,
+      "common_portions": [{"name": "一盘", "grams": 300}]
+    },
+    {
+      "id": "food_143",
+      "name": "凉皮",
+      "category": "主食",
+      "nutrition_per_100g": {"carbs": 22.0, "calories": 100, "protein": 2.0, "fat": 0.5, "fiber": 0.3},
+      "gi": 75,
+      "common_portions": [{"name": "一份", "grams": 250}]
+    },
+    {
+      "id": "food_144",
+      "name": "豆腐脑",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 2.0, "calories": 15, "protein": 1.5, "fat": 0.5, "fiber": 0.2},
+      "gi": 15,
+      "common_portions": [{"name": "一碗", "grams": 300}]
+    },
+    {
+      "id": "food_145",
+      "name": "豆干",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 4.0, "calories": 140, "protein": 16.0, "fat": 7.0, "fiber": 0.5},
+      "gi": 15,
+      "common_portions": [{"name": "三片", "grams": 60}]
+    },
+    {
+      "id": "food_146",
+      "name": "素鸡",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 3.5, "calories": 120, "protein": 14.0, "fat": 6.0, "fiber": 0.5},
+      "gi": 15,
+      "common_portions": [{"name": "一块", "grams": 100}]
+    },
+    {
+      "id": "food_147",
+      "name": "腐乳",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 130, "protein": 12.0, "fat": 8.0, "fiber": 0.5},
+      "gi": 15,
+      "common_portions": [{"name": "一块", "grams": 20}]
+    },
+    {
+      "id": "food_148",
+      "name": "豆豉",
+      "category": "豆类",
+      "nutrition_per_100g": {"carbs": 10.0, "calories": 200, "protein": 20.0, "fat": 10.0, "fiber": 2.0},
+      "gi": 15,
+      "common_portions": [{"name": "一勺", "grams": 15}]
+    },
+    {
+      "id": "food_149",
+      "name": "芝麻",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 10.0, "calories": 559, "protein": 17.3, "fat": 49.0, "fiber": 11.8},
+      "gi": 35,
+      "common_portions": [{"name": "一勺", "grams": 15}]
+    },
+    {
+      "id": "food_150",
+      "name": "松子",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 8.0, "calories": 673, "protein": 13.4, "fat": 68.4, "fiber": 3.7},
+      "gi": 15,
+      "common_portions": [{"name": "一把", "grams": 20}]
+    },
+    {
+      "id": "food_151",
+      "name": "栗子",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 40.5, "calories": 185, "protein": 4.2, "fat": 1.5, "fiber": 5.1},
+      "gi": 60,
+      "common_portions": [{"name": "五颗", "grams": 50}]
+    },
+    {
+      "id": "food_152",
+      "name": "白果",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 35.0, "calories": 182, "protein": 4.3, "fat": 1.7, "fiber": 4.0},
+      "gi": 55,
+      "common_portions": [{"name": "十颗", "grams": 30}]
+    },
+    {
+      "id": "food_153",
+      "name": "莲子",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 64.0, "calories": 350, "protein": 17.0, "fat": 2.0, "fiber": 3.0},
+      "gi": 50,
+      "common_portions": [{"name": "一碗", "grams": 30}]
+    },
+    {
+      "id": "food_154",
+      "name": "银耳",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 7.0, "calories": 37, "protein": 1.0, "fat": 0.1, "fiber": 1.0},
+      "gi": 15,
+      "common_portions": [{"name": "一碗", "grams": 100}]
+    },
+    {
+      "id": "food_155",
+      "name": "枸杞",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 46.0, "calories": 258, "protein": 13.9, "fat": 1.5, "fiber": 16.9},
+      "gi": 55,
+      "common_portions": [{"name": "一把", "grams": 15}]
+    },
+    {
+      "id": "food_156",
+      "name": "桂圆干",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 65.0, "calories": 286, "protein": 4.6, "fat": 0.5, "fiber": 2.0},
+      "gi": 55,
+      "common_portions": [{"name": "五颗", "grams": 20}]
+    },
+    {
+      "id": "food_157",
+      "name": "陈皮",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 45.0, "calories": 200, "protein": 3.0, "fat": 0.5, "fiber": 5.0},
+      "gi": 35,
+      "common_portions": [{"name": "一片", "grams": 5}]
+    },
+    {
+      "id": "food_158",
+      "name": "话梅",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 55.0, "calories": 200, "protein": 1.0, "fat": 0.5, "fiber": 2.0},
+      "gi": 50,
+      "common_portions": [{"name": "三颗", "grams": 15}]
+    },
+    {
+      "id": "food_159",
+      "name": "果脯",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 70.0, "calories": 300, "protein": 1.0, "fat": 0.5, "fiber": 2.0},
+      "gi": 65,
+      "common_portions": [{"name": "一小包", "grams": 30}]
+    },
+    {
+      "id": "food_160",
+      "name": "蜜饯",
+      "category": "零食",
+      "nutrition_per_100g": {"carbs": 75.0, "calories": 320, "protein": 0.5, "fat": 0.5, "fiber": 1.0},
+      "gi": 70,
+      "common_portions": [{"name": "三颗", "grams": 20}]
+    },
+    {
+      "id": "food_161",
+      "name": "可可粉",
+      "category": "饮品",
+      "nutrition_per_100g": {"carbs": 58.0, "calories": 228, "protein": 19.6, "fat": 13.7, "fiber": 33.2},
+      "gi": 15,
+      "common_portions": [{"name": "一勺", "grams": 10}]
+    },
+    {
+      "id": "food_162",
+      "name": "奶茶",
+      "category": "饮品",
+      "nutrition_per_100g": {"carbs": 8.0, "calories": 50, "protein": 1.0, "fat": 2.0, "fiber": 0},
+      "gi": 40,
+      "common_portions": [{"name": "一杯", "grams": 500}]
+    },
+    {
+      "id": "food_163",
+      "name": "豆浆(甜)",
+      "category": "饮品",
+      "nutrition_per_100g": {"carbs": 6.0, "calories": 40, "protein": 2.5, "fat": 1.5, "fiber": 0.1},
+      "gi": 40,
+      "common_portions": [{"name": "一杯", "grams": 300}]
+    },
+    {
+      "id": "food_164",
+      "name": "酸梅汤",
+      "category": "饮品",
+      "nutrition_per_100g": {"carbs": 8.0, "calories": 32, "protein": 0.1, "fat": 0, "fiber": 0},
+      "gi": 35,
+      "common_portions": [{"name": "一杯", "grams": 300}]
+    },
+    {
+      "id": "food_165",
+      "name": "椰子水",
+      "category": "饮品",
+      "nutrition_per_100g": {"carbs": 4.0, "calories": 19, "protein": 0.7, "fat": 0.2, "fiber": 1.1},
+      "gi": 55,
+      "common_portions": [{"name": "一个", "grams": 300}]
+    },
+    {
+      "id": "food_166",
+      "name": "啤酒",
+      "category": "饮品",
+      "nutrition_per_100g": {"carbs": 3.6, "calories": 43, "protein": 0.5, "fat": 0, "fiber": 0},
+      "gi": 66,
+      "common_portions": [{"name": "一瓶", "grams": 500}]
+    },
+    {
+      "id": "food_167",
+      "name": "红酒",
+      "category": "饮品",
+      "nutrition_per_100g": {"carbs": 2.6, "calories": 85, "protein": 0.1, "fat": 0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一杯", "grams": 150}]
+    },
+    {
+      "id": "food_168",
+      "name": "白酒",
+      "category": "饮品",
+      "nutrition_per_100g": {"carbs": 0, "calories": 295, "protein": 0, "fat": 0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一两", "grams": 50}]
+    },
+    {
+      "id": "food_169",
+      "name": "味精",
+      "category": "调料",
+      "nutrition_per_100g": {"carbs": 26.0, "calories": 104, "protein": 40.0, "fat": 0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一勺", "grams": 5}]
+    },
+    {
+      "id": "food_170",
+      "name": "酱油",
+      "category": "调料",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 53, "protein": 5.6, "fat": 0.1, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一勺", "grams": 10}]
+    },
+    {
+      "id": "food_171",
+      "name": "醋",
+      "category": "调料",
+      "nutrition_per_100g": {"carbs": 4.0, "calories": 16, "protein": 0.4, "fat": 0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一勺", "grams": 10}]
+    },
+    {
+      "id": "food_172",
+      "name": "盐",
+      "category": "调料",
+      "nutrition_per_100g": {"carbs": 0, "calories": 0, "protein": 0, "fat": 0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一勺", "grams": 5}]
+    },
+    {
+      "id": "food_173",
+      "name": "糖",
+      "category": "调料",
+      "nutrition_per_100g": {"carbs": 100.0, "calories": 400, "protein": 0, "fat": 0, "fiber": 0},
+      "gi": 65,
+      "common_portions": [{"name": "一勺", "grams": 10}]
+    },
+    {
+      "id": "food_174",
+      "name": "番茄酱",
+      "category": "调料",
+      "nutrition_per_100g": {"carbs": 24.0, "calories": 100, "protein": 1.5, "fat": 0.2, "fiber": 1.5},
+      "gi": 55,
+      "common_portions": [{"name": "一勺", "grams": 15}]
+    },
+    {
+      "id": "food_175",
+      "name": "沙拉酱",
+      "category": "调料",
+      "nutrition_per_100g": {"carbs": 3.0, "calories": 680, "protein": 1.0, "fat": 75.0, "fiber": 0},
+      "gi": 0,
+      "common_portions": [{"name": "一勺", "grams": 15}]
+    },
+    {
+      "id": "food_176",
+      "name": "花生酱",
+      "category": "调料",
+      "nutrition_per_100g": {"carbs": 20.0, "calories": 588, "protein": 25.0, "fat": 50.0, "fiber": 6.0},
+      "gi": 14,
+      "common_portions": [{"name": "一勺", "grams": 15}]
+    },
+    {
+      "id": "food_177",
+      "name": "芝麻酱",
+      "category": "调料",
+      "nutrition_per_100g": {"carbs": 16.0, "calories": 586, "protein": 17.0, "fat": 52.0, "fiber": 9.0},
+      "gi": 35,
+      "common_portions": [{"name": "一勺", "grams": 15}]
+    },
+    {
+      "id": "food_178",
+      "name": "辣椒酱",
+      "category": "调料",
+      "nutrition_per_100g": {"carbs": 8.0, "calories": 50, "protein": 2.0, "fat": 3.0, "fiber": 2.0},
+      "gi": 15,
+      "common_portions": [{"name": "一勺", "grams": 10}]
+    },
+    {
+      "id": "food_179",
+      "name": "豆豉酱",
+      "category": "调料",
+      "nutrition_per_100g": {"carbs": 15.0, "calories": 100, "protein": 8.0, "fat": 5.0, "fiber": 2.0},
+      "gi": 15,
+      "common_portions": [{"name": "一勺", "grams": 10}]
+    },
+    {
+      "id": "food_180",
+      "name": "甜面酱",
+      "category": "调料",
+      "nutrition_per_100g": {"carbs": 30.0, "calories": 150, "protein": 5.0, "fat": 2.0, "fiber": 1.0},
+      "gi": 50,
+      "common_portions": [{"name": "一勺", "grams": 15}]
+    },
+    {
+      "id": "food_181",
+      "name": "韭菜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 4.6, "calories": 26, "protein": 2.4, "fat": 0.4, "fiber": 1.4},
+      "gi": 15,
+      "common_portions": [{"name": "一把", "grams": 150}]
+    },
+    {
+      "id": "food_182",
+      "name": "蒜苗",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 6.2, "calories": 34, "protein": 2.1, "fat": 0.3, "fiber": 1.8},
+      "gi": 15,
+      "common_portions": [{"name": "一把", "grams": 150}]
+    },
+    {
+      "id": "food_183",
+      "name": "香菜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 3.7, "calories": 31, "protein": 2.1, "fat": 0.5, "fiber": 2.8},
+      "gi": 15,
+      "common_portions": [{"name": "一把", "grams": 50}]
+    },
+    {
+      "id": "food_184",
+      "name": "蒜苔",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 6.2, "calories": 34, "protein": 2.1, "fat": 0.3, "fiber": 1.8},
+      "gi": 15,
+      "common_portions": [{"name": "一把", "grams": 150}]
+    },
+    {
+      "id": "food_185",
+      "name": "茭白",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 4.0, "calories": 23, "protein": 1.2, "fat": 0.2, "fiber": 1.9},
+      "gi": 15,
+      "common_portions": [{"name": "一根", "grams": 100}]
+    },
+    {
+      "id": "food_186",
+      "name": "芦笋",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 3.9, "calories": 20, "protein": 2.2, "fat": 0.1, "fiber": 2.1},
+      "gi": 15,
+      "common_portions": [{"name": "一把", "grams": 150}]
+    },
+    {
+      "id": "food_187",
+      "name": "秋葵",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 7.0, "calories": 33, "protein": 1.9, "fat": 0.1, "fiber": 3.2},
+      "gi": 15,
+      "common_portions": [{"name": "十根", "grams": 100}]
+    },
+    {
+      "id": "food_188",
+      "name": "生菜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 1.1, "calories": 13, "protein": 1.3, "fat": 0.3, "fiber": 1.3},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 100}]
+    },
+    {
+      "id": "food_189",
+      "name": "油麦菜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 1.5, "calories": 15, "protein": 1.4, "fat": 0.3, "fiber": 0.8},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_190",
+      "name": "空心菜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 3.1, "calories": 20, "protein": 2.2, "fat": 0.3, "fiber": 1.4},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_191",
+      "name": "茼蒿",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 2.0, "calories": 20, "protein": 1.9, "fat": 0.3, "fiber": 1.2},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_192",
+      "name": "豌豆苗",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 2.6, "calories": 31, "protein": 4.0, "fat": 0.4, "fiber": 1.6},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 150}]
+    },
+    {
+      "id": "food_193",
+      "name": "西芹",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 2.0, "calories": 12, "protein": 0.7, "fat": 0.2, "fiber": 1.6},
+      "gi": 15,
+      "common_portions": [{"name": "一根", "grams": 150}]
+    },
+    {
+      "id": "food_194",
+      "name": "彩椒",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 6.0, "calories": 31, "protein": 1.0, "fat": 0.3, "fiber": 2.0},
+      "gi": 15,
+      "common_portions": [{"name": "一个", "grams": 150}]
+    },
+    {
+      "id": "food_195",
+      "name": "豆角",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 31, "protein": 2.5, "fat": 0.2, "fiber": 2.1},
+      "gi": 15,
+      "common_portions": [{"name": "一把", "grams": 200}]
+    },
+    {
+      "id": "food_196",
+      "name": "荷兰豆",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 4.9, "calories": 31, "protein": 2.8, "fat": 0.3, "fiber": 2.6},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 150}]
+    },
+    {
+      "id": "food_197",
+      "name": "芥蓝",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 2.0, "calories": 22, "protein": 2.8, "fat": 0.4, "fiber": 1.6},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_198",
+      "name": "菜心",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 2.0, "calories": 18, "protein": 1.6, "fat": 0.3, "fiber": 1.0},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_199",
+      "name": "芥菜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 2.0, "calories": 24, "protein": 2.0, "fat": 0.3, "fiber": 1.6},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_200",
+      "name": "荠菜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 3.0, "calories": 27, "protein": 2.9, "fat": 0.4, "fiber": 1.7},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_201",
+      "name": "马齿苋",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 3.0, "calories": 27, "protein": 2.3, "fat": 0.5, "fiber": 1.5},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 200}]
+    },
+    {
+      "id": "food_202",
+      "name": "蕨菜",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 34, "protein": 1.6, "fat": 0.4, "fiber": 1.8},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 150}]
+    },
+    {
+      "id": "food_203",
+      "name": "香椿",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 47, "protein": 1.7, "fat": 0.4, "fiber": 1.8},
+      "gi": 15,
+      "common_portions": [{"name": "一份", "grams": 100}]
+    },
+    {
+      "id": "food_204",
+      "name": "紫苏",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 37, "protein": 3.0, "fat": 0.7, "fiber": 2.0},
+      "gi": 15,
+      "common_portions": [{"name": "几片", "grams": 10}]
+    },
+    {
+      "id": "food_205",
+      "name": "薄荷",
+      "category": "蔬菜",
+      "nutrition_per_100g": {"carbs": 5.0, "calories": 44, "protein": 3.3, "fat": 0.7, "fiber": 3.8},
+      "gi": 15,
+      "common_portions": [{"name": "几片", "grams": 5}]
+    }
+  ]
+}

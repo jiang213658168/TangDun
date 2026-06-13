@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <!-- 圆形背景 -->
+    <path
+        android:fillColor="#007A8C"
+        android:pathData="M60,60m-55,0a55,55 0,1 1,110 0a55,55 0,1 1,-110 0" />
+    <!-- 盾牌形状 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M60,25 L85,35 L85,60 C85,80 60,95 60,95 C60,95 35,80 35,60 L35,35 Z"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFF" />
+    <!-- 血糖曲线 -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M42,65 Q50,45 58,60 Q66,75 74,55"
+        android:strokeWidth="3"
+        android:strokeColor="#007A8C"
+        android:strokeLineCap="round" />
+    <!-- 十字 -->
+    <path
+        android:fillColor="#FF4444"
+        android:pathData="M57,42 L63,42 L63,48 L69,48 L69,54 L63,54 L63,60 L57,60 L57,54 L51,54 L51,48 L57,48 Z" />
+</vector>

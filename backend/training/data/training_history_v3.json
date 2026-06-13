@@ -1,0 +1,82 @@
+[
+  {
+    "epoch": 1,
+    "train_loss": NaN,
+    "val_mae": NaN,
+    "val_rmse": NaN,
+    "clarke_a": 0.0,
+    "clarke_ab": 0.0
+  },
+  {
+    "epoch": 2,
+    "train_loss": NaN,
+    "val_mae": NaN,
+    "val_rmse": NaN,
+    "clarke_a": 0.0,
+    "clarke_ab": 0.0
+  },
+  {
+    "epoch": 3,
+    "train_loss": NaN,
+    "val_mae": NaN,
+    "val_rmse": NaN,
+    "clarke_a": 0.0,
+    "clarke_ab": 0.0
+  },
+  {
+    "epoch": 4,
+    "train_loss": NaN,
+    "val_mae": NaN,
+    "val_rmse": NaN,
+    "clarke_a": 0.0,
+    "clarke_ab": 0.0
+  },
+  {
+    "epoch": 5,
+    "train_loss": NaN,
+    "val_mae": NaN,
+    "val_rmse": NaN,
+    "clarke_a": 0.0,
+    "clarke_ab": 0.0
+  },
+  {
+    "epoch": 6,
+    "train_loss": NaN,
+    "val_mae": NaN,
+    "val_rmse": NaN,
+    "clarke_a": 0.0,
+    "clarke_ab": 0.0
+  },
+  {
+    "epoch": 7,
+    "train_loss": NaN,
+    "val_mae": NaN,
+    "val_rmse": NaN,
+    "clarke_a": 0.0,
+    "clarke_ab": 0.0
+  },
+  {
+    "epoch": 8,
+    "train_loss": NaN,
+    "val_mae": NaN,
+    "val_rmse": NaN,
+    "clarke_a": 0.0,
+    "clarke_ab": 0.0
+  },
+  {
+    "epoch": 9,
+    "train_loss": NaN,
+    "val_mae": NaN,
+    "val_rmse": NaN,
+    "clarke_a": 0.0,
+    "clarke_ab": 0.0
+  },
+  {
+    "epoch": 10,
+    "train_loss": NaN,
+    "val_mae": NaN,
+    "val_rmse": NaN,
+    "clarke_a": 0.0,
+    "clarke_ab": 0.0
+  }
+]

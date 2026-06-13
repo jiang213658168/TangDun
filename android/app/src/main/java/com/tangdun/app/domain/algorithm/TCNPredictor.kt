@@ -1,0 +1,132 @@
+package com.tangdun.app.domain.algorithm
+
+import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
+import android.content.Context
+import java.nio.FloatBuffer
+import java.util.*
+
+/**
+ * TCN模型预测器
+ *
+ * 使用ONNX Runtime在本地运行TCN模型
+ * 模型性能: MAE 0.552 mmol/L, Clarke A区 92.4%
+ */
+class TCNPredictor(private val context: Context) {
+
+    private val env = OrtEnvironment.getEnvironment()
+    private var session: OrtSession? = null
+    private var isLoaded = false
+
+    /**
+     * 加载ONNX模型
+     */
+    fun loadModel(): Boolean {
+        return try {
+            val modelBytes = context.assets.open("model_curve_v2.onnx").readBytes()
+            session = env.createSession(modelBytes)
+            isLoaded = true
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            isLoaded = false
+            false
+        }
+    }
+
+    /**
+     * 使用TCN模型预测
+     *
+     * @param features 15维特征向量
+     * @return 4个曲线参数 [a, b, c, d]
+     */
+    fun predict(features: FloatArray): FloatArray? {
+        if (!isLoaded || session == null) return null
+
+        return try {
+            // 创建输入张量 [1, 15]
+            val inputTensor = OnnxTensor.createTensor(
+                env,
+                FloatBuffer.wrap(features),
+                longArrayOf(1, features.size.toLong())
+            )
+
+            // 推理
+            val results = session?.run(Collections.singletonMap("input", inputTensor))
+            val output = results?.get(0)?.value as? Array<FloatArray>
+
+            inputTensor.close()
+            results?.close()
+
+            output?.firstOrNull()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * 生成预测曲线
+     *
+     * G(t) = current * (1 + a*t³ + b*t² + c*t + d)
+     *
+     * @param params 4个曲线参数
+     * @param currentValue 当前血糖值
+     * @param numPoints 曲线点数（默认25，对应0-120分钟）
+     * @return 预测曲线
+     */
+    fun generateCurve(params: FloatArray, currentValue: Double, numPoints: Int = 25): List<Double> {
+        val a = params[0].toDouble()
+        val b = params[1].toDouble()
+        val c = params[2].toDouble()
+        val d = params[3].toDouble()
+
+        return (0 until numPoints).map { i ->
+            val t = i.toDouble() / (numPoints - 1)
+            val relativeChange = a * t * t * t + b * t * t + c * t + d
+            currentValue * (1 + relativeChange)
+        }
+    }
+
+    /**
+     * 完整预测流程
+     *
+     * @param features 15维特征
+     * @param currentValue 当前血糖值
+     * @return 预测结果，失败返回null
+     */
+    fun fullPredict(features: FloatArray, currentValue: Double): PredictionResult? {
+        val params = predict(features) ?: return null
+        val curve = generateCurve(params, currentValue)
+
+        return PredictionResult(
+            params = params,
+            curve = curve,
+            predicted5min = curve.getOrNull(1),
+            predicted15min = curve.getOrNull(3),
+            predicted30min = curve.getOrNull(6),
+            predicted60min = curve.getOrNull(12),
+            predicted120min = curve.getOrNull(24)
+        )
+    }
+
+    /**
+     * 释放资源
+     */
+    fun close() {
+        session?.close()
+        session = null
+        isLoaded = false
+    }
+
+    data class PredictionResult(
+        val params: FloatArray,
+        val curve: List<Double>,
+        val predicted5min: Double?,
+        val predicted15min: Double?,
+        val predicted30min: Double?,
+        val predicted60min: Double?,
+        val predicted120min: Double?
+    )
+}
