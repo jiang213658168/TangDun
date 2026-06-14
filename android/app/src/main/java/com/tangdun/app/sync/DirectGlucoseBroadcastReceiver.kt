@@ -7,7 +7,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import com.tangdun.app.TangDunApp
 import com.tangdun.app.data.local.entity.GlucoseRecord
-import com.tangdun.app.domain.algorithm.CGMCalibrator
+import com.tangdun.app.domain.algorithm.RealTimeGlucoseMonitor
 import com.tangdun.app.service.GlucoseAlarmService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +37,14 @@ class DirectGlucoseBroadcastReceiver : BroadcastReceiver() {
         const val ACTION_XDRIP = "com.eveningoutpost.dexdrip.BgEstimate"
         // Aidex 直达广播（备用）
         const val ACTION_AIDEX = "com.microtechmd.cgms.aidex.action.BgEstimate"
+
+        // 共享监测引擎 (跨广播调用保留状态)
+        @Volatile private var monitorInstance: RealTimeGlucoseMonitor? = null
+        private fun getMonitor(context: Context): RealTimeGlucoseMonitor {
+            return monitorInstance ?: synchronized(this) {
+                monitorInstance ?: RealTimeGlucoseMonitor(context.applicationContext).also { monitorInstance = it }
+            }
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -101,16 +109,16 @@ class DirectGlucoseBroadcastReceiver : BroadcastReceiver() {
 
             // 保存到数据库
             if (glucoseMgDl in 20.0..600.0) {
-                var glucoseMmol = glucoseMgDl / 18.0
-
-                // 应用指尖血校准
-                try {
-                    val calibrator = CGMCalibrator(context)
-                    glucoseMmol = calibrator.applyCalibration(glucoseMmol)
-                } catch (e: Exception) { Log.w(TAG, "校准失败，使用原始值: ${e.message}") }
+                val glucoseMmol = glucoseMgDl / 18.0
 
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
+                        // 通过实时监测引擎处理
+                        val monitor = getMonitor(context)
+                        val processed = monitor.ingest(glucoseMmol, timestamp, source)
+                        val saveValue = processed?.calibratedValue ?: glucoseMmol
+                        val saveTrend = processed?.trend?.arrow ?: trend
+
                         val dao = TangDunApp.getDatabase(context).glucoseDao()
                         val latest = dao.getLatest()
                         if (latest != null && kotlin.math.abs(timestamp - latest.timestamp) < 120_000) {
@@ -118,14 +126,17 @@ class DirectGlucoseBroadcastReceiver : BroadcastReceiver() {
                         }
                         dao.insert(GlucoseRecord(
                             timestamp = timestamp,
-                            value = glucoseMmol,
+                            value = saveValue,
                             source = source,
-                            trend = trend
+                            trend = saveTrend,
+                            rawData = processed?.rawValue
                         ))
-                        Log.i(TAG, "💾 已保存: ${String.format("%.1f", glucoseMmol)} mmol/L ${trend ?: ""}")
-                        logEvent(context, "保存: ${String.format("%.1f", glucoseMmol)} mmol/L", source)
+                        Log.i(TAG, "已保存: ${String.format("%.1f", saveValue)} mmol/L ${saveTrend ?: ""} q=${processed?.qualityScore ?: 0}")
+                        logEvent(context, "保存: ${String.format("%.1f", saveValue)} mmol/L", source)
 
-                        try { GlucoseAlarmService(context).checkAndAlarm(glucoseMmol, trend) } catch (e: Exception) { Log.w(TAG, "警报检查失败: ${e.message}") }
+                        if (processed != null && processed.qualityScore >= 50) {
+                            try { GlucoseAlarmService(context).checkAndAlarm(saveValue, saveTrend) } catch (e: Exception) { Log.w(TAG, "警报检查失败: ${e.message}") }
+                        }
                     } catch (e: Exception) {
                         Log.e(TAG, "保存失败: ${e.message}")
                     }

@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import com.tangdun.app.TangDunApp
 import com.tangdun.app.data.local.entity.GlucoseRecord
+import com.tangdun.app.domain.algorithm.RealTimeGlucoseMonitor
 import com.tangdun.app.service.GlucoseAlarmService
 import kotlinx.coroutines.*
 import java.text.SimpleDateFormat
@@ -31,6 +32,9 @@ class CGMNotificationListener : NotificationListenerService() {
 
     // 绑定Service生命周期的协程作用域，避免每次通知创建新Scope
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // 实时血糖监测引擎 (卡尔曼滤波 + 噪声检测 + 趋势计算)
+    private val monitor by lazy { RealTimeGlucoseMonitor(this) }
 
     companion object {
         private const val TAG = "CGMNotify"
@@ -128,12 +132,29 @@ class CGMNotificationListener : NotificationListenerService() {
 
                 serviceScope.launch {
                     try {
+                        // 通过实时监测引擎处理 (卡尔曼滤波+噪声检测+趋势)
+                        val processed = monitor.ingest(glucoseMmol, now, "cgm_notify")
                         val dao = TangDunApp.getDatabase(this@CGMNotificationListener).glucoseDao()
+
+                        // 使用处理后的校准值 (或回退到原始值)
+                        val saveValue = processed?.calibratedValue ?: glucoseMmol
+                        val saveTrend = processed?.trend?.arrow
+
                         val latest = dao.getLatest()
-                        // 仅当最近记录也是CGM来源且时间接近才跳过（防止阻断手动输入）
-                        if (latest != null && latest.source == "cgm_notify" && kotlin.math.abs(now - latest.timestamp) < 60_000) return@launch
-                        dao.insert(GlucoseRecord(timestamp = now, value = glucoseMmol, source = "cgm_notify"))
-                        try { GlucoseAlarmService(this@CGMNotificationListener).checkAndAlarm(glucoseMmol, null) } catch (e: Exception) { Log.w(TAG, "警报检查失败: ${e.message}") }
+                        if (latest != null && latest.source == "cgm_notify" && kotlin.math.abs(now - latest.timestamp) < 55_000) return@launch
+
+                        dao.insert(GlucoseRecord(
+                            timestamp = now,
+                            value = saveValue,
+                            source = "cgm_notify",
+                            trend = saveTrend,
+                            rawData = processed?.rawValue
+                        ))
+
+                        // 质量评分≥50才触发警报 (过滤噪声误报)
+                        if (processed != null && processed.qualityScore >= 50) {
+                            try { GlucoseAlarmService(this@CGMNotificationListener).checkAndAlarm(saveValue, saveTrend) } catch (e: Exception) { Log.w(TAG, "警报检查失败: ${e.message}") }
+                        }
                     } catch (e: Exception) { Log.e(TAG, "保存失败: ${e.message}") }
                 }
             }
