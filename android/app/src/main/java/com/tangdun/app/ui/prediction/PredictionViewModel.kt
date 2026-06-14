@@ -110,10 +110,19 @@ class PredictionViewModel @Inject constructor(
                 // 胃排空速率按加权GI调整 (高GI→快排空, 低GI/高脂→慢排空)
                 val avgGi = if (mealInputs.isNotEmpty()) mealInputs.map { it.gi }.average() else 50.0
                 val giFactor = (avgGi / 50.0).coerceIn(0.7, 1.5)
-                val dmParams = DallaManModel.Parameters.forChinese(bodyWeight = weight)
-                    .copy(kStomach = (0.040 * giFactor).coerceIn(0.025, 0.080))
+                // 长效胰岛素: 24h缓释 → 提高基础胰岛素Ib (非bolus建模)
+                val longInsulin = insulin.filter { it.insulinType == "long" || it.insulinType == "long-acting" }
+                val longBasalBoost = if (longInsulin.isNotEmpty()) {
+                    val dailyDose = longInsulin.sumOf { it.doseUnits }
+                    dailyDose * 0.4  // ~0.4 mU/L per daily unit (稳态估算)
+                } else 0.0
 
-                val insulinInputs = insulin.filter { it.insulinType == "rapid" }.takeLast(10).map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }
+                val dmParams = DallaManModel.Parameters.forChinese(bodyWeight = weight)
+                    .copy(kStomach = (0.040 * giFactor).coerceIn(0.025, 0.080),
+                          Ib = (8.0 + longBasalBoost).coerceIn(4.0, 30.0))
+
+                // 速效/短效胰岛素: 皮下bolus建模
+                val insulinInputs = insulin.filter { it.insulinType == "rapid" || it.insulinType == "short" }.takeLast(10).map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }
                 val dmCurve = physiological.predict(g, maxOf(iob * 15.0, 5.0), mealInputs, insulinInputs, horizonMinutes = 120, stepMinutes = 5, params = dmParams)
 
                 // 个性化校正

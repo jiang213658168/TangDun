@@ -22,6 +22,7 @@ import com.tangdun.app.ui.theme.*
 import com.tangdun.app.util.ActivationManager
 import com.tangdun.app.ui.settings.DataShareCard
 import com.tangdun.app.util.SettingsManager
+import kotlinx.coroutines.delay
 
 /**
  * 设置页面
@@ -139,7 +140,8 @@ fun SelfLearningCard() {
     val params = remember(refreshTick) { onlineLearner.getPersonalParams() }
     val stage = remember(refreshTick) { onlineLearner.getLearningStage() }
     val stageDesc = remember(refreshTick) { onlineLearner.getStageDescription() }
-    LaunchedEffect(Unit) { refreshTick++ }
+    // 进入页面刷新 + 每10秒自动刷新
+    LaunchedEffect(Unit) { while (true) { refreshTick++; delay(10000) } }
 
     // 学习阶段颜色
     val stageColor = when (stage) {
@@ -1357,8 +1359,14 @@ fun AboutCard() {
             InfoItem("构建日期", "2026-06-13")
             InfoItem("包名", context.packageName)
             Divider(modifier = Modifier.padding(vertical = 8.dp))
-            TextButton(onClick = {}) { Text("用户协议", color = MaterialTheme.colorScheme.primary) }
-            TextButton(onClick = {}) { Text("隐私政策", color = MaterialTheme.colorScheme.primary) }
+            TextButton(onClick = {
+                val uri = android.net.Uri.parse("https://jiang213658168.github.io/TangDun/agreement.html")
+                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) })
+            }) { Text("用户协议", color = MaterialTheme.colorScheme.primary) }
+            TextButton(onClick = {
+                val uri = android.net.Uri.parse("https://jiang213658168.github.io/TangDun/privacy.html")
+                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) })
+            }) { Text("隐私政策", color = MaterialTheme.colorScheme.primary) }
             Text("© 2026 糖盾 TangDun. 仅供健康管理参考，不构成医疗建议。",
                 style = MaterialTheme.typography.bodySmall, color = TextHint, modifier = Modifier.padding(top = 8.dp))
         }
