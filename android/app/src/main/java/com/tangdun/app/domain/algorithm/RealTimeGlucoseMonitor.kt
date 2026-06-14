@@ -150,9 +150,21 @@ class RealTimeGlucoseMonitor(private val context: Context) {
         window.add(rawMmol)
         if (window.size > 30) window.removeAt(0)
 
-        // ── 6. 轻量EWMA滤波 (CGM已自带硬件滤波, 这里仅防尖峰噪声) ──
+        // ── 6. 自适应EWMA滤波 (根据噪声等级调整) ──
+        // 先快速评估噪声 (基于最近窗口的方差)
+        val quickNoise = if (window.size >= 5) {
+            val wMean = window.average()
+            val wVar = window.map { (it - wMean) * (it - wMean) }.average()
+            wVar
+        } else 0.0
+        // 噪声低→高α(信任读数), 噪声高→低α(加强平滑)
+        val alpha = when {
+            quickNoise < 0.5 -> 0.90   // 非常稳定: 90%信任新值
+            quickNoise < 2.0 -> 0.85   // 正常波动
+            quickNoise < 5.0 -> 0.70   // 中等噪声
+            else -> 0.50               // 高噪声: 50%平滑
+        }
         val filtered = if (lastReading != null) {
-            val alpha = 0.85  // 85%信任新值, 15%保留旧趋势
             alpha * rawMmol + (1 - alpha) * lastReading.filteredValue
         } else rawMmol
 

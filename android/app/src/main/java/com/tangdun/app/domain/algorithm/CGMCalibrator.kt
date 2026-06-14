@@ -28,7 +28,7 @@ class CGMCalibrator(context: Context) {
         private const val KEY_COUNT = "cal_count"
         private const val KEY_LAST_CAL = "last_calibration_time"
         private const val MAX_OFFSET = 5.0   // mmol/L 最大修正量
-        private const val MIN_SAMPLES = 3     // 至少3次校准才启用
+        private const val MIN_SAMPLES = 1     // 1次就启用
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -59,7 +59,11 @@ class CGMCalibrator(context: Context) {
 
         // EWMA平滑 (数据越多越稳定)
         val oldOffset = getOffset()
-        val alpha = if (count <= 3) 0.5 else 0.3  // 前三次数权重高
+        val alpha = when {
+            count <= 1 -> 1.0   // 第一次: 完全信任指尖值
+            count <= 3 -> 0.5   // 前三次: 高权重
+            else -> 0.3         // 之后: 稳定EWMA
+        }
         val newOffset = oldOffset * (1 - alpha) + clampedOffset * alpha
 
         prefs.edit()
@@ -70,8 +74,8 @@ class CGMCalibrator(context: Context) {
 
         val confidence = when {
             count >= 10 -> "高 (已校准${count}次)"
-            count >= MIN_SAMPLES -> "中 (已校准${count}次)"
-            else -> "低 (需${MIN_SAMPLES - count}次以上)"
+            count >= 3 -> "中 (已校准${count}次)"
+            else -> "低 (已校准${count}次)"
         }
 
         return CalResult(

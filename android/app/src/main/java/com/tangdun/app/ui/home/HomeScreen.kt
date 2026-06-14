@@ -32,6 +32,41 @@ import com.tangdun.app.ui.theme.*
 import java.util.Calendar
 
 @Composable
+fun CalibrationCard(currentGlucose: Double?, offset: Double, calCount: Int, confidence: String, onCalibrate: (Double) -> Unit) {
+    var fingerValue by remember { mutableStateOf("") }
+    var showInput by remember { mutableStateOf(false) }
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = if (calCount == 0) AlertWarning.copy(alpha = 0.06f) else AlertSuccess.copy(alpha = 0.06f))
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Biotech, null, tint = if (calCount == 0) AlertWarning else AlertSuccess, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("指尖校准", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                Spacer(Modifier.weight(1f))
+                Text(if (calCount >= 1) "已校准${calCount}次 | 偏移${String.format("%+.1f", offset)}" else "未校准", fontSize = 11.sp, color = if (calCount == 0) AlertWarning else TextSecondary)
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("CGM: ${if (currentGlucose != null) String.format("%.1f", currentGlucose) else "--"} mmol/L", fontSize = 13.sp, color = TextSecondary)
+                Spacer(Modifier.width(16.dp))
+                if (showInput) {
+                    OutlinedTextField(value = fingerValue, onValueChange = { fingerValue = it }, label = { Text("指尖值") }, singleLine = true, modifier = Modifier.width(100.dp), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = { val v = fingerValue.toDoubleOrNull(); if (v != null && v in 1.0..33.0) { onCalibrate(v); fingerValue = ""; showInput = false } }) { Text("确认") }
+                    TextButton(onClick = { showInput = false }) { Text("取消") }
+                } else {
+                    OutlinedButton(onClick = { showInput = true }) { Icon(Icons.Default.Add, null, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("录入指尖值校准") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun HomeScreen(
     navController: androidx.navigation.NavController? = null,
     viewModel: HomeViewModel = hiltViewModel()
@@ -96,6 +131,17 @@ fun HomeScreen(
             trend = uiState.trend,
             change30min = uiState.change30min,
             onAddClick = { showAddGlucoseDialog = true }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 指尖校准卡片 — 醒目位置
+        CalibrationCard(
+            currentGlucose = uiState.currentGlucose,
+            offset = uiState.calOffset,
+            calCount = uiState.calCount,
+            confidence = uiState.calConfidence,
+            onCalibrate = { fingerValue: Double -> viewModel.calibrateNow(fingerValue) }
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -975,4 +1021,5 @@ fun DataSourceCard(hasData: Boolean, recordCount: Int, syncMsg: String?, onSync:
             if (testResult.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(testResult, fontSize = 12.sp, color = TextSecondary) }
         }
     }
+
 }

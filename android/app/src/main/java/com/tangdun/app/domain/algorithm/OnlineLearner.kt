@@ -151,22 +151,24 @@ class OnlineLearner(private val context: Context) {
             val std = calculateStd(values)
             val cv = if (mean > 0) (std / mean) * 100 else 15.0
 
+            // 早期学习用更高alpha加速个性化 (前10次α=0.3, 之后0.1)
+            val earlyAlpha = if (params.updateCount < 10) 0.3 else 0.1
+
             // === 步骤2: 空腹血糖基线估计 ===
-            // 使用凌晨2-4点的血糖作为近似空腹血糖
+            // 使用0-6点血糖作为近似空腹 (含中国用户早睡习惯)
             val fastingValues = records.filter { record ->
                 val cal = Calendar.getInstance().apply { timeInMillis = record.timestamp }
                 val hour = cal.get(Calendar.HOUR_OF_DAY)
-                hour in 2..4
+                hour in 0..6
             }.map { it.value }
 
             val fastingBaseline = if (fastingValues.isNotEmpty()) {
-                ewma(fastingValues, alpha = 0.1)
+                ewma(fastingValues, alpha = earlyAlpha)
             } else {
                 params.fastingBaseline
             }
 
             // === 步骤3: 餐后峰值估计 ===
-            // 使用每日最大值的平均
             val dailyPeaks = records.groupBy { record ->
                 val cal = Calendar.getInstance().apply { timeInMillis = record.timestamp }
                 cal.get(Calendar.DAY_OF_YEAR)
@@ -175,13 +177,12 @@ class OnlineLearner(private val context: Context) {
             }
 
             val postMealPeak = if (dailyPeaks.isNotEmpty()) {
-                ewma(dailyPeaks, alpha = 0.1)
+                ewma(dailyPeaks, alpha = earlyAlpha)
             } else {
                 params.postMealPeak
             }
 
             // === 步骤4: 恢复速率估计 ===
-            // 计算从峰值恢复到基线的速率
             val recoveryRates = mutableListOf<Double>()
             for (i in 2 until records.size) {
                 if (records[i].value < records[i-1].value && records[i-1].value > mean + std) {
@@ -192,13 +193,12 @@ class OnlineLearner(private val context: Context) {
                 }
             }
             val recoveryRate = if (recoveryRates.isNotEmpty()) {
-                ewma(recoveryRates, alpha = 0.2)
+                ewma(recoveryRates, alpha = maxOf(earlyAlpha, 0.2))
             } else {
                 params.recoveryRate
             }
 
             // === 步骤5: 自适应阈值 ===
-            // 根据用户血糖分布调整阈值
             val p5 = percentile(values, 5.0)
             val p95 = percentile(values, 95.0)
             val adaptiveLow = (p5 + params.adaptiveLowThreshold) / 2
@@ -207,14 +207,15 @@ class OnlineLearner(private val context: Context) {
             // === 步骤6: 卡尔曼滤波平滑 ===
             val smoothedBaseline = kalmanSmooth(params.fastingBaseline, fastingBaseline, 0.1, 1.0)
 
-            // === 步骤7: 更新参数 ===
+            // === 步骤7: 更新参数 (早期加速学习) ===
+            val blend = earlyAlpha  // 早期0.3, 稳定后0.1
             val newParams = params.copy(
                 fastingBaseline = smoothedBaseline,
-                postMealPeak = params.postMealPeak * 0.9 + postMealPeak * 0.1,
-                glucoseVariability = params.glucoseVariability * 0.9 + cv * 0.1,
-                recoveryRate = params.recoveryRate * 0.8 + recoveryRate * 0.2,
-                adaptiveLowThreshold = params.adaptiveLowThreshold * 0.9 + adaptiveLow * 0.1,
-                adaptiveHighThreshold = params.adaptiveHighThreshold * 0.9 + adaptiveHigh * 0.1,
+                postMealPeak = params.postMealPeak * (1 - blend) + postMealPeak * blend,
+                glucoseVariability = params.glucoseVariability * (1 - blend) + cv * blend,
+                recoveryRate = params.recoveryRate * (1 - blend) + recoveryRate * blend,
+                adaptiveLowThreshold = params.adaptiveLowThreshold * (1 - blend) + adaptiveLow * blend,
+                adaptiveHighThreshold = params.adaptiveHighThreshold * (1 - blend) + adaptiveHigh * blend,
                 dataDays = dataDays,
                 updateCount = params.updateCount + 1
             )

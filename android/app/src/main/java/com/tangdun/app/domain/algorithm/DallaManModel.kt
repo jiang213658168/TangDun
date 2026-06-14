@@ -34,7 +34,9 @@ class DallaManModel {
         // ── 葡萄糖动力学 ──
         val VgPerKg: Double = 1.8,        // 葡萄糖分布体积 (dL/kg)
         val k1: Double = 0.065,           // 非胰岛素依赖利用率 (min⁻¹)
-        val k2: Double = 0.025,           // 胰岛素依赖利用系数 (min⁻¹)
+        val Vm0: Double = 2.5,            // 基础葡萄糖利用 (mg/kg/min, MM方程)
+        val VmX: Double = 0.05,           // 胰岛素乘数 (mg/kg/min per X单位)
+        val Km0: Double = 25.0,           // Michaelis常数 (mg/dL)
         val Gb: Double = 5.0,             // 基础血糖 (mmol/L)
         val Ib: Double = 10.0,            // 基础胰岛素 (mU/L)
         val renalThreshold: Double = 10.0, // 肾糖阈 (mmol/L)
@@ -83,34 +85,33 @@ class DallaManModel {
             fun forChinese(bodyWeight: Double = 65.0) = Parameters(
                 bodyWeight = bodyWeight,
                 // 胃肠道：米饭/面食消化慢但持续释放(高碳水+纤维素→缓释)
-                kStomach = 0.040,       // ★ 更慢胃排空→持续释放→平稳峰 (原0.048, 西方0.055)
-                kGut = 0.065,           // ★ 更快肠吸收→即时利用 (原0.050, 西方0.056)
+                kStomach = 0.040,       // ★ 更慢胃排空→持续释放→平稳峰
+                kGut = 0.065,           // ★ 更快肠吸收→即时利用
                 fCarbs = 0.9,
-                // 葡萄糖动力学
-                VgPerKg = 1.6,          // 体脂较低→分布体积略小 (西方1.8)
-                k1 = 0.055,             // 略低非胰岛素利用 (西方0.065)
-                k2 = 0.015,             // ★ 更强胰岛素抵抗→利用更低 (原0.022, 西方0.025)
-                Gb = 5.2,               // 中国人群基础血糖略高 (西方5.0)
-                Ib = 8.0,               // 更瘦→基础胰岛素更低 (西方10.0)
-                renalThreshold = 9.5,   // 略低肾糖阈 (西方10.0)
+                // 葡萄糖动力学 (Michaelis-Menten)
+                VgPerKg = 1.6,          // 体脂较低→分布体积略小
+                k1 = 0.055,             // 略低非胰岛素利用
+                Vm0 = 2.0,              // ★ 基础利用略低 (西方2.5)
+                VmX = 0.06,             // ★ 胰岛素乘数 (西方0.05, 中国略高补偿低Vm0)
+                Km0 = 25.0,             // Michaelis常数 (与种族无关)
+                Gb = 5.2,               // 中国人群基础血糖略高
+                Ib = 8.0,               // 更瘦→基础胰岛素更低
+                renalThreshold = 9.5,   // 略低肾糖阈
                 renalClearance = 0.005,
                 // 肝糖输出
-                hepaticBase = 2.0,      // 肝糖输出略低 (西方2.4)
+                hepaticBase = 2.0,      // 肝糖输出略低
                 // 胰岛素皮下吸收 (速效，与种族无关)
-                ka1 = 0.018,
-                ka2 = 0.018,
-                ke = 0.138,
-                ViPerKg = 0.05,
+                ka1 = 0.018, ka2 = 0.018, ke = 0.138, ViPerKg = 0.05,
                 // 胰岛素远端作用：β细胞功能衰退→胰岛素作用启动更慢
-                kp3 = 0.025,            // 利用通道激活更慢 (西方0.03)
-                kp2 = 0.050             // 肝糖抑制略慢 (西方0.06)
+                kp3 = 0.025,            // 利用通道激活更慢
+                kp2 = 0.050             // 肝糖抑制略慢
             )
 
             /** 西方人群参数 (文献默认, 默认体重70kg) */
             fun forWestern(bodyWeight: Double = 70.0) = Parameters(
                 bodyWeight = bodyWeight,
                 kStomach = 0.055, kGut = 0.056, fCarbs = 0.9,
-                VgPerKg = 1.8, k1 = 0.065, k2 = 0.025,
+                VgPerKg = 1.8, k1 = 0.065, Vm0 = 2.5, VmX = 0.05, Km0 = 25.0,
                 Gb = 5.0, Ib = 10.0,
                 renalThreshold = 10.0, renalClearance = 0.005,
                 hepaticBase = 2.4,
@@ -291,8 +292,12 @@ class DallaManModel {
         // Uii: 非胰岛素依赖利用（中枢神经系统等），一阶趋近基础
         val Uiimmol = p.k1 * (G - p.Gb)
 
-        // Uid: 胰岛素依赖利用
-        val Uidmmol = p.k2 * X * G
+        // Uid: 胰岛素依赖利用 — Michaelis-Menten饱和动力学
+        // 比线性k2*X*G更符合生理: 高血糖时利用饱和，不无限增加
+        val G_mg_dL = G * 18.0  // mmol/L → mg/dL
+        val Vm = p.Vm0 + p.VmX * X  // 最大利用速率 (mg/kg/min), 胰岛素促进
+        val Uid_mgKgMin = Vm * G_mg_dL / (p.Km0 + G_mg_dL)  // MM方程
+        val Uidmmol = Uid_mgKgMin * weight / VgDl18  // → mmol/L/min
 
         // 肾脏排泄
         val renalMmol = if (G > p.renalThreshold) {

@@ -49,6 +49,7 @@ class PredictionViewModel @Inject constructor(
     private val predictor = PersonalizedPredictor(ctx)
     private val onlineLearner = OnlineLearner(ctx)
     private val physiological = DallaManModel()
+    private val cgmCalibrator = com.tangdun.app.domain.algorithm.CGMCalibrator(ctx)
     private val tcnOk = predictor.initialize()
 
     // 自学习节流: 最多每15分钟学习一次
@@ -100,14 +101,19 @@ class PredictionViewModel @Inject constructor(
 
                 // Dalla Man 生理模型: 24h进食 + 24h胰岛素
                 val weight = settings.getWeightKg().toDouble()
-                val dmParams = DallaManModel.Parameters.forChinese(bodyWeight = weight)
-                // 刚记录的饮食加最小消化时间，避免曲线延迟上升
+
+                // 饮食输入: 最小消化10分钟确保Ra>Uid
                 val mealInputs = meals24h.takeLast(5).map {
                     val rawMinutes = (now - it.timestamp) / 60000.0
-                    // 最小消化10分钟: 确保胃已部分排空+Ra>Uid (避免餐后曲线假下降)
                     val effectiveMinutes = if (rawMinutes < 15.0) maxOf(rawMinutes, 10.0) else rawMinutes
                     DallaManModel.MealInput(effectiveMinutes, it.totalCarbs, it.avgGi)
                 }
+                // 胃排空速率按加权GI调整 (高GI→快排空, 低GI/高脂→慢排空)
+                val avgGi = if (mealInputs.isNotEmpty()) mealInputs.map { it.gi }.average() else 50.0
+                val giFactor = (avgGi / 50.0).coerceIn(0.7, 1.5)
+                val dmParams = DallaManModel.Parameters.forChinese(bodyWeight = weight)
+                    .copy(kStomach = (0.040 * giFactor).coerceIn(0.025, 0.080))
+
                 val insulinInputs = insulin.filter { it.insulinType == "rapid" }.takeLast(10).map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }
                 val dmCurve = physiological.predict(g, maxOf(iob * 15.0, 5.0), mealInputs, insulinInputs, horizonMinutes = 120, stepMinutes = 5, params = dmParams)
 
@@ -145,7 +151,15 @@ class PredictionViewModel @Inject constructor(
                 }
 
                 val peak = merged.max(); val pi = merged.indexOf(peak)
-                val confidence = when { tcnOk && records.size >= 100 -> 80.0; records.size >= 50 -> 60.0; else -> 40.0 }
+                // 置信度: 综合数据量+模型类型+校准状态+噪声
+                val calConf = if (cgmCalibrator.getCount() >= 1) 10.0 else 0.0
+                val confidence = when {
+                    tcnOk && records.size >= 200 -> 85.0
+                    tcnOk && records.size >= 100 -> 75.0
+                    records.size >= 50 -> 60.0 + calConf
+                    records.size >= 10 -> 45.0 + calConf
+                    else -> 30.0
+                }
 
                 _uiState.value = PredictionUiState(
                     isLoading = false, currentGlucose = g, riskLevel = riskLabel,

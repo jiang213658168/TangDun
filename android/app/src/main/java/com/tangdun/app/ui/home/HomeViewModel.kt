@@ -37,7 +37,12 @@ data class HomeUiState(
     val isXDripConnected: Boolean = false,
     val targetLow: Float = 3.9f,
     val targetHigh: Float = 10.0f,
-    val error: String? = null
+    val error: String? = null,
+    // 指尖校准
+    val calOffset: Double = 0.0,
+    val calCount: Int = 0,
+    val calConfidence: String = "",
+    val lastCalTime: Long = 0
 )
 
 @HiltViewModel
@@ -57,6 +62,7 @@ class HomeViewModel @Inject constructor(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private val xDripManager = XDripManager(context)
+    private val cgmCalibrator = com.tangdun.app.domain.algorithm.CGMCalibrator(context)
 
     init {
         loadData()
@@ -86,6 +92,24 @@ class HomeViewModel @Inject constructor(
     fun refresh() {
         loadData()
         checkXDripStatus()
+    }
+
+    /** 指尖血校准: 比较指尖值与最新CGM，更新偏移 */
+    fun calibrateNow(fingerValue: Double) {
+        viewModelScope.launch {
+            try {
+                val latestCgm = glucoseDao.getLatest()
+                if (latestCgm != null && latestCgm.source != "finger") {
+                    val result = cgmCalibrator.calibrate(fingerValue, latestCgm.value)
+                    Log.i("HomeVM", "校准: finger=$fingerValue cgm=${latestCgm.value} → offset=${"%.2f".format(result.offset)} conf=${result.confidence}")
+                    // 同时保存指尖记录
+                    glucoseDao.insert(GlucoseRecord(timestamp = System.currentTimeMillis(), value = fingerValue, source = "finger", scene = "other"))
+                    loadData()
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = "校准失败: ${e.message}")
+            }
+        }
     }
 
     /**
@@ -239,7 +263,11 @@ class HomeViewModel @Inject constructor(
                     glucoseData = glucoseData, records = records,
                     alerts = alerts, advices = advices,
                     avgGlucose = avgGlucose, tir = tir,
-                    recordCount = records.size, isXDripConnected = connected
+                    recordCount = records.size, isXDripConnected = connected,
+                    calOffset = cgmCalibrator.getOffset(),
+                    calCount = cgmCalibrator.getCount(),
+                    calConfidence = if (cgmCalibrator.getCount() >= 1) "已校准${cgmCalibrator.getCount()}次" else "未校准",
+                    lastCalTime = System.currentTimeMillis()
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
