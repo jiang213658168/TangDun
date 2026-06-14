@@ -1,7 +1,7 @@
 package com.tangdun.app.di
 
 import android.content.Context
-import androidx.room.Room
+import com.tangdun.app.TangDunApp
 import com.tangdun.app.data.local.AppDatabase
 import com.tangdun.app.data.local.dao.*
 import com.tangdun.app.data.remote.FoodRecognitionService
@@ -30,13 +30,9 @@ object AppModule {
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
-        return Room.databaseBuilder(
-            context,
-            AppDatabase::class.java,
-            AppDatabase.DATABASE_NAME
-        )
-        .fallbackToDestructiveMigration()
-        .build()
+        // ★ 使用TangDunApp的单例方法，确保BroadcastReceiver/Service等非Hilt
+        // 代码与ViewModel共享同一个Room实例，保证Flow InvalidationTracker同步
+        return TangDunApp.getDatabase(context)
     }
 
     @Provides
