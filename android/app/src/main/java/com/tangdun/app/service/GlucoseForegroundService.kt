@@ -11,11 +11,14 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import android.graphics.Bitmap
 import com.tangdun.app.R
 import com.tangdun.app.TangDunApp
 import com.tangdun.app.data.local.entity.GlucoseRecord
+import com.tangdun.app.domain.algorithm.DallaManModel
 import com.tangdun.app.ui.MainActivity
 import com.tangdun.app.util.SettingsManager
+import com.tangdun.app.widget.NotificationChartRenderer
 import kotlinx.coroutines.*
 
 /**
@@ -62,7 +65,7 @@ class GlucoseForegroundService : Service() {
         createNotificationChannel()
 
         // 启动前台
-        val notification = buildNotification(null)
+        val notification = buildNotification(null, null)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
@@ -131,7 +134,7 @@ class GlucoseForegroundService : Service() {
         }
     }
 
-    private fun buildNotification(latest: com.tangdun.app.data.local.entity.GlucoseRecord?): Notification {
+    private fun buildNotification(latest: com.tangdun.app.data.local.entity.GlucoseRecord?, chart: Bitmap?): Notification {
         val latestGlucose = latest?.value
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -165,23 +168,47 @@ class GlucoseForegroundService : Service() {
             "等待CGM数据..."
         }
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_logo)
             .setContentTitle(title)
             .setContentText(content)
             .setContentIntent(pi)
-            .setOngoing(true)                    // 持久通知，不可滑动清除
+            .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .build()
+
+        // 通知栏曲线图 (参考 xDrip+ 持久通知sparkline)
+        if (chart != null) {
+            builder.setStyle(NotificationCompat.BigPictureStyle().bigPicture(chart))
+        }
+
+        return builder.build()
     }
 
     private suspend fun updateNotification() = withContext(Dispatchers.IO) {
         try {
             val dao = TangDunApp.getDatabase(this@GlucoseForegroundService).glucoseDao()
             val latest = dao.getLatest()
-            val notification = buildNotification(latest)
+            val settings = SettingsManager(this@GlucoseForegroundService)
+
+            // 生成通知栏曲线图
+            var chart: Bitmap? = null
+            try {
+                val history = dao.getRecent(36)  // 最近3小时 (36×5min)
+                if (history.size >= 4) {
+                    // 运行快速预测 (仅DallaMan, 不用TCN)
+                    val g = history.last().value
+                    val weight = settings.getWeightKg().toDouble()
+                    val model = DallaManModel()
+                    val curve = model.predict(g, 5.0, emptyList(), emptyList(), 60, 5,
+                        DallaManModel.Parameters.forChinese(weight))
+                    chart = NotificationChartRenderer.render(history, curve,
+                        settings.getTargetLow().toDouble(), settings.getTargetHigh().toDouble())
+                }
+            } catch (e: Exception) { Log.w(TAG, "图表生成失败: ${e.message}") }
+
+            val notification = buildNotification(latest, chart)
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.notify(NOTIFICATION_ID, notification)
         } catch (e: Exception) {
