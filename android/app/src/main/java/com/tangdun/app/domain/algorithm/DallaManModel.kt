@@ -56,6 +56,59 @@ class DallaManModel {
         /** 计算个人化的分布体积 */
         val Vg: Double get() = (bodyWeight * VgPerKg).coerceIn(60.0, 300.0)
         val Vi: Double get() = (bodyWeight * ViPerKg).coerceIn(2.0, 25.0)
+
+        companion object {
+            /**
+             * 中国人群参数 (默认体重65kg)
+             *
+             * 与西方人群的关键代谢差异：
+             * - BMI较低但内脏脂肪比例更高 → 胰岛素抵抗更重
+             * - β细胞功能更早衰退 → 胰岛素分泌不足更显著
+             * - 碳水化合物摄入比例更高（米饭/面食为主）
+             * - 餐后血糖漂移更大
+             * - 肝脏葡萄糖输出略低
+             *
+             * 参考: China National Diabetes Survey, Li et al. 2020
+             *       Bi Y et al. " metabolic profile of T2DM in Chinese", LDE 2021
+             */
+            fun forChinese(bodyWeight: Double = 65.0) = Parameters(
+                bodyWeight = bodyWeight,
+                // 胃肠道：米饭/面食消化略慢于西方混合餐
+                kStomach = 0.048,       // 略慢胃排空 (西方0.055)
+                kGut = 0.050,           // 略慢肠吸收 (西方0.056)
+                fCarbs = 0.9,
+                // 葡萄糖动力学
+                VgPerKg = 1.6,          // 体脂较低→分布体积略小 (西方1.8)
+                k1 = 0.055,             // 略低非胰岛素利用 (西方0.065)
+                k2 = 0.022,             // 更低胰岛素依赖利用→更多胰岛素抵抗 (西方0.025)
+                Gb = 5.2,               // 中国人群基础血糖略高 (西方5.0)
+                Ib = 8.0,               // 更瘦→基础胰岛素更低 (西方10.0)
+                renalThreshold = 9.5,   // 略低肾糖阈 (西方10.0)
+                renalClearance = 0.005,
+                // 肝糖输出
+                hepaticBase = 2.0,      // 肝糖输出略低 (西方2.4)
+                // 胰岛素皮下吸收 (速效，与种族无关)
+                ka1 = 0.018,
+                ka2 = 0.018,
+                ke = 0.138,
+                ViPerKg = 0.05,
+                // 胰岛素远端作用：β细胞功能衰退→胰岛素作用启动更慢
+                kp3 = 0.025,            // 利用通道激活更慢 (西方0.03)
+                kp2 = 0.050             // 肝糖抑制略慢 (西方0.06)
+            )
+
+            /** 西方人群参数 (文献默认, 默认体重70kg) */
+            fun forWestern(bodyWeight: Double = 70.0) = Parameters(
+                bodyWeight = bodyWeight,
+                kStomach = 0.055, kGut = 0.056, fCarbs = 0.9,
+                VgPerKg = 1.8, k1 = 0.065, k2 = 0.025,
+                Gb = 5.0, Ib = 10.0,
+                renalThreshold = 10.0, renalClearance = 0.005,
+                hepaticBase = 2.4,
+                ka1 = 0.018, ka2 = 0.018, ke = 0.138, ViPerKg = 0.05,
+                kp3 = 0.03, kp2 = 0.06
+            )
+        }
     }
 
     data class MealInput(
@@ -99,12 +152,34 @@ class DallaManModel {
         val Ib = params.Ib
 
         // ── 初始化状态 ──
-        // 当前血糖/胰岛素
         var G = currentGlucose
-        var I = max(currentInsulin, 1.0)
 
-        // 胰岛素远端作用：假设从当前I已部分激活
-        // 稳态时 X ≈ max(0, I-Ib)/Ib, 但我们从0开始让模型自行演化
+        // 皮下胰岛素：从过去的注射预计算残留
+        var subQ1 = 0.0
+        var subQ2 = 0.0
+        for (ins in insulins) {
+            val T = ins.timeMinutes
+            if (T < 0) continue
+            // 1 U = 100 mU (近似; 实际1U ≈ 6000 pmol, 但用mU方便与I(mU/L)对接)
+            val mU = ins.doseUnits * 100.0
+            val ka1 = params.ka1; val ka2 = params.ka2
+            // 双指数衰减：注入→subQ1→subQ2→血浆
+            subQ1 += mU * exp(-ka1 * T)
+            if (abs(ka2 - ka1) > 1e-6) {
+                subQ2 += mU * ka1 / (ka2 - ka1) * (exp(-ka1 * T) - exp(-ka2 * T))
+            } else {
+                subQ2 += mU * ka1 * T * exp(-ka1 * T)
+            }
+        }
+
+        // ★ 从皮下储库推算初始血浆胰岛素（避免与IOB重复计算）
+        // 伪稳态: dI/dt ≈ 0 ⇒ I_ss ≈ ka2*subQ2 / (ke*Vi) + Ib
+        val insFromDepot = params.ka2 * subQ2 / (params.ke * Vi)
+        var I = (Ib + insFromDepot).coerceIn(Ib * 0.5, Ib * 8.0)  // 限制在生理范围
+        // 若调用者提供了显著高于储库推算的currentInsulin（例如刚注射完），取其高值
+        if (currentInsulin > I * 1.5) I = currentInsulin.coerceAtMost(Ib * 8.0)
+
+        // 胰岛素远端作用：从初始I计算预激活
         var X = max(0.0, (I - Ib) / Ib).coerceIn(0.0, 3.0)
         var X_L = max(0.0, (I - Ib) / Ib).coerceIn(0.0, 3.0)
 
@@ -123,24 +198,6 @@ class DallaManModel {
                 gut += mg * kS / (kG - kS) * (exp(-kS * T) - exp(-kG * T))
             } else {
                 gut += mg * kS * T * exp(-kS * T)  // kG≈kS 极限情况
-            }
-        }
-
-        // 皮下胰岛素：从过去的注射预计算残留
-        var subQ1 = 0.0
-        var subQ2 = 0.0
-        for (ins in insulins) {
-            val T = ins.timeMinutes
-            if (T < 0) continue
-            // 1 U = 100 mU (近似; 实际1U ≈ 6000 pmol, 但用mU方便与I(mU/L)对接)
-            val mU = ins.doseUnits * 100.0
-            val ka1 = params.ka1; val ka2 = params.ka2
-            // 双指数衰减：注入→subQ1→subQ2→血浆
-            subQ1 += mU * exp(-ka1 * T)
-            if (abs(ka2 - ka1) > 1e-6) {
-                subQ2 += mU * ka1 / (ka2 - ka1) * (exp(-ka1 * T) - exp(-ka2 * T))
-            } else {
-                subQ2 += mU * ka1 * T * exp(-ka1 * T)
             }
         }
 

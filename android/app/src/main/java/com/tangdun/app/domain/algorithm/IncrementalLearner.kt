@@ -149,22 +149,26 @@ class IncrementalLearner(private val context: Context) {
         val l2Reg = WEIGHT_DECAY
 
         // ── Backward: layer 2 ──
+        // ★ 先计算dHidden（使用旧w2），再更新w2（链式法则要求）
         val dHidden = FloatArray(HIDDEN_DIM)
         for (i in 0 until HIDDEN_DIM) {
             var grad = 0f
             for (j in 0 until OUTPUT_DIM) {
-                // dL/dW2 = dOutput × hidden
-                val dw = dOutput[j] * hidden[i] + l2Reg * w2[i][j]
-                vW2[i][j] = MOMENTUM * vW2[i][j] - LEARNING_RATE * dw
-                w2[i][j] += vW2[i][j]
-                // 累积到 dHidden
-                grad += dOutput[j] * w2[i][j]
+                grad += dOutput[j] * w2[i][j]  // 使用更新前的w2
             }
             dHidden[i] = grad
         }
+        // 更新 w2（隐藏层→输出层）
+        for (i in 0 until HIDDEN_DIM) {
+            for (j in 0 until OUTPUT_DIM) {
+                val dw = dOutput[j] * hidden[i] + l2Reg * w2[i][j]
+                vW2[i][j] = MOMENTUM * vW2[i][j] - LEARNING_RATE * dw
+                w2[i][j] += vW2[i][j]
+            }
+        }
+        // 更新 b2（偏置通常不加L2正则）
         for (j in 0 until OUTPUT_DIM) {
-            val db = dOutput[j] + l2Reg * b2[j]
-            vB2[j] = MOMENTUM * vB2[j] - LEARNING_RATE * db
+            vB2[j] = MOMENTUM * vB2[j] - LEARNING_RATE * dOutput[j]
             b2[j] += vB2[j]
         }
 
@@ -179,8 +183,7 @@ class IncrementalLearner(private val context: Context) {
         }
         for (j in 0 until HIDDEN_DIM) {
             if (hiddenPreAct[j] <= 0) continue
-            val db = dHidden[j] + l2Reg * b1[j]
-            vB1[j] = MOMENTUM * vB1[j] - LEARNING_RATE * db
+            vB1[j] = MOMENTUM * vB1[j] - LEARNING_RATE * dHidden[j]
             b1[j] += vB1[j]
         }
 

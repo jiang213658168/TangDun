@@ -86,7 +86,7 @@ class PredictionViewModel @Inject constructor(
 
                 // Dalla Man 生理模型: 24h进食 + 24h胰岛素
                 val weight = settings.getWeightKg().toDouble()
-                val dmParams = DallaManModel.Parameters(bodyWeight = weight)
+                val dmParams = DallaManModel.Parameters.forChinese(bodyWeight = weight)
                 val mealInputs = meals24h.takeLast(5).map { DallaManModel.MealInput((now - it.timestamp) / 60000.0, it.totalCarbs, it.avgGi) }
                 val insulinInputs = insulin.filter { it.insulinType == "rapid" }.takeLast(10).map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }
                 val dmCurve = physiological.predict(g, maxOf(iob * 15.0, 5.0), mealInputs, insulinInputs, horizonMinutes = 120, stepMinutes = 5, params = dmParams)
@@ -103,8 +103,8 @@ class PredictionViewModel @Inject constructor(
                 if (tcnOk && records.size >= 10) {
                     try {
                         val bh = DoubleArray(288) { 0.0 }; val ch = DoubleArray(288) { 0.0 }
-                        for (r in insulin) { val i = (287 - ((now - r.timestamp) / 300000).toInt()); if (i in 0..287) bh[i] = r.doseUnits }
-                        for (m in meals24h) { val i = (287 - ((now - m.timestamp) / 300000).toInt()); if (i in 0..287) ch[i] = m.totalCarbs }
+                        for (r in insulin) { val i = (287 - ((now - r.timestamp) / 300000).toInt()); if (i in 0..287) bh[i] += r.doseUnits }
+                        for (m in meals24h) { val i = (287 - ((now - m.timestamp) / 300000).toInt()); if (i in 0..287) ch[i] += m.totalCarbs }
                         val r = predictor.predict(gh, g, bh, ch)
                         if (r != null && r.curve.size >= 25) {
                             tcnW = r.tcnWeight; merged = (0 until 25).map { i -> tcnW * r.curve[i] + (1 - tcnW) * personalizedCurve[i] }
