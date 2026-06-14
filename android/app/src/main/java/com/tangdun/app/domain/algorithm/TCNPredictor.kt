@@ -24,12 +24,28 @@ class TCNPredictor(private val context: Context) {
      */
     fun loadModel(): Boolean {
         return try {
-            val modelBytes = context.assets.open("model_curve_v2.onnx").readBytes()
-            session = env.createSession(modelBytes)
+            val assets = context.assets
+            val files = assets.list("")?.toList() ?: emptyList()
+            android.util.Log.i("TCNPredictor", "Assets files: $files")
+            val hasModel = files.any { it == "model_curve_v2.onnx" }
+            android.util.Log.i("TCNPredictor", "model_curve_v2.onnx exists in assets: $hasModel")
+
+            if (!hasModel) {
+                android.util.Log.e("TCNPredictor", "ONNX模型文件不在assets中!")
+                isLoaded = false
+                return false
+            }
+
+            val modelBytes = assets.open("model_curve_v2.onnx").readBytes()
+            android.util.Log.i("TCNPredictor", "Model size: ${modelBytes.size} bytes")
+
+            val sessionOptions = ai.onnxruntime.OrtSession.SessionOptions()
+            session = env.createSession(modelBytes, sessionOptions)
+            android.util.Log.i("TCNPredictor", "ONNX session created: input=${session?.inputNames}, output=${session?.outputNames}")
             isLoaded = true
             true
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("TCNPredictor", "ONNX加载失败: ${e.javaClass.simpleName}: ${e.message}", e)
             isLoaded = false
             false
         }

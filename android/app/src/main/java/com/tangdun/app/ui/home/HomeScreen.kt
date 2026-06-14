@@ -1,7 +1,9 @@
 package com.tangdun.app.ui.home
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -24,6 +26,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.tangdun.app.sync.CGMNotificationListener
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tangdun.app.ui.theme.*
 import java.util.Calendar
@@ -66,27 +69,13 @@ fun HomeScreen(
             )
         )
 
-        // xDrip+转发状态
-        if (!uiState.isXDripConnected) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = AlertInfo.copy(alpha = 0.08f))
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Sync, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("通过 xDrip+ 获取血糖", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        "xdrip+设置 → Inter-app → ✅Broadcast locally → Identify receiver: com.tangdun.app",
-                        style = MaterialTheme.typography.bodySmall, color = TextHint
-                    )
-                }
-            }
-        }
+        // 数据源状态
+        DataSourceCard(
+            hasData = uiState.records.isNotEmpty(),
+            recordCount = uiState.recordCount,
+            syncMsg = uiState.error,
+            onSync = { viewModel.syncHistory() }
+        )
 
         // 预警横幅
         if (uiState.alerts.isNotEmpty()) {
@@ -115,8 +104,8 @@ fun HomeScreen(
         // 今日血糖曲线
         GlucoseChartCard(
             data = uiState.glucoseData,
-            targetLow = 3.9,
-            targetHigh = 10.0
+            targetLow = uiState.targetLow.toDouble(),
+            targetHigh = uiState.targetHigh.toDouble()
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -353,123 +342,59 @@ fun AlertBanner(message: String, severity: String) {
 
 @Composable
 fun GlucoseCard(
-    currentValue: Double?,
-    trend: String?,
-    change30min: Double?,
-    onAddClick: () -> Unit
+    currentValue: Double?, trend: String?, change30min: Double?, onAddClick: () -> Unit
 ) {
-    val glucoseColor = when {
-        currentValue == null -> TextHint
-        currentValue < 3.0 -> GlucoseSevereLow
-        currentValue < 3.9 -> GlucoseLow
-        currentValue <= 10.0 -> GlucoseNormal
-        currentValue <= 13.9 -> GlucoseHigh
-        else -> GlucoseSevereHigh
-    }
-
-    val trendText = when (trend) {
-        "rising_fast" -> "⬆️ 快速上升"
-        "rising" -> "↗️ 上升"
-        "stable" -> "➡️ 平稳"
-        "falling" -> "↘️ 下降"
-        "falling_fast" -> "⬇️ 快速下降"
-        else -> "❓ 未知"
-    }
-
+    val g = currentValue
+    val bgColor = when { g == null -> TextHint; g < 3.0 -> GlucoseSevereLow; g < 3.9 -> GlucoseLow; g <= 10.0 -> GlucoseNormal; g <= 13.9 -> GlucoseHigh; else -> GlucoseSevereHigh }
+    val bgLabel = when { g == null -> ""; g < 3.0 -> "严重低血糖"; g < 3.9 -> "低血糖"; g <= 10.0 -> "正常"; g <= 13.9 -> "高血糖"; else -> "严重高血糖" }
+    val trendEmoji = when (trend) { "rising_fast" -> "⬆️"; "rising" -> "↗️"; "stable" -> "➡️"; "falling" -> "↘️"; "falling_fast" -> "⬇️"; else -> "" }
+    val trendLabel = when (trend) { "rising_fast" -> "快速上升"; "rising" -> "上升"; "stable" -> "平稳"; "falling" -> "下降"; "falling_fast" -> "快速下降"; else -> "" }
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = bgColor.copy(alpha = 0.06f))
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "当前血糖",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (currentValue != null) {
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = String.format("%.1f", currentValue),
-                        style = MaterialTheme.typography.displayLarge.copy(
-                            fontSize = 56.sp,
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = glucoseColor
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "mmol/L",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = TextSecondary,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+        Box {
+            Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                // 标签
+                Surface(shape = RoundedCornerShape(20.dp), color = bgColor.copy(alpha = 0.12f)) {
+                    Text(bgLabel, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        fontSize = 13.sp, fontWeight = FontWeight.Medium, color = bgColor)
                 }
+                Spacer(Modifier.height(16.dp))
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(glucoseColor)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = trendText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = glucoseColor
-                    )
-                }
-
-                if (change30min != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "30分钟变化: ${String.format("%+.1f", change30min)} mmol/L",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextHint
-                    )
-                }
-            } else {
-                // 无数据状态
-                Spacer(modifier = Modifier.height(16.dp))
-                Icon(
-                    Icons.Default.Bloodtype,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = TextHint
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "暂无血糖数据",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TextHint
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    onClick = onAddClick,
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("记录血糖")
+                if (g != null) {
+                    // 大数字
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(String.format("%.1f", g), fontSize = 64.sp, fontWeight = FontWeight.ExtraBold, color = TextDark)
+                        Spacer(Modifier.width(6.dp))
+                        Text("mmol/L", fontSize = 14.sp, color = TextBody, modifier = Modifier.padding(bottom = 12.dp))
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    // 趋势
+                    if (trendLabel.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(trendEmoji, fontSize = 18.sp)
+                            Spacer(Modifier.width(6.dp))
+                            Text(trendLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = bgColor)
+                        }
+                    }
+                    if (change30min != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text("30min ${String.format("%+.1f", change30min)}", fontSize = 12.sp, color = TextHint)
+                    }
+                } else {
+                    Icon(Icons.Default.WaterDrop, null, Modifier.size(56.dp), tint = TextHint.copy(alpha = 0.5f))
+                    Spacer(Modifier.height(12.dp))
+                    Text("暂无血糖数据", fontSize = 16.sp, color = TextHint)
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = onAddClick, shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Primary)) {
+                        Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("手动记录")
+                    }
                 }
             }
         }
@@ -978,5 +903,71 @@ fun AddGlucoseDialog(
                 TimePicker(state = timePickerState)
             }
         )
+    }
+}
+
+@Composable
+fun DataSourceCard(hasData: Boolean, recordCount: Int, syncMsg: String?, onSync: () -> Unit) {
+    val context = LocalContext.current
+    var testResult by remember { mutableStateOf("") }
+    var lastRxTime by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        val prefs = context.applicationContext.getSharedPreferences("glucose_rx_log", android.content.Context.MODE_PRIVATE)
+        val time = prefs.getLong("last_receive_time", 0)
+        if (time > 0) {
+            val sdf = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
+            lastRxTime = "最后接收: ${sdf.format(java.util.Date(time))}"
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = if (hasData) AlertSuccess.copy(alpha = 0.08f) else AlertWarning.copy(alpha = 0.08f))
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (hasData) Icons.Default.CheckCircle else Icons.Default.Sync, null,
+                    tint = if (hasData) AlertSuccess else AlertWarning, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (hasData) "广播接收正常 (${recordCount}条)" else "等待广播数据...",
+                    style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            }
+            if (lastRxTime.isNotEmpty()) Text(lastRxTime, style = MaterialTheme.typography.bodySmall, color = TextHint)
+            // 显示通知监听状态
+            val notifyOk = CGMNotificationListener.isEnabled(context)
+            val notifyMsg = when {
+                notifyOk && hasData -> "通知监听 ✅ | 广播 ✅"
+                notifyOk -> "通知监听 ✅ | 等待数据..."
+                else -> "通知监听 ❌ | 请去设置开启"
+            }
+            Text(notifyMsg, fontSize = 11.sp, color = if (notifyOk) AlertSuccess else AlertWarning)
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    testResult = "发送中..."
+                    try {
+                        context.sendBroadcast(android.content.Intent("com.eveningoutpost.dexdrip.BgEstimate").apply {
+                            setPackage("com.tangdun.app")
+                            putExtra("com.eveningoutpost.dexdrip.Extras.BgEstimate", 126.0)
+                            putExtra("com.eveningoutpost.dexdrip.Extras.Time", System.currentTimeMillis())
+                        })
+                        testResult = "✅ 自检通过"
+                    } catch (e: Exception) { testResult = "❌ ${e.message}" }
+                }) { Text("自检", style = MaterialTheme.typography.bodySmall) }
+                OutlinedButton(onClick = onSync) { Text("同步历史", style = MaterialTheme.typography.bodySmall) }
+                OutlinedButton(onClick = {
+                    if (notifyOk) {
+                        CGMNotificationListener.requestRebind(context)
+                        testResult = "通知监听已重新绑定"
+                    } else {
+                        CGMNotificationListener.openSettings(context)
+                    }
+                }) { Text(if (notifyOk) "刷新监听" else "开启监听", style = MaterialTheme.typography.bodySmall) }
+            }
+            if (syncMsg != null && syncMsg.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(syncMsg, fontSize = 12.sp, color = if (syncMsg.startsWith("已同步")) AlertSuccess else TextSecondary) }
+            if (testResult.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(testResult, fontSize = 12.sp, color = TextSecondary) }
+        }
     }
 }

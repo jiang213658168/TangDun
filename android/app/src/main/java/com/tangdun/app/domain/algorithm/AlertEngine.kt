@@ -4,200 +4,142 @@ import com.tangdun.app.data.local.entity.AlertRecord
 import com.tangdun.app.data.local.entity.GlucoseRecord
 
 /**
- * 预警引擎
+ * 预警引擎 — 移植自 xDrip+ alert 系统
  *
- * 6类预警规则：
- * 1. 低血糖预警 (< 3.9 mmol/L)
- * 2. 高血糖预警 (> 10.0 mmol/L)
- * 3. 严重低血糖 (< 3.0 mmol/L)
- * 4. 严重高血糖 (> 13.9 mmol/L)
- * 5. 血糖快速上升 (ROC > 0.1 mmol/L/min)
- * 6. 血糖快速下降 (ROC < -0.1 mmol/L/min)
+ * 预警类型:
+ * - 低血糖 (<3.9) / 严重低血糖 (<3.0)
+ * - 高血糖 (>10.0) / 严重高血糖 (>13.9)
+ * - 预测低/高血糖 (30分钟后)
+ * - 快速上升/下降 (ROC >0.1 / <-0.1 mmol/L/min)
+ * - 数据缺失 (>30分钟无读数)
+ * - 传感器到期提醒
  *
- * 基于后端 app/services/alert_service.py 移植
+ * 特性:
+ * - 智能防抖: 同类预警5分钟内不重复
+ * - 分级严重度: critical/warning/info
+ * - 中文操作建议
  */
 class AlertEngine {
 
-    // 阈值配置
     companion object {
-        const val TARGET_LOW = 3.9      // 目标下限 (mmol/L)
-        const val TARGET_HIGH = 10.0    // 目标上限 (mmol/L)
-        const val SEVERE_LOW = 3.0      // 严重低血糖阈值
-        const val SEVERE_HIGH = 13.9    // 严重高血糖阈值
-        const val RAPID_CHANGE = 0.1    // 快速变化阈值 (mmol/L/min)
+        const val LOW = 3.9; const val SEVERE_LOW = 3.0
+        const val HIGH = 10.0; const val SEVERE_HIGH = 13.9
+        const val RAPID_RISE = 0.1  // mmol/L/min
+        const val RAPID_FALL = -0.1
+        const val MISSED_READING_MIN = 30  // 无数据超时(分钟)
     }
 
-    /**
-     * 检查所有预警规则
-     *
-     * @return 触发的预警列表
-     */
+    // 防抖: 记录上次各类型预警时间
+    private val lastAlertTime = mutableMapOf<String, Long>()
+
     fun checkAll(
-        currentValue: Double,
-        trend: String?,
-        predicted30min: Double? = null,
-        recentROC: Double? = null
+        currentValue: Double, trend: String?, predicted30min: Double?,
+        recentROC: Double?, lastReadingTime: Long? = null
     ): List<AlertRecord> {
         val alerts = mutableListOf<AlertRecord>()
         val now = System.currentTimeMillis()
 
-        // 1. 严重低血糖
+        // 严重低血糖
         if (currentValue < SEVERE_LOW) {
-            alerts.add(AlertRecord(
-                alertType = AlertRecord.SEVERE_LOW,
-                severity = "critical",
+            alerts.add(AlertRecord(alertType = AlertRecord.SEVERE_LOW, severity = "critical",
                 glucoseValue = currentValue,
-                message = "严重低血糖！当前血糖 ${String.format("%.1f", currentValue)} mmol/L",
-                action = AlertRecord.getAction(AlertRecord.SEVERE_LOW, currentValue),
-                createdAt = now
-            ))
+                message = "严重低血糖 ${String.format("%.1f", currentValue)} mmol/L！",
+                action = "立即补充20g快速碳水(葡萄糖片4-5片/果汁200ml)，15分钟后复查。如意识不清请拨打120。"))
         }
-        // 2. 低血糖
-        else if (currentValue < TARGET_LOW) {
-            alerts.add(AlertRecord(
-                alertType = AlertRecord.LOW_GLUCOSE,
-                severity = "warning",
+        // 低血糖
+        else if (currentValue < LOW) {
+            alerts.add(AlertRecord(alertType = AlertRecord.LOW_GLUCOSE, severity = "warning",
                 glucoseValue = currentValue,
-                message = "低血糖预警，当前血糖 ${String.format("%.1f", currentValue)} mmol/L",
-                action = AlertRecord.getAction(AlertRecord.LOW_GLUCOSE, currentValue),
-                createdAt = now
-            ))
+                message = "低血糖 ${String.format("%.1f", currentValue)} mmol/L",
+                action = "补充15g快速碳水(3-4片葡萄糖片/半杯果汁)，15分钟后复查。"))
         }
 
-        // 3. 严重高血糖
+        // 严重高血糖
         if (currentValue > SEVERE_HIGH) {
-            alerts.add(AlertRecord(
-                alertType = AlertRecord.SEVERE_HIGH,
-                severity = "critical",
+            alerts.add(AlertRecord(alertType = AlertRecord.SEVERE_HIGH, severity = "critical",
                 glucoseValue = currentValue,
-                message = "严重高血糖！当前血糖 ${String.format("%.1f", currentValue)} mmol/L",
-                action = AlertRecord.getAction(AlertRecord.SEVERE_HIGH, currentValue),
-                createdAt = now
-            ))
+                message = "严重高血糖 ${String.format("%.1f", currentValue)} mmol/L！",
+                action = "请立即检测血/尿酮体。酮体阳性请立即就医。多喝水，不要剧烈运动。"))
         }
-        // 4. 高血糖
-        else if (currentValue > TARGET_HIGH) {
-            alerts.add(AlertRecord(
-                alertType = AlertRecord.HIGH_GLUCOSE,
-                severity = "warning",
+        // 高血糖
+        else if (currentValue > HIGH) {
+            alerts.add(AlertRecord(alertType = AlertRecord.HIGH_GLUCOSE, severity = "warning",
                 glucoseValue = currentValue,
-                message = "高血糖预警，当前血糖 ${String.format("%.1f", currentValue)} mmol/L",
-                action = AlertRecord.getAction(AlertRecord.HIGH_GLUCOSE, currentValue),
-                createdAt = now
-            ))
+                message = "高血糖 ${String.format("%.1f", currentValue)} mmol/L",
+                action = "多喝水，可适量快走20-30分钟。1小时后复查。如持续偏高考虑补针。"))
         }
 
-        // 5. 血糖快速上升
-        if (recentROC != null && recentROC > RAPID_CHANGE) {
-            alerts.add(AlertRecord(
-                alertType = AlertRecord.RAPID_RISE,
-                severity = "warning",
-                glucoseValue = currentValue,
-                message = "血糖快速上升，变化率 ${String.format("%.2f", recentROC * 60)} mmol/L/h",
-                action = AlertRecord.getAction(AlertRecord.RAPID_RISE, currentValue),
-                createdAt = now
-            ))
+        // 快速上升/下降
+        if (recentROC != null) {
+            if (recentROC > RAPID_RISE) {
+                alerts.add(AlertRecord(alertType = AlertRecord.RAPID_RISE, severity = "info",
+                    glucoseValue = currentValue,
+                    message = "血糖快速上升 ${String.format("%.2f", recentROC)} mmol/L/min",
+                    action = "检查是否进食过多碳水或胰岛素不足。关注趋势变化。"))
+            }
+            if (recentROC < RAPID_FALL) {
+                alerts.add(AlertRecord(alertType = AlertRecord.RAPID_FALL, severity = "warning",
+                    glucoseValue = currentValue,
+                    message = "血糖快速下降 ${String.format("%.2f", recentROC)} mmol/L/min",
+                    action = "注意预防低血糖！如有过量的活性胰岛素，请提前补充碳水。"))
+            }
         }
 
-        // 6. 血糖快速下降
-        if (recentROC != null && recentROC < -RAPID_CHANGE) {
-            alerts.add(AlertRecord(
-                alertType = AlertRecord.RAPID_FALL,
-                severity = "warning",
-                glucoseValue = currentValue,
-                message = "血糖快速下降，变化率 ${String.format("%.2f", recentROC * 60)} mmol/L/h",
-                action = AlertRecord.getAction(AlertRecord.RAPID_FALL, currentValue),
-                createdAt = now
-            ))
+        // 预测低/高血糖
+        if (predicted30min != null) {
+            if (predicted30min < LOW) {
+                alerts.add(AlertRecord(alertType = AlertRecord.PREDICTED_LOW, severity = "warning",
+                    glucoseValue = currentValue, predictedValue = predicted30min,
+                    message = "预测30分钟后低血糖 ${String.format("%.1f", predicted30min)} mmol/L",
+                    action = "建议提前补充15-20g慢消化碳水(全麦面包/牛奶)预防低血糖。"))
+            }
+            if (predicted30min > HIGH) {
+                alerts.add(AlertRecord(alertType = AlertRecord.PREDICTED_HIGH, severity = "info",
+                    glucoseValue = currentValue, predictedValue = predicted30min,
+                    message = "预测30分钟后高血糖 ${String.format("%.1f", predicted30min)} mmol/L",
+                    action = "关注饮食和胰岛素，可提前干预。"))
+            }
         }
 
-        // 7. 预测低血糖
-        if (predicted30min != null && predicted30min < TARGET_LOW) {
-            alerts.add(AlertRecord(
-                alertType = AlertRecord.PREDICTED_LOW,
-                severity = "warning",
-                glucoseValue = currentValue,
-                predictedValue = predicted30min,
-                message = "预测30分钟后血糖 ${String.format("%.1f", predicted30min)} mmol/L，可能低血糖",
-                action = AlertRecord.getAction(AlertRecord.PREDICTED_LOW, predicted30min),
-                createdAt = now
-            ))
+        // 数据缺失
+        if (lastReadingTime != null && (now - lastReadingTime) > MISSED_READING_MIN * 60000) {
+            val min = (now - lastReadingTime) / 60000
+            alerts.add(AlertRecord(alertType = AlertRecord.SENSOR_EXPIRING, severity = "info",
+                message = "已${min}分钟无血糖数据",
+                action = "请检查CGM传感器连接，确保App在后台运行。"))
         }
 
-        // 8. 预测高血糖
-        if (predicted30min != null && predicted30min > TARGET_HIGH) {
-            alerts.add(AlertRecord(
-                alertType = AlertRecord.PREDICTED_HIGH,
-                severity = "info",
-                glucoseValue = currentValue,
-                predictedValue = predicted30min,
-                message = "预测30分钟后血糖 ${String.format("%.1f", predicted30min)} mmol/L",
-                action = AlertRecord.getAction(AlertRecord.PREDICTED_HIGH, predicted30min),
-                createdAt = now
-            ))
+        // 防抖过滤
+        return alerts.filter { alert ->
+            val key = alert.alertType
+            val last = lastAlertTime[key] ?: 0
+            if (now - last < 300_000) false  // 5分钟内同类不重复
+            else { lastAlertTime[key] = now; true }
         }
-
-        return alerts
     }
 
-    /**
-     * 计算血糖风险指数（GRI）
-     *
-     * GRI = 3.0 × (% time below 54 mg/dL) + 2.4 × (% time 54-70 mg/dL)
-     *       + 1.6 × (% time above 180 mg/dL) + 0.8 × (% time above 250 mg/dL)
-     *
-     * 范围：0-100，越低越好
-     */
-    fun calculateGRI(records: List<GlucoseRecord>): Double {
-        if (records.isEmpty()) return 0.0
-
-        val total = records.size.toDouble()
-        val severeLowCount = records.count { it.value < 3.0 }  // < 54 mg/dL
-        val lowCount = records.count { it.value in 3.0..3.9 }   // 54-70 mg/dL
-        val highCount = records.count { it.value in 10.0..13.9 } // 180-250 mg/dL
-        val severeHighCount = records.count { it.value > 13.9 }  // > 250 mg/dL
-
-        return 3.0 * (severeLowCount / total * 100) +
-               2.4 * (lowCount / total * 100) +
-               1.6 * (highCount / total * 100) +
-               0.8 * (severeHighCount / total * 100)
-    }
-
-    /**
-     * 计算TIR（目标范围内时间百分比）
-     *
-     * 目标范围：3.9-10.0 mmol/L
-     * 临床目标：> 70%
-     */
     fun calculateTIR(records: List<GlucoseRecord>): TIRResult {
         if (records.isEmpty()) return TIRResult()
-
         val total = records.size.toDouble()
-        val inRange = records.count { it.value in TARGET_LOW..TARGET_HIGH }
-        val belowRange = records.count { it.value < TARGET_LOW }
-        val aboveRange = records.count { it.value > TARGET_HIGH }
-
         return TIRResult(
-            inRange = inRange / total * 100,
-            belowRange = belowRange / total * 100,
-            aboveRange = aboveRange / total * 100
+            inRange = records.count { it.value in LOW..HIGH } / total * 100,
+            belowRange = records.count { it.value < LOW } / total * 100,
+            aboveRange = records.count { it.value > HIGH } / total * 100
         )
     }
-}
 
-/**
- * TIR结果
- */
-data class TIRResult(
-    val inRange: Double = 0.0,      // 目标范围内百分比
-    val belowRange: Double = 0.0,   // 低于目标百分比
-    val aboveRange: Double = 0.0    // 高于目标百分比
-) {
-    /** 临床评价 */
-    fun getEvaluation(): String = when {
-        inRange >= 70 -> "优秀"
-        inRange >= 50 -> "良好"
-        inRange >= 30 -> "一般"
-        else -> "需要改善"
+    fun calculateGRI(records: List<GlucoseRecord>): Double {
+        if (records.isEmpty()) return 0.0
+        val n = records.size.toDouble()
+        return 3.0 * records.count { it.value < 3.0 } / n * 100 +
+            2.4 * records.count { it.value in 3.0..3.9 } / n * 100 +
+            1.6 * records.count { it.value in 10.0..13.9 } / n * 100 +
+            0.8 * records.count { it.value > 13.9 } / n * 100
     }
 }
+
+data class TIRResult(
+    val inRange: Double = 0.0,
+    val belowRange: Double = 0.0,
+    val aboveRange: Double = 0.0
+)

@@ -28,7 +28,6 @@
 
     <!-- 前台服务 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
 
     <!-- xDrip+ 广播权限（xDrip+ 定义，我们需要持有才能收到带权限的广播） -->
     <uses-permission android:name="com.eveningoutpost.dexdrip.permissions.RECEIVE_BG_ESTIMATE"/>
@@ -67,11 +66,14 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths"/>
         </provider>
 
-        <!-- 后台保活服务 -->
-        <service
-            android:name=".sync.KeepAliveService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
+        <!-- CGM通知监听 — 直接从欧态健康通知栏读取血糖 (移植自xDrip+ UiBasedCollector) -->
+        <service android:name=".sync.CGMNotificationListener"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService"/>
+            </intent-filter>
+        </service>
 
         <!-- xDrip+ 广播接收器 -->
         <receiver android:name=".sync.DirectGlucoseBroadcastReceiver" android:exported="true">

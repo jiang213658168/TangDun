@@ -4,8 +4,9 @@ import android.content.Context
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.*
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -16,6 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tangdun.app.util.ActivationManager
 import com.tangdun.app.util.SettingsManager
 import kotlinx.coroutines.delay
 
@@ -26,20 +28,16 @@ import kotlinx.coroutines.delay
 fun SplashScreen(onFinish: () -> Unit) {
     val context = LocalContext.current
     var showAgreement by remember { mutableStateOf(false) }
-    val alpha by animateFloatAsState(
-        targetValue = if (!showAgreement) 1f else 0f,
-        animationSpec = tween(800)
-    )
+    var showActivate by remember { mutableStateOf(false) }
+    val activator = remember { ActivationManager(context) }
+    val alpha by animateFloatAsState(targetValue = if (!showAgreement && !showActivate) 1f else 0f, animationSpec = tween(800))
 
     LaunchedEffect(Unit) {
         delay(1200)
-        val agreed = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-            .getBoolean("agreement_accepted", false)
-        if (!agreed) {
-            showAgreement = true
-        } else {
-            onFinish()
-        }
+        val agreed = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).getBoolean("agreement_accepted", false)
+        if (!agreed) { showAgreement = true }
+        else if (!activator.isActivated() || activator.isExpired()) { showActivate = true }
+        else { onFinish() }
     }
 
     Box(
@@ -74,7 +72,8 @@ fun SplashScreen(onFinish: () -> Unit) {
                 context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                     .edit().putBoolean("agreement_accepted", true).apply()
                 showAgreement = false
-                onFinish()
+                if (!activator.isActivated() || activator.isExpired()) { showActivate = true }
+                else { onFinish() }
             },
             onReject = {
                 // 退出应用
@@ -82,6 +81,38 @@ fun SplashScreen(onFinish: () -> Unit) {
             }
         )
     }
+
+    if (showActivate) {
+        var showResult by remember { mutableStateOf(false) }
+        ActivationDialog(activator = activator, onSuccess = { showResult = true })
+        if (showResult) {
+            ActivationResultDialog(activator = activator, onFinish = { showActivate = false; showResult = false; onFinish() })
+        }
+    }
+}
+
+@Composable
+fun ActivationDialog(activator: ActivationManager, onSuccess: () -> Unit) {
+    var code by remember { mutableStateOf("") }; var msg by remember { mutableStateOf("") }; var loading by remember { mutableStateOf(false) }
+    AlertDialog(onDismissRequest = {}, title = { Text("请输入激活码") }, text = {
+        Column { Text("请输入有效的激活码以使用糖盾。", fontSize = 13.sp); Spacer(Modifier.height(12.dp)); OutlinedTextField(value = code, onValueChange = { code = it }, label = { Text("激活码") }, singleLine = true); if (msg.isNotEmpty()) { Spacer(Modifier.height(8.dp)); Text(msg, fontSize = 12.sp, color = if (msg.contains("成功") || msg.contains("管理员")) Color(0xFF4CAF50) else Color(0xFFE53935)) } }
+    }, confirmButton = { TextButton(onClick = { if (code.isNotBlank()) { loading = true; val r = activator.activate(code); msg = r.msg; loading = false; if (r.ok) { code = ""; onSuccess() } } }, enabled = !loading) { Text(if (loading) "验证中..." else "激活") } }, dismissButton = { TextButton(onClick = { android.os.Process.killProcess(android.os.Process.myPid()) }) { Text("退出") } })
+}
+
+@Composable
+fun ActivationResultDialog(activator: ActivationManager, onFinish: () -> Unit) {
+    val isAdmin = activator.isAdmin()
+    val tips = buildString {
+        append(if (isAdmin) "管理员账号\n永久有效，所有功能无限制。" else "普通用户账号\n")
+        if (!isAdmin) {
+            for (f in listOf("chat" to "AI对话", "photo" to "拍照识别", "predict" to "血糖预测", "report" to "报告", "export" to "数据导出")) {
+                val n = activator.getRemaining(f.first)
+                if (n == Int.MAX_VALUE) append("${f.second}: 无限\n")
+                else if (n > 0) append("${f.second}: 每日${n}次\n")
+            }
+        }
+    }
+    AlertDialog(onDismissRequest = {}, title = { Text("激活成功") }, text = { Text(tips, fontSize = 14.sp) }, confirmButton = { TextButton(onClick = onFinish) { Text("开始使用") } })
 }
 
 @Composable

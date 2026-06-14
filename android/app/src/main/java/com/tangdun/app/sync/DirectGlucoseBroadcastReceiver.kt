@@ -7,6 +7,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import com.tangdun.app.TangDunApp
 import com.tangdun.app.data.local.entity.GlucoseRecord
+import com.tangdun.app.domain.algorithm.CGMCalibrator
 import com.tangdun.app.service.GlucoseAlarmService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +40,8 @@ class DirectGlucoseBroadcastReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        // goAsync() 告诉系统等待异步操作完成，防止数据丢失
+        val pending = goAsync()
         try {
             val action = intent.action ?: return
             val extras = intent.extras ?: return
@@ -98,7 +101,13 @@ class DirectGlucoseBroadcastReceiver : BroadcastReceiver() {
 
             // 保存到数据库
             if (glucoseMgDl in 20.0..600.0) {
-                val glucoseMmol = glucoseMgDl / 18.0
+                var glucoseMmol = glucoseMgDl / 18.0
+
+                // 应用指尖血校准
+                try {
+                    val calibrator = CGMCalibrator(context)
+                    glucoseMmol = calibrator.applyCalibration(glucoseMmol)
+                } catch (_: Exception) {}
 
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
@@ -124,6 +133,8 @@ class DirectGlucoseBroadcastReceiver : BroadcastReceiver() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "处理广播异常: ${e.message}")
+        } finally {
+            pending.finish()
         }
     }
 

@@ -1,6 +1,7 @@
 package com.tangdun.app.ui.home
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tangdun.app.data.local.dao.AlertDao
@@ -13,13 +14,10 @@ import com.tangdun.app.domain.algorithm.CGMPreprocessor
 import com.tangdun.app.domain.algorithm.SmartAdvisor
 import com.tangdun.app.domain.algorithm.TrendCalculator
 import com.tangdun.app.sync.XDripManager
+import com.tangdun.app.util.SettingsManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.*
 import javax.inject.Inject
@@ -37,6 +35,8 @@ data class HomeUiState(
     val tir: Double? = null,
     val recordCount: Int = 0,
     val isXDripConnected: Boolean = false,
+    val targetLow: Float = 3.9f,
+    val targetHigh: Float = 10.0f,
     val error: String? = null
 )
 
@@ -46,6 +46,7 @@ class HomeViewModel @Inject constructor(
     private val glucoseDao: GlucoseDao,
     private val alertDao: AlertDao,
     private val insulinDao: InsulinDao,
+    private val settingsManager: SettingsManager,
     private val cgmPreprocessor: CGMPreprocessor,
     private val alertEngine: AlertEngine,
     private val smartAdvisor: SmartAdvisor,
@@ -62,12 +63,23 @@ class HomeViewModel @Inject constructor(
         checkXDripStatus()
         startXDripSync()
 
-        // 🔥 监听数据库变化，收到新血糖时自动刷新首页
+        // 监听新血糖数据
         viewModelScope.launch {
             glucoseDao.getLatestFlow()
                 .filterNotNull()
                 .distinctUntilChanged { old, new -> old.timestamp == new.timestamp }
+                .debounce(2000)  // 2秒防抖，批量插入只触发一次
                 .collect { loadData() }
+        }
+
+        // 监听设置变化（目标范围改变时自动刷新）
+        viewModelScope.launch {
+            combine(settingsManager.targetLow, settingsManager.targetHigh) { low, high ->
+                Pair(low, high)
+            }.distinctUntilChanged().collect { (low, high) ->
+                _uiState.value = _uiState.value.copy(targetLow = low, targetHigh = high)
+                loadData()
+            }
         }
     }
 
@@ -180,8 +192,10 @@ class HomeViewModel @Inject constructor(
                     records.map { it.value }.average()
                 } else null
 
+                val low = _uiState.value.targetLow.toDouble()
+                val high = _uiState.value.targetHigh.toDouble()
                 val tir = if (records.isNotEmpty()) {
-                    val inRange = records.count { it.value in 3.9..10.0 }
+                    val inRange = records.count { it.value in low..high }
                     inRange.toDouble() / records.size * 100
                 } else null
 
@@ -207,20 +221,16 @@ class HomeViewModel @Inject constructor(
 
                 // 有数据就算连上了
                 val connected = _uiState.value.isXDripConnected || records.isNotEmpty()
+                val prev = _uiState.value
 
-                _uiState.value = HomeUiState(
+                _uiState.value = prev.copy(
                     isLoading = false,
                     currentGlucose = latest?.value,
-                    trend = trend,
-                    change30min = change30min,
-                    glucoseData = glucoseData,
-                    records = records,
-                    alerts = alerts,
-                    advices = advices,
-                    avgGlucose = avgGlucose,
-                    tir = tir,
-                    recordCount = records.size,
-                    isXDripConnected = connected
+                    trend = trend, change30min = change30min,
+                    glucoseData = glucoseData, records = records,
+                    alerts = alerts, advices = advices,
+                    avgGlucose = avgGlucose, tir = tir,
+                    recordCount = records.size, isXDripConnected = connected
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -248,36 +258,32 @@ class HomeViewModel @Inject constructor(
     /**
      * 启动xDrip+数据同步
      */
+    fun syncHistory() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(error = "正在同步xDrip+历史数据...")
+            try {
+                // 用REST API（需要xDrip+开启Web Server）
+                val readings = xDripManager.getGlucoseHistory(hours = 24 * 7)
+                if (readings.isEmpty()) {
+                    _uiState.value = _uiState.value.copy(error = "请开启xDrip+ Web Server:\n设置→Less common settings→Enable Web Server→端口17580")
+                    return@launch
+                }
+                val existing = glucoseDao.getByTimeRange(readings.first().timestamp, readings.last().timestamp).map { it.timestamp }.toSet()
+                val newRecords = readings.filter { it.timestamp !in existing }.map { r ->
+                    GlucoseRecord(timestamp = r.timestamp, value = r.valueMmol, source = "xdrip", trend = r.trend)
+                }
+                if (newRecords.isNotEmpty()) glucoseDao.insertAll(newRecords)
+                _uiState.value = _uiState.value.copy(isXDripConnected = true, error = if (newRecords.isNotEmpty()) "已同步${newRecords.size}条数据" else "数据已最新")
+                loadData()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = "同步失败: ${e.message}")
+            }
+        }
+    }
+
     private fun startXDripSync() {
         viewModelScope.launch {
-            try {
-                val readings = xDripManager.getGlucoseHistory(hours = 24)
-                if (readings.isNotEmpty()) {
-                    var savedCount = 0
-                    for (reading in readings) {
-                        val existing = glucoseDao.getLatest()
-                        if (existing != null && existing.timestamp >= reading.timestamp) {
-                            continue
-                        }
-
-                        val record = GlucoseRecord(
-                            timestamp = reading.timestamp,
-                            value = reading.valueMmol,
-                            source = "xdrip",
-                            trend = reading.trend
-                        )
-                        glucoseDao.insert(record)
-                        savedCount++
-                    }
-
-                    if (savedCount > 0) {
-                        _uiState.value = _uiState.value.copy(isXDripConnected = true)
-                        loadData()
-                    }
-                }
-            } catch (e: Exception) {
-                // xDrip+不可用
-            }
+            syncHistory()
         }
     }
 

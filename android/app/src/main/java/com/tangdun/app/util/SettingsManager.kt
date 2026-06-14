@@ -84,32 +84,42 @@ class SettingsManager(private val context: Context) {
         }
     }
 
-    // ===== 血糖目标范围 =====
+    // ===== 血糖目标范围（响应式）=====
 
-    fun getTargetLow(): Float {
-        return sharedPref.getFloat("target_low", 3.9f)
-    }
+    private val _targetLow = MutableStateFlow(sharedPref.getFloat("target_low", 3.9f))
+    val targetLow: StateFlow<Float> = _targetLow
 
-    fun getTargetHigh(): Float {
-        return sharedPref.getFloat("target_high", 10.0f)
-    }
+    private val _targetHigh = MutableStateFlow(sharedPref.getFloat("target_high", 10.0f))
+    val targetHigh: StateFlow<Float> = _targetHigh
+
+    fun getTargetLow(): Float = _targetLow.value
+    fun getTargetHigh(): Float = _targetHigh.value
 
     fun setTargetRange(low: Float, high: Float) {
-        sharedPref.edit()
-            .putFloat("target_low", low)
-            .putFloat("target_high", high)
-            .apply()
+        sharedPref.edit().putFloat("target_low", low).putFloat("target_high", high).apply()
+        _targetLow.value = low; _targetHigh.value = high
     }
+
+    private val _severeLow = MutableStateFlow(sharedPref.getFloat("severe_low", 3.0f))
+    val severeLow: StateFlow<Float> = _severeLow
+    fun getSevereLow(): Float = _severeLow.value
+    fun setSevereLow(v: Float) { sharedPref.edit().putFloat("severe_low", v).apply(); _severeLow.value = v }
+
+    private val _severeHigh = MutableStateFlow(sharedPref.getFloat("severe_high", 13.9f))
+    val severeHigh: StateFlow<Float> = _severeHigh
+    fun getSevereHigh(): Float = _severeHigh.value
+    fun setSevereHigh(v: Float) { sharedPref.edit().putFloat("severe_high", v).apply(); _severeHigh.value = v }
 
     // ===== 用户信息 =====
 
-    fun getUserName(): String {
-        return sharedPref.getString("user_name", "") ?: ""
-    }
+    fun getUserName(): String = sharedPref.getString("user_name", "") ?: ""
+    fun setUserName(name: String) { sharedPref.edit().putString("user_name", name).apply() }
 
-    fun setUserName(name: String) {
-        sharedPref.edit().putString("user_name", name).apply()
-    }
+    fun getWeightKg(): Float = sharedPref.getFloat("weight_kg", 60f)
+    fun setWeightKg(w: Float) { sharedPref.edit().putFloat("weight_kg", w).apply() }
+
+    fun getHeightCm(): Int = sharedPref.getInt("height_cm", 165)
+    fun setHeightCm(h: Int) { sharedPref.edit().putInt("height_cm", h).apply() }
 
     fun getDiabetesType(): Int {
         return sharedPref.getInt("diabetes_type", 1)  // 1=1型, 2=2型

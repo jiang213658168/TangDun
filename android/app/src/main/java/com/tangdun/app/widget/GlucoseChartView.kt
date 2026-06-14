@@ -2,275 +2,165 @@ package com.tangdun.app.widget
 
 import android.content.Context
 import android.graphics.*
-import android.util.AttributeSet
+import android.text.format.DateFormat
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 /**
- * 血糖曲线图
+ * xDrip+ 风格血糖图表
  *
- * 参考xDrip+的图表设计：
- * - 支持缩放和平移
- * - 显示时间轴
- * - 目标范围高亮
- * - 血糖值标注
+ * 特点：
+ * - 目标范围绿色背景高亮
+ * - 高血糖区域淡橙 / 低血糖区域淡红
+ * - 可触摸查看具体值
+ * - 数据点标记
+ * - 时间网格和数值网格
  */
 class GlucoseChartView @JvmOverloads constructor(
     context: Context,
-    attrs: AttributeSet? = null,
+    attrs: android.util.AttributeSet? = null,
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
-    // 数据点 (timestamp_ms, glucose_mmol)
     private var dataPoints: List<Pair<Long, Double>> = emptyList()
-
-    // 显示范围
-    private var startTime: Long = 0
-    private var endTime: Long = 0
-
-    // 目标范围
     private var targetLow = 3.9
     private var targetHigh = 10.0
+    private var minY = 2.0
+    private var maxY = 16.0
+
+    // 触摸
+    private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onSingleTapUp(e: MotionEvent): Boolean {
+            findNearest(e.x, e.y)
+            return true
+        }
+    })
+    private var selectedIndex = -1  // 选中的数据点
 
     // 画笔
-    private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#007A8C")
-        strokeWidth = 4f
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-    }
+    private val bgPaint = Paint().apply { color = Color.parseColor("#F2F5F7"); style = Paint.Style.FILL }
+    private val targetBg = Paint().apply { color = Color.parseColor("#2043A047"); style = Paint.Style.FILL }
+    private val highBg = Paint().apply { color = Color.parseColor("#10EF6C00"); style = Paint.Style.FILL }
+    private val lowBg = Paint().apply { color = Color.parseColor("#10E53935"); style = Paint.Style.FILL }
+    private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#E0E4E8"); strokeWidth = 1f; style = Paint.Style.STROKE }
+    private val targetLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#8043A047"); strokeWidth = 2f; style = Paint.Style.STROKE; pathEffect = DashPathEffect(floatArrayOf(8f, 4f), 0f) }
+    private val highLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#80EF6C00"); strokeWidth = 2f; style = Paint.Style.STROKE; pathEffect = DashPathEffect(floatArrayOf(8f, 4f), 0f) }
+    private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#14A3A8"); strokeWidth = 3f; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#14A3A8"); style = Paint.Style.FILL }
+    private val selDotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FF4444"); style = Paint.Style.FILL }
+    private val selRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FF4444"); style = Paint.Style.STROKE; strokeWidth = 3f }
+    private val selLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#40FF4444"); strokeWidth = 1f; style = Paint.Style.STROKE; pathEffect = DashPathEffect(floatArrayOf(4f, 4f), 0f) }
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#666666"); textSize = 28f }
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#333333"); textSize = 32f; isFakeBoldText = true }
+    private val timePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#999999"); textSize = 22f; textAlign = Paint.Align.CENTER }
 
-    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#20007A8C")
-        style = Paint.Style.FILL
-    }
-
-    private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#E0E0E0")
-        strokeWidth = 1f
-        style = Paint.Style.STROKE
-    }
-
-    private val targetPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        strokeWidth = 2f
-        style = Paint.Style.STROKE
-        pathEffect = DashPathEffect(floatArrayOf(10f, 5f), 0f)
-    }
-
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#666666")
-        textSize = 32f
-    }
-
-    private val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#333333")
-        textSize = 36f
-        isFakeBoldText = true
-    }
-
-    /**
-     * 设置数据
-     *
-     * @param points 数据点列表 (timestamp_ms, glucose_mmol)
-     */
     fun setData(points: List<Pair<Long, Double>>) {
         dataPoints = points.sortedBy { it.first }
         if (dataPoints.isNotEmpty()) {
-            startTime = dataPoints.first().first
-            endTime = dataPoints.last().first
+            minY = max(1.0, dataPoints.minOf { it.second } - 2.0).coerceAtMost(2.0)
+            maxY = min(30.0, dataPoints.maxOf { it.second } + 3.0).coerceAtLeast(12.0)
         }
         invalidate()
     }
 
-    /**
-     * 设置目标范围
-     */
-    fun setTargetRange(low: Double, high: Double) {
-        targetLow = low
-        targetHigh = high
+    fun setTargetRange(low: Double, high: Double) { targetLow = low; targetHigh = high; invalidate() }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        gestureDetector.onTouchEvent(event)
+        if (event.action == MotionEvent.ACTION_DOWN) { findNearest(event.x, event.y); return true }
+        return super.onTouchEvent(event)
+    }
+
+    private fun findNearest(x: Float, y: Float) {
+        if (dataPoints.size < 2) return
+        val pad = 60f; val cw = width - pad * 2
+        val startTime = dataPoints.first().first; val timeRange = dataPoints.last().first - startTime
+        if (timeRange == 0L) return
+        val tapTime = startTime + ((x - pad) / cw * timeRange).toLong()
+        selectedIndex = dataPoints.indices.minByOrNull { abs(dataPoints[it].first - tapTime) } ?: -1
         invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        val pad = 60f; val cw = width - pad * 2; val ch = height - pad * 2
+        val startTime = dataPoints.firstOrNull()?.first ?: return
+        val timeRange = (dataPoints.lastOrNull()?.first ?: return) - startTime
+        if (timeRange == 0L) return
 
-        val padding = 70f
-        val chartWidth = width - padding * 2
-        val chartHeight = height - padding * 2
+        fun toX(ts: Long) = pad + ((ts - startTime).toFloat() / timeRange * cw)
+        fun toY(v: Double) = pad + ((maxY - v.coerceIn(minY, maxY)) / (maxY - minY) * ch).toFloat()
 
-        if (dataPoints.isEmpty()) {
-            drawEmptyState(canvas, width / 2f, height / 2f)
-            return
+        // 背景区域
+        canvas.drawRect(pad, toY(targetHigh), width - pad, toY(targetLow), targetBg)  // 目标(绿)
+        canvas.drawRect(pad, toY(maxY), width - pad, toY(targetHigh), highBg)         // 高(橙)
+        canvas.drawRect(pad, toY(targetLow), width - pad, toY(minY), lowBg)           // 低(红)
+
+        // 网格
+        val step = when { maxY - minY > 12 -> 3.0; maxY - minY > 6 -> 2.0; else -> 1.0 }
+        var v = (minY / step).toInt() * step
+        while (v <= maxY) {
+            val y = toY(v)
+            canvas.drawLine(pad, y, width - pad, y, gridPaint)
+            canvas.drawText(String.format("%.0f", v), 4f, y + 8f, textPaint)
+            v += step
         }
-
-        val minY = 2.0
-        val maxY = 16.0
-
-        fun toX(timestamp: Long): Float {
-            return padding + ((timestamp - startTime).toFloat() / (endTime - startTime) * chartWidth)
-        }
-
-        fun toY(value: Double): Float {
-            return padding + ((maxY - value.coerceIn(minY, maxY)) / (maxY - minY) * chartHeight).toFloat()
-        }
-
-        // 绘制网格
-        drawGrid(canvas, padding, chartWidth, chartHeight, minY, maxY)
-
-        // 绘制时间轴
-        drawTimeAxis(canvas, padding, chartWidth, chartHeight)
-
-        // 绘制目标范围
-        drawTargetRange(canvas, padding, chartWidth) { value -> toY(value) }
-
-        // 绘制血糖曲线
-        drawGlucoseCurve(canvas, { timestamp -> toX(timestamp) }, { value -> toY(value) })
-
-        // 绘制当前值
-        if (dataPoints.isNotEmpty()) {
-            drawCurrentValue(canvas, dataPoints.last(), { timestamp -> toX(timestamp) }, { value -> toY(value) })
-        }
-    }
-
-    private fun drawEmptyState(canvas: Canvas, x: Float, y: Float) {
-        textPaint.textSize = 36f
-        textPaint.textAlign = Paint.Align.CENTER
-        canvas.drawText("暂无血糖数据", x, y, textPaint)
-        textPaint.textSize = 28f
-        canvas.drawText("记录血糖后显示曲线", x, y + 50f, textPaint)
-    }
-
-    private fun drawGrid(canvas: Canvas, padding: Float, chartWidth: Float, chartHeight: Float, minY: Double, maxY: Double) {
-        // 水平网格线（血糖值）
-        for (i in 0..7) {
-            val value = minY + i * (maxY - minY) / 7
-            val y = padding + ((maxY - value) / (maxY - minY) * chartHeight).toFloat()
-            canvas.drawLine(padding, y, width - padding, y, gridPaint)
-
-            // 血糖值标签
-            textPaint.textAlign = Paint.Align.RIGHT
-            textPaint.textSize = 24f
-            canvas.drawText(String.format("%.1f", value), padding - 10f, y + 8f, textPaint)
-        }
-    }
-
-    private fun drawTimeAxis(canvas: Canvas, padding: Float, chartWidth: Float, chartHeight: Float) {
-        val dateFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-        val totalHours = (endTime - startTime) / (1000.0 * 3600)
-
-        // 根据时间跨度决定标签间隔
-        val intervalHours = when {
-            totalHours <= 6 -> 1
-            totalHours <= 12 -> 2
-            totalHours <= 24 -> 4
-            else -> 6
-        }
-
-        val startTimeCal = Calendar.getInstance().apply { timeInMillis = startTime }
-        startTimeCal.set(Calendar.MINUTE, 0)
-        startTimeCal.set(Calendar.SECOND, 0)
-
-        var currentTime = startTimeCal.timeInMillis
-        while (currentTime <= endTime) {
-            val x = padding + ((currentTime - startTime).toFloat() / (endTime - startTime) * chartWidth)
-
-            // 时间标签
-            textPaint.textAlign = Paint.Align.CENTER
-            textPaint.textSize = 24f
-            val timeStr = dateFormat.format(Date(currentTime))
-            canvas.drawText(timeStr, x, height - 10f, textPaint)
-
-            // 垂直网格线
-            canvas.drawLine(x, padding, x, height - padding, gridPaint)
-
-            currentTime += intervalHours * 3600 * 1000L
-        }
-    }
-
-    private fun drawTargetRange(canvas: Canvas, padding: Float, chartWidth: Float, toY: (Double) -> Float) {
-        val targetLowY = toY(targetLow)
-        val targetHighY = toY(targetHigh)
-
-        // 目标范围背景
-        val rangePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#104CAF50")
-            style = Paint.Style.FILL
-        }
-        canvas.drawRect(padding, targetHighY, width - padding, targetLowY, rangePaint)
 
         // 目标线
-        targetPaint.color = Color.parseColor("#4CAF50")
-        canvas.drawLine(padding, targetLowY, width - padding, targetLowY, targetPaint)
-        targetPaint.color = Color.parseColor("#FF9800")
-        canvas.drawLine(padding, targetHighY, width - padding, targetHighY, targetPaint)
+        canvas.drawLine(pad, toY(targetLow), width - pad, toY(targetLow), targetLinePaint)
+        canvas.drawLine(pad, toY(targetHigh), width - pad, toY(targetHigh), highLinePaint)
+        canvas.drawText("低", width - pad + 4f, toY(targetLow) + 6f, textPaint.apply { textAlign = Paint.Align.LEFT; textSize = 18f })
+        canvas.drawText("高", width - pad + 4f, toY(targetHigh) + 6f, textPaint)
 
-        // 标签
-        textPaint.textAlign = Paint.Align.LEFT
-        textPaint.textSize = 20f
-        textPaint.color = Color.parseColor("#4CAF50")
-        canvas.drawText("低", width - padding + 5f, targetLowY + 6f, textPaint)
-        textPaint.color = Color.parseColor("#FF9800")
-        canvas.drawText("高", width - padding + 5f, targetHighY + 6f, textPaint)
-    }
+        // 曲线
+        if (dataPoints.size >= 2) {
+            val path = Path()
+            path.moveTo(toX(dataPoints[0].first), toY(dataPoints[0].second))
+            for (i in 1 until dataPoints.size) path.lineTo(toX(dataPoints[i].first), toY(dataPoints[i].second))
+            canvas.drawPath(path, linePaint)
 
-    private fun drawGlucoseCurve(canvas: Canvas, toX: (Long) -> Float, toY: (Double) -> Float) {
-        if (dataPoints.size < 2) return
-
-        val path = Path()
-        val fillPath = Path()
-        var first = true
-
-        for ((timestamp, value) in dataPoints) {
-            val x = toX(timestamp)
-            val y = toY(value)
-
-            if (first) {
-                path.moveTo(x, y)
-                fillPath.moveTo(x, toY(2.0))
-                fillPath.lineTo(x, y)
-                first = false
-            } else {
-                path.lineTo(x, y)
-                fillPath.lineTo(x, y)
+            // 数据点
+            for (i in dataPoints.indices) {
+                val dot = if (i == selectedIndex) selDotPaint else dotPaint
+                val r = if (i == selectedIndex) 7f else 3f
+                canvas.drawCircle(toX(dataPoints[i].first), toY(dataPoints[i].second), r, dot)
             }
         }
 
-        // 填充区域
-        fillPath.lineTo(toX(dataPoints.last().first), toY(2.0))
-        fillPath.close()
-        canvas.drawPath(fillPath, fillPaint)
+        // 选中标记
+        if (selectedIndex in dataPoints.indices) {
+            val (st, sv) = dataPoints[selectedIndex]
+            val sx = toX(st); val sy = toY(sv)
+            canvas.drawLine(sx, pad, sx, height - pad, selLinePaint)        // 竖线
+            canvas.drawLine(pad, sy, width - pad, sy, selLinePaint)         // 横线
+            canvas.drawCircle(sx, sy, 12f, selRingPaint)
+            canvas.drawCircle(sx, sy, 8f, selDotPaint)
 
-        // 曲线
-        canvas.drawPath(path, linePaint)
-    }
-
-    private fun drawCurrentValue(canvas: Canvas, point: Pair<Long, Double>, toX: (Long) -> Float, toY: (Double) -> Float) {
-        val x = toX(point.first)
-        val y = toY(point.second)
-
-        // 当前值圆点
-        val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = getGlucoseColor(point.second)
-            style = Paint.Style.FILL
+            // 标签
+            val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(st))
+            val label = "${String.format("%.1f", sv)} mmol/L  $timeStr"
+            val labelW = labelPaint.measureText(label)
+            val labelX = if (sx + labelW + 20 > width) sx - labelW - 16 else sx + 16
+            val labelY = if (sy < pad + 40) sy + 40 else sy - 16
+            val bg = Paint().apply { color = Color.WHITE; setShadowLayer(4f, 0f, 2f, Color.parseColor("#40000000")) }
+            canvas.drawRect(labelX - 8, labelY - 28, labelX + labelW + 8, labelY + 8, bg)
+            canvas.drawText(label, labelX, labelY, labelPaint)
         }
-        canvas.drawCircle(x, y, 8f, dotPaint)
 
-        // 外圈
-        val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            style = Paint.Style.STROKE
-            strokeWidth = 3f
-        }
-        canvas.drawCircle(x, y, 10f, ringPaint)
-    }
-
-    private fun getGlucoseColor(value: Double): Int {
-        return when {
-            value < 3.9 -> Color.parseColor("#F44336")  // 低血糖 - 红色
-            value > 10.0 -> Color.parseColor("#FF9800") // 高血糖 - 橙色
-            else -> Color.parseColor("#4CAF50")         // 正常 - 绿色
+        // 底部时间
+        val totalH = timeRange / 3600000.0
+        val intervalH = when { totalH <= 6 -> 1; totalH <= 12 -> 2; totalH <= 24 -> 4; else -> 6 }
+        val cal = Calendar.getInstance().apply { timeInMillis = startTime; set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }
+        var ct = cal.timeInMillis
+        while (ct <= dataPoints.last().first) {
+            canvas.drawText(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ct)), toX(ct), height - 6f, timePaint)
+            ct += intervalH * 3600 * 1000L
         }
     }
 }

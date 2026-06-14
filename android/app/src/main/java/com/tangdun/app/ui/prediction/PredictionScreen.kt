@@ -2,6 +2,7 @@ package com.tangdun.app.ui.prediction
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -20,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tangdun.app.ui.theme.*
+import com.tangdun.app.widget.PredictionChartView
 
 /**
  * 血糖预测页面
@@ -80,23 +82,28 @@ fun PredictionScreen(
 
             // 预测引擎信息
             EngineInfoCard(
-                modelType = uiState.modelType,
-                predictionTime = uiState.predictionTime,
+                modelLabel = uiState.modelLabel,
                 confidence = uiState.confidence,
-                dataDays = uiState.dataDays,
                 totalRecords = uiState.totalRecords,
                 fastingBaseline = uiState.fastingBaseline,
                 variability = uiState.variability,
+                activeInsulin = uiState.activeInsulin,
+                todayCarbs = uiState.todayCarbs,
+                isfEstimate = uiState.isfEstimate,
+                crEstimate = uiState.crEstimate,
                 tcnWeight = uiState.tcnWeight,
                 bergmanWeight = uiState.bergmanWeight
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 预测曲线图
-            SimplePredictionCurve(
+            // 预测曲线图（历史 + 预测叠加）
+            PredictionCurveCard(
+                history = uiState.historyData,
                 curve = uiState.curve,
-                currentGlucose = uiState.currentGlucose
+                current = uiState.currentGlucose ?: 0.0,
+                targetLow = uiState.targetLow,
+                targetHigh = uiState.targetHigh
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -118,8 +125,8 @@ fun PredictionScreen(
 @Composable
 fun RiskLevelCard(riskLevel: String, currentGlucose: Double?) {
     val (riskText, riskColor, riskIcon) = when (riskLevel) {
-        "low_risk" -> Triple("低血糖风险", AlertWarning, Icons.Default.Warning)
-        "high_risk" -> Triple("高血糖风险", AlertCritical, Icons.Default.Error)
+        "低血糖风险" -> Triple("低血糖风险", AlertWarning, Icons.Default.Warning)
+        "高血糖风险" -> Triple("高血糖风险", AlertCritical, Icons.Default.Error)
         else -> Triple("正常", AlertSuccess, Icons.Default.CheckCircle)
     }
 
@@ -175,8 +182,10 @@ fun RiskLevelCard(riskLevel: String, currentGlucose: Double?) {
 
 @Composable
 fun EngineInfoCard(
-    modelType: String, predictionTime: String, confidence: Double,
-    dataDays: Double, totalRecords: Int, fastingBaseline: Double, variability: Double,
+    modelLabel: String, confidence: Double,
+    totalRecords: Int, fastingBaseline: Double, variability: Double,
+    activeInsulin: Double, todayCarbs: Double,
+    isfEstimate: Double, crEstimate: Double,
     tcnWeight: Double, bergmanWeight: Double
 ) {
     Card(
@@ -189,26 +198,29 @@ fun EngineInfoCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("预测引擎", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             }
+            Spacer(Modifier.height(8.dp))
+            // 模型权重 — 明确展示用的是什么
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                if (tcnWeight > 0) StatItem2("TCN (MAE 0.552)", "${String.format("%.0f%%", tcnWeight * 100)}")
+                StatItem2("Bergman ODE", "${String.format("%.0f%%", bergmanWeight * 100)}")
+                StatItem2("个性化", "${String.format("%.0f%%", (1 - tcnWeight - bergmanWeight).coerceAtLeast(0.0) * 100)}")
+            }
             Spacer(modifier = Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 StatItem2("置信度", "${String.format("%.0f", confidence)}%")
-                StatItem2("数据量", "${String.format("%.1f", dataDays)}天")
-                StatItem2("记录数", "${totalRecords}")
-                StatItem2("空腹基线", "${String.format("%.1f", fastingBaseline)}")
+                StatItem2("记录", "${totalRecords}条")
+                StatItem2("活性胰岛素", "${String.format("%.1f", activeInsulin)}U")
+                StatItem2("今日碳水", "${String.format("%.0f", todayCarbs)}g")
             }
-            if (variability > 0) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    StatItem2("变异性", "${String.format("%.1f", variability)}%")
-                    StatItem2("模型", modelType)
-                    StatItem2("更新", predictionTime.takeLast(8))
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    StatItem2("TCN权重", "${String.format("%.0f%%", tcnWeight * 100)}")
-                    StatItem2("Bergman权重", "${String.format("%.0f%%", bergmanWeight * 100)}")
-                }
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                StatItem2("ISF估算", "${String.format("%.1f", isfEstimate)}")
+                StatItem2("CR估算", "${String.format("%.0f", crEstimate)}")
+                StatItem2("变异", "${String.format("%.1f", variability)}%")
+                StatItem2("基线", "${String.format("%.1f", fastingBaseline)}")
             }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(modelLabel, fontSize = 11.sp, color = TextHint)
         }
     }
 }
@@ -222,40 +234,26 @@ fun StatItem2(label: String, value: String) {
 }
 
 @Composable
-fun SimplePredictionCurve(curve: List<Double>, currentGlucose: Double?) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("血糖预测曲线 (0-120分钟)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Spacer(modifier = Modifier.height(12.dp))
-            if (curve.isEmpty()) {
-                Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                    Text("暂无预测数据", color = TextHint)
-                }
+fun PredictionCurveCard(history: List<Pair<Long, Double>>, curve: List<Double>, current: Double, targetLow: Double, targetHigh: Double) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
+        Column(Modifier.padding(12.dp)) {
+            Text("血糖预测曲线", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            if (history.isEmpty() && curve.isEmpty()) {
+                Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Text("暂无数据", color = TextHint) }
             } else {
-                Canvas(Modifier.fillMaxWidth().height(200.dp)) {
-                    val w = size.width; val h = size.height; val pad = 40f
-                    val minY = 2.0; val maxY = 16.0
-                    fun toX(i: Int) = pad + i.toFloat() / (curve.size - 1) * (w - 2 * pad)
-                    fun toY(v: Double) = pad + ((maxY - v.coerceIn(minY, maxY)) / (maxY - minY) * (h - 2 * pad)).toFloat()
-                    for (i in 0..6) drawLine(ChartGrid, androidx.compose.ui.geometry.Offset(pad, toY(minY + i * 2f)), androidx.compose.ui.geometry.Offset(w - pad, toY(minY + i * 2f)), 0.5f)
-                    drawLine(ChartTarget, androidx.compose.ui.geometry.Offset(pad, toY(3.9)), androidx.compose.ui.geometry.Offset(w - pad, toY(3.9)), 2f)
-                    drawLine(Color(0xFFFF9800), androidx.compose.ui.geometry.Offset(pad, toY(10.0)), androidx.compose.ui.geometry.Offset(w - pad, toY(10.0)), 2f)
-                    val path = Path().apply { moveTo(toX(0), toY(curve[0])); curve.drop(1).forEachIndexed { i, v -> lineTo(toX(i + 1), toY(v)) } }
-                    drawPath(path, ChartLine1, style = Stroke(width = 3f))
-                    drawCircle(Color.Red, 8f, androidx.compose.ui.geometry.Offset(toX(0), toY(curve[0])))
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    for (l in listOf("0", "30min", "60min", "90min", "120min")) Text(l, style = MaterialTheme.typography.bodySmall, color = TextHint)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
+                AndroidView(
+                    factory = { ctx -> PredictionChartView(ctx).apply { setData(history, curve, current); setTargets(targetLow, targetHigh) } },
+                    update = { it.setData(history, curve, current); it.setTargets(targetLow, targetHigh) },
+                    modifier = Modifier.fillMaxWidth().height(240.dp)
+                )
+                Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     for ((label, idx) in listOf("当前" to 0, "30min" to 6, "60min" to 12, "120min" to 24)) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(label, style = MaterialTheme.typography.bodySmall, color = TextHint)
-                            Text(String.format("%.1f", curve.getOrNull(idx) ?: 0.0), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = ChartLine1)
+                            Text(String.format("%.1f", curve.getOrNull(idx) ?: (history.lastOrNull()?.second ?: 0.0)),
+                                fontSize = 16.sp, fontWeight = FontWeight.Bold, color = ChartLine1)
                         }
                     }
                 }

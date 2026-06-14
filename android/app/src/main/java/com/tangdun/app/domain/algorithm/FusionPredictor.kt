@@ -59,7 +59,8 @@ class FusionPredictor(private val context: Context) {
      */
     fun initialize(): Boolean {
         val tcnLoaded = tcnPredictor.loadModel()
-        Log.d(TAG, "TCN模型加载: $tcnLoaded")
+        Log.i(TAG, "TCN模型加载: $tcnLoaded")
+        if (!tcnLoaded) Log.w(TAG, "TCN未加载，预测将使用Bergman生理模型")
         return tcnLoaded
     }
 

@@ -17,7 +17,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.tangdun.app.ui.theme.*
+import com.tangdun.app.util.ActivationManager
 import com.tangdun.app.ui.settings.DataShareCard
 import com.tangdun.app.util.SettingsManager
 
@@ -67,7 +69,10 @@ fun SettingsScreen() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 通知监听权限（CGM数据来源的关键）
+        ActivationStatusCard()
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // AI对话配置
         AiChatConfigCard(settingsManager)
 
@@ -1088,10 +1093,22 @@ fun GlucoseSettingsCard(settingsManager: SettingsManager) {
                 }
             }
 
+            // 严重阈值
+            var severeLow by remember { mutableStateOf(settingsManager.getSevereLow()) }
+            var severeHigh by remember { mutableStateOf(settingsManager.getSevereHigh()) }
+            Spacer(Modifier.height(16.dp))
+            Text("严重预警 (低于此值自动拨打紧急联系人)", style = MaterialTheme.typography.bodySmall, color = TextHint)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(Modifier.weight(1f)) { Text("严重低: ${String.format("%.1f", severeLow)}", fontSize = 12.sp, color = AlertCritical); Slider(value = severeLow, onValueChange = { severeLow = it; isSaved = false }, valueRange = 2.0f..4.0f, steps = 19) }
+                Column(Modifier.weight(1f)) { Text("严重高: ${String.format("%.1f", severeHigh)}", fontSize = 12.sp, color = GlucoseSevereHigh); Slider(value = severeHigh, onValueChange = { severeHigh = it; isSaved = false }, valueRange = 12.0f..20.0f, steps = 79) }
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
             Button(onClick = {
                 settingsManager.setGlucoseUnit(glucoseUnit)
                 settingsManager.setTargetRange(targetLow, targetHigh)
+                settingsManager.setSevereLow(severeLow); settingsManager.setSevereHigh(severeHigh)
                 isSaved = true
             }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
                 Text(if (isSaved) "已保存" else "保存设置")
@@ -1362,6 +1379,28 @@ fun AboutCard() {
             TextButton(onClick = {}) { Text("隐私政策", color = MaterialTheme.colorScheme.primary) }
             Text("© 2026 糖盾 TangDun. 仅供健康管理参考，不构成医疗建议。",
                 style = MaterialTheme.typography.bodySmall, color = TextHint, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+@Composable
+fun ActivationStatusCard() {
+    val ctx = LocalContext.current
+    val am = remember { ActivationManager(ctx) }
+    if (!am.isActivated()) return
+    val isAdmin = am.isAdmin()
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp), colors = CardDefaults.cardColors(containerColor = if (isAdmin) AlertSuccess.copy(alpha = 0.08f) else AlertInfo.copy(alpha = 0.08f))) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) { Icon(if (isAdmin) Icons.Default.VerifiedUser else Icons.Default.Person, null, tint = if (isAdmin) AlertSuccess else AlertInfo, modifier = Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text("账号状态: ${if (isAdmin) "管理员 (无限)" else "普通用户"}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
+            Spacer(Modifier.height(4.dp))
+            if (am.isExpired()) Text("已过期", color = AlertCritical, fontSize = 12.sp)
+            else {
+                for ((k, v) in mapOf("chat" to "AI对话", "photo" to "拍照", "predict" to "预测", "report" to "报告", "export" to "导出")) {
+                    val r = am.getRemaining(k)
+                    val txt = if (isAdmin) "无限" else if (r == Int.MAX_VALUE) "无限" else "${r}次/天"
+                    Text("$v: $txt", fontSize = 11.sp, color = TextSecondary)
+                }
+            }
         }
     }
 }

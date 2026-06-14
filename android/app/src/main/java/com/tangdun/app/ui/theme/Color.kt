@@ -2,69 +2,66 @@ package com.tangdun.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// ===== 临床专业配色方案 =====
+// ── 主色调：医疗科技蓝 ──
+val Primary = Color(0xFF0D7377)
+val PrimaryLight = Color(0xFF14A3A8)
+val PrimaryDark = Color(0xFF095B5E)
+val PrimaryBg = Color(0xFFE0F7F8)
 
-// 主色调 - 医疗青色系
-val Primary = Color(0xFF007A8C)
-val PrimaryDark = Color(0xFF005F6E)
-val PrimaryLight = Color(0xFF4DA9B7)
-val PrimaryContainer = Color(0xFFE0F7FA)
-val OnPrimaryContainer = Color(0xFF001F24)
+// ── 辅助色 ──
+val Secondary = Color(0xFF32325D)
+val SecondaryLight = Color(0xFF5C5C8A)
 
-// 辅助色 - 深蓝系
-val Secondary = Color(0xFF1A3C5E)
-val SecondaryContainer = Color(0xFFD1E4FF)
-val OnSecondaryContainer = Color(0xFF001C38)
+// ── 强调色 ──
+val Accent = Color(0xFFFF6B6B)
+val AccentWarm = Color(0xFFFFA726)
 
-// 第三色 - 紫色系
-val Tertiary = Color(0xFF6B5778)
-val TertiaryContainer = Color(0xFFF2DAFF)
-val OnTertiaryContainer = Color(0xFF251431)
+// ── 背景 ──
+val BgLight = Color(0xFFF2F5F7)
+val BgWhite = Color(0xFFFFFFFF)
+val BgCard = Color(0xFFF8FAFB)
 
-// 背景色
-val Background = Color(0xFFF8FAFA)
-val Surface = Color(0xFFFFFFFF)
-val SurfaceVariant = Color(0xFFE7ECEC)
-val OnBackground = Color(0xFF191C1C)
-val OnSurface = Color(0xFF191C1C)
-val OnSurfaceVariant = Color(0xFF414848)
+// ── 文字 ──
+val TextDark = Color(0xFF1A1A2E)
+val TextBody = Color(0xFF4A4A68)
+val TextHint = Color(0xFF9E9EBB)
+val TextWhite = Color(0xFFFFFFFF)
 
-// ===== 血糖等级配色（临床标准）=====
-val GlucoseNormal = Color(0xFF2E7D32)       // 正常 3.9-10.0
-val GlucoseLow = Color(0xFFD32F2F)          // 低血糖 <3.9
-val GlucoseHigh = Color(0xFFE65100)         // 高血糖 >10.0
-val GlucoseSevereLow = Color(0xFFB71C1C)    // 严重低血糖 <3.0
-val GlucoseSevereHigh = Color(0xFFBF360C)   // 严重高血糖 >13.9
+// ── 血糖等级 ──
+val GlucoseNormal = Color(0xFF2E7D32)
+val GlucoseLow = Color(0xFFE53935)
+val GlucoseHigh = Color(0xFFEF6C00)
+val GlucoseSevereLow = Color(0xFFB71C1C)
+val GlucoseSevereHigh = Color(0xFFBF360C)
 
-// ===== TIR配色 =====
-val TirInRange = Color(0xFF4CAF50)
-val TirBelow = Color(0xFFF44336)
-val TirAbove = Color(0xFFFF9800)
+// ── 状态 ──
+val Success = Color(0xFF43A047)
+val Warning = Color(0xFFFFA000)
+val Danger = Color(0xFFE53935)
+val Info = Color(0xFF1E88E5)
 
-// ===== GI等级配色 =====
-val GiLow = Color(0xFF4CAF50)              // 低GI <55
-val GiMedium = Color(0xFFFF9800)           // 中GI 55-70
-val GiHigh = Color(0xFFF44336)             // 高GI >70
+// ── 图表 ──
+val Chart1 = Color(0xFF14A3A8)
+val Chart2 = Color(0xFF5C6BC0)
+val Chart3 = Color(0xFFFF7043)
 
-// ===== 预警等级配色 =====
-val AlertCritical = Color(0xFFD32F2F)
-val AlertWarning = Color(0xFFFF9800)
-val AlertInfo = Color(0xFF1976D2)
-val AlertSuccess = Color(0xFF2E7D32)
+// ── 常用颜色 ──
+val Divider = Color(0xFFE8ECF0)
+val SurfaceVariant = Color(0xFFE8EDF2)
 
-// ===== 图表配色 =====
-val ChartLine1 = Color(0xFF007A8C)
-val ChartLine2 = Color(0xFF4CAF50)
-val ChartLine3 = Color(0xFFFF9800)
-val ChartFill = Color(0x1A007A8C)
-val ChartGrid = Color(0xFFE0E0E0)
-val ChartTarget = Color(0x804CAF50)
-
-// ===== 文字色 =====
-val TextPrimary = Color(0xFF212121)
-val TextSecondary = Color(0xFF757575)
-val TextHint = Color(0xFFBDBDBD)
-val TextOnPrimary = Color(0xFFFFFFFF)
-
-// ===== 分割线 =====
-val Divider = Color(0xFFE0E0E0)
+// 兼容旧代码别名
+val TextPrimary = TextDark
+val TextSecondary = TextBody
+val AlertSuccess = Success
+val AlertWarning = Warning
+val AlertCritical = Danger
+val AlertInfo = Info
+val ChartLine1 = Chart1
+val ChartLine2 = Chart2
+val ChartLine3 = Chart3
+val ChartGrid = Color(0xFFE0E4E8)
+val ChartTarget = Color(0x6643A047)
+val ChartFill = Color(0x1A14A3A8)
+val GiLow = Success
+val GiMedium = Warning
+val GiHigh = Danger

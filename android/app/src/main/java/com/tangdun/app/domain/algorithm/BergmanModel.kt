@@ -27,9 +27,20 @@ class BergmanModel {
         val gamma: Double = 0.0041, // 胰岛素分泌率
         val Gb: Double = 5.0,       // 基础血糖 (mmol/L)
         val Ib: Double = 10.0,      // 基础胰岛素 (mU/L)
-        val Vg: Double = 180.0,     // 葡萄糖分布容积 (dL)
+        val Vg: Double = 180.0,     // 葡萄糖分布容积 (dL) - 用bodyWeight重新计算
         val Vi: Double = 12.0       // 胰岛素分布容积 (L)
-    )
+    ) {
+        companion object {
+            /** 按体重+ISF个性化 */
+            fun forUser(weightKg: Double, isfEstimate: Double = 1.5) = Parameters(
+                Vg = (weightKg * 1.8).coerceIn(60.0, 300.0),
+                Vi = (weightKg * 0.12).coerceIn(5.0, 25.0),
+                // p3(insulin sensitivity) ~ 1/ISF: ISF高(敏感)→p3大, ISF低(抵抗)→p3小
+                p3 = (0.00001 * 1.5 / isfEstimate).coerceIn(0.000002, 0.00005),
+                Gb = when { isfEstimate < 1.0 -> 5.5; isfEstimate > 3.0 -> 4.5; else -> 5.0 }
+            )
+        }
+    }
 
     /**
      * 饮食输入
@@ -82,24 +93,20 @@ class BergmanModel {
 
             if (step == steps) break
 
-            // 计算饮食输入 D(t)
+            // 计算饮食输入 D(t) — 加胃排空延迟(10min)
+            val gastricDelay = 10.0  // 胃排空需要~10分钟
             var D = 0.0
             for (meal in meals) {
-                val mealTime = -meal.timeMinutes  // 转换为正数
-                if (t >= mealTime) {
-                    val timeSinceMeal = t - mealTime
-                    // 吸吸收核函数（修正后的版本）
-                    val kFast = 0.2   // 快速吸收率
-                    val kSlow = 0.05  // 慢速吸收率
-                    val fFast = 0.7   // 快速吸收比例
-
-                    val absorptionFast = fFast * kFast * exp(-kFast * timeSinceMeal)
-                    val absorptionSlow = (1 - fFast) * kSlow * exp(-kSlow * timeSinceMeal)
-
-                    // 碳水转葡萄糖 (g → mmol)
-                    val glucoseFromCarbs = meal.carbsGrams * 5.56 / params.Vg  // 5.56 = 180/1000*1000/18
-
-                    D += glucoseFromCarbs * (absorptionFast + absorptionSlow)
+                val mealTime = -meal.timeMinutes  // 进食时刻(>0表示已过去)
+                val availableTime = t - mealTime  // 食物在胃里的时间
+                if (availableTime >= 0) {
+                    // 胃排空修正: 前10分钟无吸收，之后指数衰减
+                    val effectiveTime = maxOf(0.0, availableTime - gastricDelay)
+                    val kFast = 0.2; val kSlow = 0.05; val fFast = 0.7
+                    val absFast = if (effectiveTime > 0) fFast * kFast * kotlin.math.exp(-kFast * effectiveTime) else 0.0
+                    val absSlow = if (effectiveTime > 0) (1 - fFast) * kSlow * kotlin.math.exp(-kSlow * effectiveTime) else 0.0
+                    val glucoseFromCarbs = meal.carbsGrams * 5.56 / params.Vg
+                    D += glucoseFromCarbs * (absFast + absSlow)
                 }
             }
 
