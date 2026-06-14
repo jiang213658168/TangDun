@@ -36,7 +36,9 @@ class MealViewModel @Inject constructor(
         loadMeals()
     }
 
-    fun addMeal(mealType: String, foodName: String, carbs: Double, calories: Double, gi: Double, timestamp: Long = System.currentTimeMillis()) {
+    fun addMeal(mealType: String, foodName: String, carbs: Double, calories: Double, gi: Double,
+                protein: Double = 0.0, fat: Double = 0.0, fiber: Double = 0.0,
+                portionGrams: Double = 100.0, timestamp: Long = System.currentTimeMillis()) {
         viewModelScope.launch {
             try {
                 // 创建饮食记录
@@ -45,9 +47,9 @@ class MealViewModel @Inject constructor(
                     mealType = mealType,
                     totalCarbs = carbs,
                     totalCalories = calories,
-                    totalProtein = 0.0,
-                    totalFat = 0.0,
-                    totalFiber = 0.0,
+                    totalProtein = protein,
+                    totalFat = fat,
+                    totalFiber = fiber,
                     avgGi = gi
                 )
                 val mealId = mealDao.insert(record)
@@ -56,12 +58,12 @@ class MealViewModel @Inject constructor(
                 val item = com.tangdun.app.data.local.entity.MealItem(
                     mealId = mealId,
                     foodName = foodName,
-                    portionGrams = 100.0,
+                    portionGrams = portionGrams,
                     carbs = carbs,
                     calories = calories,
-                    protein = 0.0,
-                    fat = 0.0,
-                    fiber = 0.0,
+                    protein = protein,
+                    fat = fat,
+                    fiber = fiber,
                     gi = gi
                 )
                 mealDao.insertItem(item)

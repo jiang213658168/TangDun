@@ -100,8 +100,9 @@ class FoodNutritionAi(private val context: Context) {
             put("max_tokens", 1000)
         }
 
-        // Base URL已经包含/v1/
-        val url = "${baseUrl}chat/completions"
+        // 确保baseUrl以/结尾(防止拼出 v1chat/completions 这种404)
+        val normalizedBase = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
+        val url = "${normalizedBase}chat/completions"
 
         val request = Request.Builder()
             .url(url)

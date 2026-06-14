@@ -241,7 +241,7 @@ fun MealScreen(
         AddMealDialog(
             onDismiss = { showAddDialog = false },
             onConfirm = { mealType, foodName, carbs, calories, gi, timestamp ->
-                viewModel.addMeal(mealType, foodName, carbs, calories, gi, timestamp)
+                viewModel.addMeal(mealType, foodName, carbs, calories, gi, timestamp = timestamp)
                 showAddDialog = false
             }
         )
@@ -252,8 +252,8 @@ fun MealScreen(
         CameraRecognitionDialog(
             photoUri = photoUri!!,
             onDismiss = { showCameraDialog = false },
-            onConfirm = { mealType, foodName, carbs, calories, gi ->
-                viewModel.addMeal(mealType, foodName, carbs, calories, gi)
+            onConfirm = { mealType, foodName, carbs, calories, gi, protein, fat, fiber, portionGrams ->
+                viewModel.addMeal(mealType, foodName, carbs, calories, gi, protein, fat, fiber, portionGrams)
                 showCameraDialog = false
             }
         )
@@ -270,7 +270,7 @@ fun MealScreen(
                     in 17..19 -> "dinner"
                     else -> "snack"
                 }
-                viewModel.addMeal(mealType, foodName, carbs, calories, gi)
+                viewModel.addMeal(mealType, foodName, carbs, calories, gi, portionGrams = portionGrams)
                 showFoodSearch = false
             }
         )
@@ -501,12 +501,18 @@ fun AddMealDialog(
 fun CameraRecognitionDialog(
     photoUri: android.net.Uri,
     onDismiss: () -> Unit,
-    onConfirm: (mealType: String, foodName: String, carbs: Double, calories: Double, gi: Double) -> Unit
+    onConfirm: (mealType: String, foodName: String, carbs: Double, calories: Double, gi: Double,
+                protein: Double, fat: Double, fiber: Double, portionGrams: Double) -> Unit
 ) {
     val context = LocalContext.current
     var foodName by remember { mutableStateOf("") }
     var carbs by remember { mutableStateOf("") }
     var calories by remember { mutableStateOf("") }
+    // AI查询结果: 不再丢弃蛋白质/脂肪/纤维
+    var aiProtein by remember { mutableStateOf(0.0) }
+    var aiFat by remember { mutableStateOf(0.0) }
+    var aiFiber by remember { mutableStateOf(0.0) }
+    var aiPortionGrams by remember { mutableStateOf(100.0) }
     var gi by remember { mutableStateOf("50") }
     var selectedGiLevel by remember { mutableStateOf("medium") }
     var caloriesPerCarb by remember { mutableStateOf(4.0) }  // 每克碳水对应的热量
@@ -577,6 +583,11 @@ fun CameraRecognitionDialog(
                         gi = aiResult.gi.toInt().toString()
                         carbs = aiResult.carbs.toInt().toString()
                         calories = aiResult.calories.toInt().toString()
+                        // 保存AI查到的蛋白质/脂肪/纤维 (不再丢弃)
+                        aiProtein = aiResult.protein
+                        aiFat = aiResult.fat
+                        aiFiber = aiResult.fiber
+                        aiPortionGrams = aiResult.portionGrams
                         selectedGiLevel = aiResult.giLevel
                         if (aiResult.carbs > 0) {
                             caloriesPerCarb = aiResult.calories / aiResult.carbs
@@ -805,7 +816,8 @@ fun CameraRecognitionDialog(
                             val caloriesValue = calories.toDoubleOrNull() ?: 0.0
                             val giValue = gi.toDoubleOrNull() ?: 50.0
                             if (foodName.isNotBlank()) {
-                                onConfirm(selectedMealType, foodName, carbsValue, caloriesValue, giValue)
+                                onConfirm(selectedMealType, foodName, carbsValue, caloriesValue, giValue,
+                                    aiProtein, aiFat, aiFiber, aiPortionGrams)
                             }
                         },
                         enabled = foodName.isNotBlank()
