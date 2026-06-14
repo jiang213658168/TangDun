@@ -52,7 +52,7 @@ class PredictionViewModel @Inject constructor(
 
     // 从SelfLearningManager读取共享实例 (避免重复创建)
     private val onlineLearner get() = SelfLearningManager.getOnlineLearner()
-    private val cgmCalibrator get() = com.tangdun.app.domain.algorithm.CGMCalibrator(ctx)
+    private val cgmCalibrator by lazy { com.tangdun.app.domain.algorithm.CGMCalibrator(ctx) }
 
     init {
         Log.i(TAG, "TCN=${if (tcnOk) "ONNX" else "降级"}")

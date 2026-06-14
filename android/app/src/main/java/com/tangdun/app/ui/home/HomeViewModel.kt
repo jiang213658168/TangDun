@@ -136,10 +136,9 @@ class HomeViewModel @Inject constructor(
                 )
                 // ★ 指尖血触发校准: 插入前先获取最新CGM值，比较后更新校准偏移
                 if (source == "finger") {
-                    val latestBeforeInsert = glucoseDao.getLatest()  // 插入前的最新CGM
+                    val latestBeforeInsert = glucoseDao.getLatest()
                     if (latestBeforeInsert != null && latestBeforeInsert.source != "finger") {
-                        val calibrator = com.tangdun.app.domain.algorithm.CGMCalibrator(context)
-                        val result = calibrator.calibrate(value, latestBeforeInsert.value)
+                        val result = cgmCalibrator.calibrate(value, latestBeforeInsert.value)
                         Log.i("HomeVM", "指尖校准: finger=${value} cgm=${latestBeforeInsert.value} → offset=${"%.2f".format(result.offset)} ${result.confidence}")
                     }
                 }
