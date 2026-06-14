@@ -95,6 +95,22 @@ class HomeViewModel @Inject constructor(
         checkXDripStatus()
     }
 
+    /** 导入欧态CGM xlsx文件 */
+    fun importXlsx(uri: android.net.Uri) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(error = "导入中...")
+                val result = com.tangdun.app.service.XlsxImporter.importFromUri(context, uri)
+                _uiState.value = _uiState.value.copy(
+                    error = "导入完成: ${result.imported}条新增, ${result.skipped}条重复"
+                )
+                if (result.imported > 0) loadData()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = "导入失败: ${e.message}")
+            }
+        }
+    }
+
     /** 指尖血校准: 比较指尖值与最新CGM，更新偏移 */
     fun calibrateNow(fingerValue: Double) {
         viewModelScope.launch {

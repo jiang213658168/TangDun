@@ -13,6 +13,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -114,7 +116,8 @@ fun HomeScreen(
             hasData = uiState.records.isNotEmpty(),
             recordCount = uiState.recordCount,
             syncMsg = uiState.error,
-            onSync = { viewModel.syncHistory() }
+            onSync = { viewModel.syncHistory() },
+            onImportXlsx = { uri -> viewModel.importXlsx(uri) }
         )
 
         // 预警横幅
@@ -958,10 +961,19 @@ fun AddGlucoseDialog(
 }
 
 @Composable
-fun DataSourceCard(hasData: Boolean, recordCount: Int, syncMsg: String?, onSync: () -> Unit) {
+fun DataSourceCard(hasData: Boolean, recordCount: Int, syncMsg: String?, onSync: () -> Unit, onImportXlsx: ((android.net.Uri) -> Unit)? = null) {
     val context = LocalContext.current
     var testResult by remember { mutableStateOf("") }
     var lastRxTime by remember { mutableStateOf("") }
+    var importMsg by remember { mutableStateOf("") }
+    val xlsxLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            importMsg = "导入中..."
+            onImportXlsx?.invoke(uri)
+        }
+    }
 
     LaunchedEffect(Unit) {
         val prefs = context.applicationContext.getSharedPreferences("glucose_rx_log", android.content.Context.MODE_PRIVATE)
@@ -1008,6 +1020,9 @@ fun DataSourceCard(hasData: Boolean, recordCount: Int, syncMsg: String?, onSync:
                     } catch (e: Exception) { testResult = "❌ ${e.message}" }
                 }) { Text("自检", style = MaterialTheme.typography.bodySmall) }
                 OutlinedButton(onClick = onSync) { Text("同步历史", style = MaterialTheme.typography.bodySmall) }
+                OutlinedButton(onClick = { xlsxLauncher.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel")) }) {
+                    Text("导入xlsx", style = MaterialTheme.typography.bodySmall)
+                }
                 OutlinedButton(onClick = {
                     if (notifyOk) {
                         CGMNotificationListener.requestRebind(context)
@@ -1019,6 +1034,7 @@ fun DataSourceCard(hasData: Boolean, recordCount: Int, syncMsg: String?, onSync:
             }
             if (syncMsg != null && syncMsg.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(syncMsg, fontSize = 12.sp, color = if (syncMsg.startsWith("已同步")) AlertSuccess else TextSecondary) }
             if (testResult.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(testResult, fontSize = 12.sp, color = TextSecondary) }
+            if (importMsg.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(importMsg, fontSize = 12.sp, color = if (importMsg.startsWith("导入")) AlertSuccess else TextSecondary) }
         }
     }
 
