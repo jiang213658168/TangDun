@@ -131,7 +131,8 @@ class GlucoseForegroundService : Service() {
         }
     }
 
-    private fun buildNotification(latestGlucose: Double?): Notification {
+    private fun buildNotification(latest: com.tangdun.app.data.local.entity.GlucoseRecord?): Notification {
+        val latestGlucose = latest?.value
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -144,8 +145,11 @@ class GlucoseForegroundService : Service() {
         val low = settings.getTargetLow()
         val high = settings.getTargetHigh()
 
+        val trendEmoji = latest?.trend?.let { t ->
+            when(t) { "rising_fast"->"⬆️" "rising"->"↗️" "stable"->"➡️" "falling"->"↘️" "falling_fast"->"⬇️" else->"" }
+        } ?: ""
         val title = if (latestGlucose != null) {
-            "血糖 ${String.format("%.1f", latestGlucose)} mmol/L"
+            "血糖$trendEmoji ${String.format("%.1f", latestGlucose)} mmol/L"
         } else {
             "糖盾监测中"
         }
@@ -156,7 +160,7 @@ class GlucoseForegroundService : Service() {
                 latestGlucose > high -> "⚠ 高血糖"
                 else -> "✓ 正常范围"
             }
-            "$status | 目标 ${String.format("%.1f", low)}-${String.format("%.1f", high)} mmol/L"
+            "$status | 目标 ${String.format("%.1f", low)}-${String.format("%.1f", high)}"
         } else {
             "等待CGM数据..."
         }
@@ -177,8 +181,7 @@ class GlucoseForegroundService : Service() {
         try {
             val dao = TangDunApp.getDatabase(this@GlucoseForegroundService).glucoseDao()
             val latest = dao.getLatest()
-            val glucose = latest?.value
-            val notification = buildNotification(glucose)
+            val notification = buildNotification(latest)
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.notify(NOTIFICATION_ID, notification)
         } catch (e: Exception) {
