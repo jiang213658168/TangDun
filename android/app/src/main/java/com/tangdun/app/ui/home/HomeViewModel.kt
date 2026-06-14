@@ -246,7 +246,11 @@ class HomeViewModel @Inject constructor(
                         currentGlucose = latest.value,
                         trend = trend,
                         recentReadings = records,
-                        recentInsulin = recentInsulin
+                        recentInsulin = recentInsulin,
+                        targetLow = low,
+                        targetHigh = high,
+                        severeLow = settingsManager.getSevereLow().toDouble(),
+                        severeHigh = settingsManager.getSevereHigh().toDouble()
                     )
                 } else {
                     emptyList()

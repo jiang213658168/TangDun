@@ -28,7 +28,7 @@ class SmartAdvisor {
         // 目标范围
         const val TARGET_LOW = 3.9
         const val TARGET_HIGH = 10.0
-        const val SEVERE_LOW = 3.0
+        const val SEVERE_LOW = 3.0  // 默认值，实际用参数传入
         const val SEVERE_HIGH = 13.9
 
         // 胰岛素敏感因子（每单位胰岛素降低血糖 mmol/L）
@@ -89,7 +89,11 @@ class SmartAdvisor {
         recentInsulin: List<InsulinRecord>,
         lastMealCarbs: Double = 0.0,
         lastMealTime: Int = 0,
-        recentExercise: Int = 0
+        recentExercise: Int = 0,
+        targetLow: Double = TARGET_LOW,
+        targetHigh: Double = TARGET_HIGH,
+        severeLow: Double = SEVERE_LOW,
+        severeHigh: Double = SEVERE_HIGH
     ): List<Advice> {
         val advices = mutableListOf<Advice>()
 
@@ -105,7 +109,7 @@ class SmartAdvisor {
         // 4. 根据情况给出建议
 
         // 严重低血糖
-        if (currentGlucose < SEVERE_LOW) {
+        if (currentGlucose < severeLow) {
             advices.add(Advice(
                 type = AdviceType.WARNING,
                 title = "严重低血糖！",
@@ -122,7 +126,7 @@ class SmartAdvisor {
         }
 
         // 低血糖
-        if (currentGlucose < TARGET_LOW) {
+        if (currentGlucose < targetLow) {
             advices.add(Advice(
                 type = AdviceType.CARB_INTAKE,
                 title = "血糖偏低",
@@ -139,7 +143,7 @@ class SmartAdvisor {
         }
 
         // 严重高血糖
-        if (currentGlucose > SEVERE_HIGH) {
+        if (currentGlucose > severeHigh) {
             advices.add(Advice(
                 type = AdviceType.WARNING,
                 title = "血糖严重偏高",
@@ -176,7 +180,7 @@ class SmartAdvisor {
         }
 
         // 高血糖
-        if (currentGlucose > TARGET_HIGH) {
+        if (currentGlucose > targetHigh) {
             // 补针建议
             if (iob < 2.0 && roc >= 0) {
                 val correctionDose = calculateCorrectionDose(currentGlucose, 7.0, iob)
@@ -228,7 +232,7 @@ class SmartAdvisor {
         }
 
         // 正常范围
-        if (currentGlucose in TARGET_LOW..TARGET_HIGH) {
+        if (currentGlucose in targetLow..targetHigh) {
             // 如果有下降趋势
             if (trend == "falling" || trend == "falling_fast") {
                 advices.add(Advice(

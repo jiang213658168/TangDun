@@ -47,7 +47,7 @@ class PredictionViewModel @Inject constructor(
     val uiState = _uiState.asStateFlow()
 
     private val predictor = PersonalizedPredictor(ctx)
-    private val onlineLearner = OnlineLearner(ctx)
+    private val onlineLearner = OnlineLearner(ctx)  // 与predictor内部共享SharedPreferences
     private val physiological = DallaManModel()
     private val cgmCalibrator = com.tangdun.app.domain.algorithm.CGMCalibrator(ctx)
     private val tcnOk = predictor.initialize()
