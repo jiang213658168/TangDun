@@ -242,11 +242,15 @@ class OnlineLearner(private val context: Context) {
     fun applyPersonalization(basePrediction: Double, currentGlucose: Double): Double {
         val params = getPersonalParams()
 
-        // 根据用户基线调整
-        val baselineAdjustment = (params.fastingBaseline - 6.0) * 0.1
+        // 根据用户真实空腹基线调整 (模型平衡≈4.7, 患者可能6-8)
+        val baselineAdjustment = (params.fastingBaseline - 5.2) * 0.5
 
-        // 根据变异性调整置信度
-        val variabilityFactor = if (params.glucoseVariability > 3.0) 0.95 else 1.0
+        // 高变异→预测偏保守(微降), 低变异→信任模型
+        val variabilityFactor = when {
+            params.glucoseVariability > 4.0 -> 0.92
+            params.glucoseVariability > 3.0 -> 0.96
+            else -> 1.0
+        }
 
         return (basePrediction + baselineAdjustment) * variabilityFactor
     }
