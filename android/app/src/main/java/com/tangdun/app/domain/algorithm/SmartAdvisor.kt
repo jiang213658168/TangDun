@@ -93,7 +93,9 @@ class SmartAdvisor {
         targetLow: Double = TARGET_LOW,
         targetHigh: Double = TARGET_HIGH,
         severeLow: Double = SEVERE_LOW,
-        severeHigh: Double = SEVERE_HIGH
+        severeHigh: Double = SEVERE_HIGH,
+        insulinSensitivity: Double = INSULIN_SENSITIVITY,
+        carbRatio: Double = CARB_RATIO
     ): List<Advice> {
         val advices = mutableListOf<Advice>()
 
@@ -159,7 +161,7 @@ class SmartAdvisor {
 
             // 补针建议
             if (iob < 2.0) {
-                val correctionDose = calculateCorrectionDose(currentGlucose, 6.0, iob)
+                val correctionDose = calculateCorrectionDose(currentGlucose, 6.0, iob, insulinSensitivity)
                 if (correctionDose > 0) {
                     advices.add(Advice(
                         type = AdviceType.INSULIN_BOLUS,
@@ -183,7 +185,7 @@ class SmartAdvisor {
         if (currentGlucose > targetHigh) {
             // 补针建议
             if (iob < 2.0 && roc >= 0) {
-                val correctionDose = calculateCorrectionDose(currentGlucose, 7.0, iob)
+                val correctionDose = calculateCorrectionDose(currentGlucose, 7.0, iob, insulinSensitivity)
                 if (correctionDose > 0.5) {
                     advices.add(Advice(
                         type = AdviceType.INSULIN_BOLUS,
@@ -377,9 +379,10 @@ class SmartAdvisor {
     private fun calculateCorrectionDose(
         currentGlucose: Double,
         targetGlucose: Double,
-        iob: Double
+        iob: Double,
+        isf: Double
     ): Double {
-        val correction = (currentGlucose - targetGlucose) / INSULIN_SENSITIVITY
+        val correction = (currentGlucose - targetGlucose) / isf
         val dose = correction - iob
         return max(0.0, dose)
     }

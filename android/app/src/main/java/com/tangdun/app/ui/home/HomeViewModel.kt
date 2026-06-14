@@ -250,7 +250,9 @@ class HomeViewModel @Inject constructor(
                         targetLow = low,
                         targetHigh = high,
                         severeLow = settingsManager.getSevereLow().toDouble(),
-                        severeHigh = settingsManager.getSevereHigh().toDouble()
+                        severeHigh = settingsManager.getSevereHigh().toDouble(),
+                        insulinSensitivity = settingsManager.getInsulinSensitivity().toDouble(),
+                        carbRatio = settingsManager.getCarbRatio().toDouble()
                     )
                 } else {
                     emptyList()

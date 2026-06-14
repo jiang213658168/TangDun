@@ -91,6 +91,14 @@ class GlucoseAlarmService(private val context: Context) {
                 false, false,
                 longArrayOf(0, 200))
         }
+
+        // ★ 清除已恢复的告警 (血糖回到正常→取消之前的低/高通知)
+        val inRange = glucoseMmol in low..high
+        if (inRange) {
+            for (id in listOf(NOTIFY_LOW, NOTIFY_SEVERE_LOW, NOTIFY_HIGH, NOTIFY_SEVERE_HIGH)) {
+                nm.cancel(id)
+            }
+        }
     }
 
     private fun sendAlarm(

@@ -85,7 +85,15 @@ class PredictionViewModel @Inject constructor(
                 val meals24h = mealDao.getByTimeRange(now - 24 * 3600 * 1000, now)
                 val insulin = insulinDao.getSince(now - 24 * 3600 * 1000)
                 val todayCarbs = meals24h.sumOf { it.totalCarbs }
-                val iob = insulin.fold(0.0) { a, r -> val m = (now - r.timestamp) / 60000.0; if (m in 0.0..240.0 && r.insulinType == "rapid") a + r.doseUnits * 0.5.pow(m / 55.0) else a }
+                // IOB: 速效(4h半衰55min) + 短效(6h半衰90min)
+                val iob = insulin.fold(0.0) { a, r ->
+                    val m = (now - r.timestamp) / 60000.0
+                    when (r.insulinType) {
+                        "rapid" -> if (m in 0.0..240.0) a + r.doseUnits * 0.5.pow(m / 55.0) else a
+                        "short" -> if (m in 0.0..360.0) a + r.doseUnits * 0.5.pow(m / 90.0) else a
+                        else -> a
+                    }
+                }
 
                 // 运动数据 — 影响血糖预测(运动增加葡萄糖利用)
                 val exercises = exerciseDao.getTodayRecords(todayStart)
