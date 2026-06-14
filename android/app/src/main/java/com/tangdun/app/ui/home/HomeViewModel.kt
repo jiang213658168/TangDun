@@ -63,11 +63,25 @@ class HomeViewModel @Inject constructor(
 
     private val xDripManager = XDripManager(context)
     private val cgmCalibrator = com.tangdun.app.domain.algorithm.CGMCalibrator(context)
+    private var lastHomeLearnTime = 0L
 
     init {
         loadData()
         checkXDripStatus()
         startXDripSync()
+
+        // 每15分钟触发自学习 (首页常驻, 比DataSyncWorker更可靠)
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(15 * 60 * 1000L)
+                try {
+                    val learner = com.tangdun.app.domain.algorithm.PersonalizedPredictor(context)
+                    learner.initialize()
+                    learner.learn(glucoseDao)
+                    Log.i("HomeVM", "自学习: ${learner.getLearningStatus()}")
+                } catch (e: Exception) { Log.w("HomeVM", "自学习失败: ${e.message}") }
+            }
+        }
 
         // 监听新血糖数据
         viewModelScope.launch {
