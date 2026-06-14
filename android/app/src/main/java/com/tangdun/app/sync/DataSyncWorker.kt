@@ -104,11 +104,27 @@ class DataSyncWorker(
             // 2. 从华为手表同步心率、步数等
             syncFromHuaweiWatch()
 
+            // 3. 触发自学习 (每5分钟一次，足够频率)
+            syncOnlineLearning()
+
             Log.d(TAG, "数据同步完成")
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "同步失败: ${e.message}", e)
             Result.retry()
+        }
+    }
+
+    /** 触发个性化自学习 (OnlineLearner + IncrementalLearner) */
+    private suspend fun syncOnlineLearning() {
+        try {
+            val dao = database?.glucoseDao() ?: return
+            val learner = com.tangdun.app.domain.algorithm.PersonalizedPredictor(applicationContext)
+            learner.initialize()
+            learner.learn(dao)
+            Log.d(TAG, "自学习: ${learner.getLearningStatus()}")
+        } catch (e: Exception) {
+            Log.w(TAG, "自学习失败: ${e.message}")
         }
     }
 

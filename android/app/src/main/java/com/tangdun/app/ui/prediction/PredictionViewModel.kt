@@ -51,6 +51,9 @@ class PredictionViewModel @Inject constructor(
     private val physiological = DallaManModel()
     private val tcnOk = predictor.initialize()
 
+    // 自学习节流: 最多每15分钟学习一次
+    private var lastLearnTime = 0L
+
     init {
         Log.i(TAG, "TCN=${if (tcnOk) "ONNX" else "降级"}")
         loadPrediction()
@@ -93,7 +96,12 @@ class PredictionViewModel @Inject constructor(
                 // Dalla Man 生理模型: 24h进食 + 24h胰岛素
                 val weight = settings.getWeightKg().toDouble()
                 val dmParams = DallaManModel.Parameters.forChinese(bodyWeight = weight)
-                val mealInputs = meals24h.takeLast(5).map { DallaManModel.MealInput((now - it.timestamp) / 60000.0, it.totalCarbs, it.avgGi) }
+                // 刚记录的饮食加最小消化时间，避免曲线延迟上升
+                val mealInputs = meals24h.takeLast(5).map {
+                    val rawMinutes = (now - it.timestamp) / 60000.0
+                    val effectiveMinutes = if (rawMinutes < 10.0) maxOf(rawMinutes, 5.0) else rawMinutes
+                    DallaManModel.MealInput(effectiveMinutes, it.totalCarbs, it.avgGi)
+                }
                 val insulinInputs = insulin.filter { it.insulinType == "rapid" }.takeLast(10).map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }
                 val dmCurve = physiological.predict(g, maxOf(iob * 15.0, 5.0), mealInputs, insulinInputs, horizonMinutes = 120, stepMinutes = 5, params = dmParams)
 
@@ -140,6 +148,16 @@ class PredictionViewModel @Inject constructor(
                     isfEstimate = est.insulinSensitivity, crEstimate = est.carbRatio, error = null
                 )
                 Log.i(TAG, "预测: ${String.format("%.1f", g)} IOB${String.format("%.1f", iob)} 碳水${String.format("%.0f", todayCarbs)} 模型=$modelLabel ISF≈${String.format("%.1f", est.insulinSensitivity)} CR≈${String.format("%.1f", est.carbRatio)}")
+
+                // ★ 触发自学习: 最多每15分钟一次
+                val now2 = System.currentTimeMillis()
+                if (now2 - lastLearnTime > 15 * 60 * 1000L) {
+                    lastLearnTime = now2
+                    viewModelScope.launch {
+                        try { predictor.learn(glucoseDao); Log.i(TAG, "自学习完成: ${onlineLearner.getStageDescription()} inc=${predictor.getIncrementalStats()["updates"]}次") }
+                        catch (e: Exception) { Log.w(TAG, "自学习失败: ${e.message}") }
+                    }
+                }
             } catch (e: Exception) { Log.e(TAG, "预测失败: ${e.message}", e); _uiState.value = _uiState.value.copy(isLoading = false, error = "预测失败: ${e.message}") }
         }
     }
