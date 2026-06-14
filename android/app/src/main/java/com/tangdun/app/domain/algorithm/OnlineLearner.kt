@@ -31,7 +31,7 @@ class OnlineLearner(private val context: Context) {
     companion object {
         private const val TAG = "OnlineLearner"
         private const val PREFS_NAME = "online_learner_params"
-        private const val MIN_DATA_POINTS = 100  // 最少数据点
+        private const val MIN_DATA_POINTS = 20   // ~2小时CGM数据即可开始学习
     }
 
     private val sharedPref: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
