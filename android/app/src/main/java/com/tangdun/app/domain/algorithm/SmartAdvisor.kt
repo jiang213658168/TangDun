@@ -235,32 +235,38 @@ class SmartAdvisor {
 
         // 正常范围
         if (currentGlucose in targetLow..targetHigh) {
+            // 临界低血糖: 距离下限<1.0且下降→高优先级
+            val nearLow = currentGlucose - targetLow < 1.0
+
             // 如果有下降趋势
             if (trend == "falling" || trend == "falling_fast") {
+                val prio = if (nearLow) Priority.HIGH else Priority.MEDIUM
+                val msg = if (nearLow) "血糖偏低且在下降，请立即补充碳水" else "注意预防低血糖"
                 advices.add(Advice(
                     type = AdviceType.MONITOR,
-                    title = "血糖正在下降",
-                    message = "注意预防低血糖",
+                    title = if (nearLow) "⚠ 接近低血糖" else "血糖正在下降",
+                    message = msg,
                     details = listOf(
                         "当前血糖: ${String.format("%.1f", currentGlucose)} mmol/L",
-                        "趋势: ${getTrendText(trend)}",
-                        "建议30分钟后复查"
+                        "下限: ${String.format("%.1f", targetLow)} mmol/L",
+                        "趋势: ${getTrendText(trend)}"
                     ),
-                    priority = Priority.MEDIUM
+                    priority = prio,
+                    action = if (nearLow) "补充15g碳水" else null
                 ))
 
-                // 如果下降很快，建议补充碳水
-                if (trend == "falling_fast" || roc < -0.05) {
+                // 如果下降很快或已接近下限，建议补充碳水
+                if (trend == "falling_fast" || roc < -0.05 || nearLow) {
                     advices.add(Advice(
                         type = AdviceType.CARB_INTAKE,
-                        title = "血糖下降较快",
-                        message = "建议补充少量碳水",
+                        title = "建议补充碳水",
+                        message = if (nearLow) "立即补充15-20g快速碳水" else "建议补充少量碳水",
                         details = listOf(
                             "推荐: 1片面包 或 1个水果",
                             "约15-20g碳水"
                         ),
-                        priority = Priority.MEDIUM,
-                        action = "补充少量碳水"
+                        priority = if (nearLow) Priority.HIGH else Priority.MEDIUM,
+                        action = if (nearLow) "立即补充碳水" else "补充少量碳水"
                     ))
                 }
             }

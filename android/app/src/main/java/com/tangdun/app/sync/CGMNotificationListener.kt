@@ -154,7 +154,7 @@ class CGMNotificationListener : NotificationListenerService() {
                         // 质量评分≥50才触发警报 (过滤噪声误报)
                         // 质量达标OR严重低血糖→触发告警 (严重情况永不静默)
                         if (processed != null && (processed.qualityScore >= 50 || saveValue < 3.0)) {
-                            val pred30 = saveValue + (processed.roc * 30)
+                            val pred30 = (saveValue + processed.roc * 30).coerceIn(2.0, 30.0)
                             try { GlucoseAlarmService(this@CGMNotificationListener).checkAndAlarm(saveValue, saveTrend, pred30) } catch (e: Exception) { Log.w(TAG, "警报检查失败: ${e.message}") }
                         }
                     } catch (e: Exception) { Log.e(TAG, "保存失败: ${e.message}") }
@@ -225,6 +225,11 @@ class CGMNotificationListener : NotificationListenerService() {
         if (s.matches(Regex("[0-9]+[.,][0-9]+"))) {
             val mmol = s.replace(",", ".").toDoubleOrNull()
             if (mmol != null && mmol in 1.0..22.0) return (mmol * 18.0).toInt()
+        }
+
+        // 尝试整数(mmol/L) — 有些CGM显示"6"而非"6.0"
+        s.toDoubleOrNull()?.let { mmol ->
+            if (mmol in 2.0..22.0) return (mmol * 18.0).toInt()
         }
         return -1
     }

@@ -135,7 +135,7 @@ class DirectGlucoseBroadcastReceiver : BroadcastReceiver() {
                         logEvent(context, "保存: ${String.format("%.1f", saveValue)} mmol/L", source)
 
                         if (processed != null && (processed.qualityScore >= 50 || saveValue < 3.0)) {
-                            val pred30 = saveValue + (processed.roc * 30)
+                            val pred30 = (saveValue + processed.roc * 30).coerceIn(2.0, 30.0)
                             try { GlucoseAlarmService(context).checkAndAlarm(saveValue, saveTrend, pred30) } catch (e: Exception) { Log.w(TAG, "警报检查失败: ${e.message}") }
                         }
                     } catch (e: Exception) {

@@ -41,6 +41,7 @@ class GlucoseAlarmService(private val context: Context) {
     }
 
     private val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private var lastAutoDialTime = 0L  // 防止重复拨打
 
     fun checkAndAlarm(glucoseMmol: Double, trend: String?, predicted30min: Double? = null, lastReadingTime: Long? = null) {
         val settings = SettingsManager(context)
@@ -65,9 +66,14 @@ class GlucoseAlarmService(private val context: Context) {
         // 当前值告警
         if (glucoseMmol < sevLow) {
             sendAlarm(NOTIFY_SEVERE_LOW, "紧急低血糖!", "血糖 ${String.format("%.1f", glucoseMmol)} mmol/L，立即补充糖分！", true, true, longArrayOf(0, 500, 200, 500, 200, 500))
-            val phone = settings.getEmergencyContactPhone()
-            if (phone.isNotBlank()) {
-                try { context.startActivity(Intent(Intent.ACTION_CALL).apply { data = Uri.parse("tel:$phone"); flags = Intent.FLAG_ACTIVITY_NEW_TASK }) } catch (e: Exception) { Log.w(TAG, "紧急拨号失败: ${e.message}") }
+            // 自动拨号: 30分钟冷却(防止每5分钟重复拨打)
+            val now = System.currentTimeMillis()
+            if (now - lastAutoDialTime > 30 * 60 * 1000L) {
+                lastAutoDialTime = now
+                val phone = settings.getEmergencyContactPhone()
+                if (phone.isNotBlank()) {
+                    try { context.startActivity(Intent(Intent.ACTION_CALL).apply { data = Uri.parse("tel:$phone"); flags = Intent.FLAG_ACTIVITY_NEW_TASK }) } catch (e: Exception) { Log.w(TAG, "紧急拨号失败: ${e.message}") }
+                }
             }
         } else if (glucoseMmol < low) {
             sendAlarm(NOTIFY_LOW, "低血糖预警", "血糖 ${String.format("%.1f", glucoseMmol)} mmol/L，建议补充15g碳水", false, false, longArrayOf(0, 300, 200, 300))
