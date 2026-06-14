@@ -30,6 +30,7 @@ class DallaManModel {
         val kStomach: Double = 0.055,     // 胃排空率
         val kGut: Double = 0.056,         // 肠道吸收率
         val fCarbs: Double = 0.9,         // 碳水生物利用度
+        val VmaxGastric: Double = 15.0,   // 最大胃排空 (mg/kg/min, ~60g/h for 65kg)
 
         // ── 葡萄糖动力学 ──
         val VgPerKg: Double = 1.8,        // 葡萄糖分布体积 (dL/kg)
@@ -88,6 +89,7 @@ class DallaManModel {
                 kStomach = 0.040,       // ★ 更慢胃排空→持续释放→平稳峰
                 kGut = 0.065,           // ★ 更快肠吸收→即时利用
                 fCarbs = 0.9,
+                VmaxGastric = 15.0,     // 最大胃排空 mg/kg/min
                 // 葡萄糖动力学 (Michaelis-Menten)
                 VgPerKg = 1.6,          // 体脂较低→分布体积略小
                 k1 = 0.055,             // 略低非胰岛素利用
@@ -320,11 +322,13 @@ class DallaManModel {
         // ── dX_L/dt: 胰岛素远端肝糖抑制作用 ──
         val dX_L = -p.kp2 * X_L + p.kp2 * insulinDrive
 
-        // ── d(stomach)/dt: 胃排空 ──
-        val dStomach = -p.kStomach * stomach
+        // ── d(stomach)/dt: 胃排空 (速率上限防止大餐数据爆炸) ──
+        val gastricRate = p.kStomach * stomach
+        val gastricMax = p.VmaxGastric * weight  // mg/min 最大排空
+        val dStomach = -minOf(gastricRate, gastricMax)
 
         // ── d(gut)/dt: 肠道传输与吸收 ──
-        val dGut = p.kStomach * stomach - p.kGut * gut
+        val dGut = minOf(gastricRate, gastricMax) - p.kGut * gut
 
         // ── d(subQ1)/dt: 皮下非单体→单体 ──
         val dSubQ1 = -p.ka1 * subQ1
