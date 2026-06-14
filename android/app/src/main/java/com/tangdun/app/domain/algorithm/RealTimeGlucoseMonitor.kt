@@ -150,11 +150,18 @@ class RealTimeGlucoseMonitor(private val context: Context) {
         window.add(rawMmol)
         if (window.size > 30) window.removeAt(0)
 
-        // ── 6. 卡尔曼滤波 ──
-        val filtered = preprocessor.kalmanFilter(window).last()
+        // ── 6. 轻量EWMA滤波 (CGM已自带硬件滤波, 这里仅防尖峰噪声) ──
+        val filtered = if (lastReading != null) {
+            val alpha = 0.85  // 85%信任新值, 15%保留旧趋势
+            alpha * rawMmol + (1 - alpha) * lastReading.filteredValue
+        } else rawMmol
 
-        // ── 7. 指尖血校准 ──
-        val calibrated = calibrator.applyCalibration(filtered)
+        // ── 7. 指尖血校准 (仅在校准次数≥3且最近12h内有时应用) ──
+        val calibrated = if (calibrator.needsCalibration().not() || calibrator.getCount() < 3) {
+            filtered  // 校准不可用→保留滤波值
+        } else {
+            calibrator.applyCalibration(filtered)
+        }
 
         // ── 8. 噪声检测 (多项式拟合误差方差) ──
         val (noiseLevel, noiseVar) = detectNoise(window)
