@@ -141,10 +141,10 @@ class OnlineLearner(private val context: Context) {
             val params = getPersonalParams()
             val values = records.map { it.value }
 
-            // 计算数据天数
-            val firstTs = records.first().timestamp
-            val lastTs = records.last().timestamp
-            val dataDays = (lastTs - firstTs) / (24.0 * 3600 * 1000)
+            // 计算数据天数 (getRecent返回DESC: first=最新, last=最旧)
+            val newest = records.first().timestamp
+            val oldest = records.last().timestamp
+            val dataDays = (newest - oldest) / (24.0 * 3600 * 1000)
 
             // === 步骤1: 基础统计 ===
             val mean = values.average()

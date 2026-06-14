@@ -1359,14 +1359,23 @@ fun AboutCard() {
             InfoItem("构建日期", "2026-06-13")
             InfoItem("包名", context.packageName)
             Divider(modifier = Modifier.padding(vertical = 8.dp))
-            TextButton(onClick = {
-                val uri = android.net.Uri.parse("https://jiang213658168.github.io/TangDun/agreement.html")
-                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) })
-            }) { Text("用户协议", color = MaterialTheme.colorScheme.primary) }
-            TextButton(onClick = {
-                val uri = android.net.Uri.parse("https://jiang213658168.github.io/TangDun/privacy.html")
-                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) })
-            }) { Text("隐私政策", color = MaterialTheme.colorScheme.primary) }
+            var showAgreement by remember { mutableStateOf(false) }
+            var showPrivacy by remember { mutableStateOf(false) }
+            TextButton(onClick = { showAgreement = true }) { Text("用户协议", color = MaterialTheme.colorScheme.primary) }
+            TextButton(onClick = { showPrivacy = true }) { Text("隐私政策", color = MaterialTheme.colorScheme.primary) }
+
+            if (showAgreement) AlertDialog(
+                onDismissRequest = { showAgreement = false },
+                title = { Text("用户协议") },
+                text = { Text(agreementText, fontSize = 13.sp) },
+                confirmButton = { TextButton(onClick = { showAgreement = false }) { Text("关闭") } }
+            )
+            if (showPrivacy) AlertDialog(
+                onDismissRequest = { showPrivacy = false },
+                title = { Text("隐私政策") },
+                text = { Text(privacyText, fontSize = 13.sp) },
+                confirmButton = { TextButton(onClick = { showPrivacy = false }) { Text("关闭") } }
+            )
             Text("© 2026 糖盾 TangDun. 仅供健康管理参考，不构成医疗建议。",
                 style = MaterialTheme.typography.bodySmall, color = TextHint, modifier = Modifier.padding(top = 8.dp))
         }
@@ -1394,3 +1403,25 @@ fun ActivationStatusCard() {
         }
     }
 }
+
+// 协议文本
+val agreementText = """
+糖盾(TangDun) 用户协议
+
+1. 服务说明: 糖盾是糖尿病血糖监测与预测辅助工具，仅供健康管理参考。
+2. 免责声明: 不替代医生诊断，预测存在误差，开发者不承担健康责任。
+3. 数据隐私: 血糖数据存储在本地，不会未经授权分享给第三方。
+4. 使用规则: 需要有效激活码，禁止逆向工程。
+使用糖盾即表示同意以上条款。
+""".trimIndent()
+
+val privacyText = """
+糖盾(TangDun) 隐私政策
+
+1. 收集信息: 血糖、饮食、胰岛素、运动记录，设备型号
+2. 数据存储: 所有健康数据默认存储在本机
+3. 数据使用: 本地AI训练、远程监护(需授权)、匿名统计
+4. 您的权利: 导出/删除数据、卸载清除数据
+5. 第三方: AI对话、食物识别(百度AI)、远程监护(MQTT)
+如有问题请联系开发者。
+""".trimIndent()
