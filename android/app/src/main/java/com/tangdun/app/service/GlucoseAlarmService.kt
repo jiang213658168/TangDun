@@ -42,14 +42,27 @@ class GlucoseAlarmService(private val context: Context) {
 
     private val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-    fun checkAndAlarm(glucoseMmol: Double, trend: String?, lastReadingTime: Long? = null) {
+    fun checkAndAlarm(glucoseMmol: Double, trend: String?, predicted30min: Double? = null, lastReadingTime: Long? = null) {
         val settings = SettingsManager(context)
         val sevLow = settings.getSevereLow().toDouble()
         val sevHigh = settings.getSevereHigh().toDouble()
         val low = settings.getTargetLow().toDouble()
         val high = settings.getTargetHigh().toDouble()
 
-        // 严重低血糖
+        // 预测性告警: 30分钟后预测值越线 → 提前预警
+        if (predicted30min != null && glucoseMmol >= low) {
+            if (predicted30min < sevLow) {
+                sendAlarm(NOTIFY_SEVERE_LOW, "预测严重低血糖!",
+                    "30分钟后预测 ${String.format("%.1f", predicted30min)} mmol/L！当前 ${String.format("%.1f", glucoseMmol)}，请立即补充碳水！",
+                    true, true, longArrayOf(0, 500, 200, 500, 200, 500))
+            } else if (predicted30min < low) {
+                sendAlarm(NOTIFY_LOW, "预测低血糖",
+                    "30分钟后可能降至 ${String.format("%.1f", predicted30min)} mmol/L。当前 ${String.format("%.1f", glucoseMmol)}，建议提前补充碳水。",
+                    false, false, longArrayOf(0, 300, 200, 300))
+            }
+        }
+
+        // 当前值告警
         if (glucoseMmol < sevLow) {
             sendAlarm(NOTIFY_SEVERE_LOW, "紧急低血糖!", "血糖 ${String.format("%.1f", glucoseMmol)} mmol/L，立即补充糖分！", true, true, longArrayOf(0, 500, 200, 500, 200, 500))
             val phone = settings.getEmergencyContactPhone()
