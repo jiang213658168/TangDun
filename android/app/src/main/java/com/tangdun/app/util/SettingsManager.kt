@@ -42,7 +42,7 @@ class SettingsManager(private val context: Context) {
         // AI对话配置 (兼容OpenAI的API)
         private const val DEFAULT_AI_PROVIDER = "openai"
         private const val DEFAULT_OPENAI_API_KEY = "tp-c46u5ce4kpsricwt4e6j7l3i2ncmc2stfh8g1qoprm1yisn9"
-        private const val DEFAULT_OPENAI_BASE_URL = "https://token-plan-cn.xiaomimimo.com/anthropic"
+        private const val DEFAULT_OPENAI_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
     }
 
     fun setBaiduApiConfig(apiKey: String, secretKey: String) {
