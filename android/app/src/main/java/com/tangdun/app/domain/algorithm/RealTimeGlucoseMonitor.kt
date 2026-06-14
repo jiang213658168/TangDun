@@ -55,6 +55,8 @@ class RealTimeGlucoseMonitor(private val context: Context) {
 
     // 滑动窗口: 最近30个已处理读数（2.5小时 @5min间隔）
     private val recentReadings = ArrayDeque<ProcessedReading>(30)
+    // 原始值窗口: 用于噪声检测 (用rawValue而非filteredValue)
+    private val rawWindow = ArrayDeque<Double>(10)
 
     // ── 输出 ──
     private val _processedFlow = MutableSharedFlow<ProcessedReading>(replay = 1)
@@ -151,11 +153,12 @@ class RealTimeGlucoseMonitor(private val context: Context) {
         if (window.size > 30) window.removeAt(0)
 
         // ── 6. 自适应EWMA滤波 (根据噪声等级调整) ──
-        // 先快速评估噪声 (基于最近窗口的方差)
-        val quickNoise = if (window.size >= 5) {
-            val wMean = window.average()
-            val wVar = window.map { (it - wMean) * (it - wMean) }.average()
-            wVar
+        // 用原始值窗口评估噪声 (非filteredValue, 否则已平滑的窗口方差偏低)
+        rawWindow.add(rawMmol)
+        if (rawWindow.size > 10) rawWindow.removeFirst()
+        val quickNoise = if (rawWindow.size >= 5) {
+            val wMean = rawWindow.average()
+            rawWindow.map { (it - wMean) * (it - wMean) }.average()
         } else 0.0
         // 噪声低→高α(信任读数), 噪声高→低α(加强平滑)
         val alpha = when {
@@ -430,6 +433,7 @@ class RealTimeGlucoseMonitor(private val context: Context) {
     /** 重置监测器 */
     fun reset() {
         recentReadings.clear()
+        rawWindow.clear()
         _monitorState.value = MonitorState()
     }
 }
