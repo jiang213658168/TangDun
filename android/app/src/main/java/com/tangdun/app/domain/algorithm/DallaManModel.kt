@@ -165,6 +165,7 @@ class DallaManModel {
         val dt = stepMinutes.toDouble()
         val steps = horizonMinutes / stepMinutes
         val result = mutableListOf<Double>()
+        val weight = params.bodyWeight
         val Vg = params.Vg    // dL
         val Vi = params.Vi    // L
         val Ib = params.Ib
@@ -218,6 +219,10 @@ class DallaManModel {
                 gut += mg * kS * T * exp(-kS * T)  // kG≈kS 极限情况
             }
         }
+
+        // 初始gut上限: 不能超过胃排空限速下的肠道平衡容量
+        val gutMax = params.VmaxGastric * weight / params.kGut
+        gut = minOf(gut, gutMax)
 
         // ── 主仿真循环 ──
         for (step in 0..steps) {
