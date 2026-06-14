@@ -90,15 +90,19 @@ class NightMonitor {
         val recent = readings.takeLast(6)
         if (recent.size < 2) return "stable"
 
-        val first = recent.first().value
-        val last = recent.last().value
-        val change = last - first
+        val first = recent.first()
+        val last = recent.last()
+        val timeDiffMin = (last.timestamp - first.timestamp) / 60000.0
+        if (timeDiffMin <= 0) return "stable"
+
+        // 归一化变化率 (mmol/L/min)
+        val roc = (last.value - first.value) / timeDiffMin
 
         return when {
-            change > 1.5 -> "rising_fast"
-            change > 0.5 -> "rising"
-            change < -1.5 -> "falling_fast"
-            change < -0.5 -> "falling"
+            roc > 0.1 -> "rising_fast"
+            roc > 0.03 -> "rising"
+            roc < -0.1 -> "falling_fast"
+            roc < -0.03 -> "falling"
             else -> "stable"
         }
     }

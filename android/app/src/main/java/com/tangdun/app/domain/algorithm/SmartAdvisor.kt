@@ -322,11 +322,17 @@ class SmartAdvisor {
             val minutesAgo = (now - record.timestamp) / 60000.0
             if (minutesAgo < 0) continue
 
-            // 速效胰岛素4小时衰减
-            if (record.insulinType == "rapid" && minutesAgo > RAPID_INSULIN_DURATION * 60) continue
+            // 按胰岛素类型选择半衰期和作用时长
+            val (halfLife, maxDuration) = when (record.insulinType) {
+                "rapid" -> 55.0 to (RAPID_INSULIN_DURATION * 60)     // 速效: 半衰期55min, 持续4h
+                "short" -> 90.0 to (6.0 * 60)                       // 短效: 半衰期90min, 持续6h
+                "long" -> 720.0 to (24.0 * 60)                      // 长效: 半衰期12h, 持续24h
+                "mixed" -> 180.0 to (12.0 * 60)                     // 预混: 半衰期3h, 持续12h
+                else -> 55.0 to (RAPID_INSULIN_DURATION * 60)       // 默认=速效
+            }
+            if (minutesAgo > maxDuration) continue
 
-            // 指数衰减模型
-            val halfLife = 55.0  // 速效胰岛素半衰期(分钟)
+            // 指数衰减模型: IOB = dose × 0.5^(t/halfLife)
             val remainingFraction = Math.pow(0.5, minutesAgo / halfLife)
             totalIOB += record.doseUnits * remainingFraction
         }

@@ -128,24 +128,17 @@ class DataSyncWorker(
             Log.d(TAG, "从xDrip+获取${readings.size}条血糖数据")
 
             val glucoseDao = database?.glucoseDao() ?: return
-            var savedCount = 0
 
-            for (reading in readings) {
-                // 跳过旧数据
-                val existing = glucoseDao.getLatest()
-                if (existing != null && existing.timestamp >= reading.timestamp) {
-                    continue
-                }
-
-                val record = GlucoseRecord(
-                    timestamp = reading.timestamp,
-                    value = reading.valueMmol,
-                    source = "xdrip",
-                    trend = reading.trend
-                )
-                glucoseDao.insert(record)
-                savedCount++
-            }
+            // 批量去重: 一次查询时间范围，一次批量插入
+            if (readings.isEmpty()) return
+            val timeRange = readings.first().timestamp..readings.last().timestamp
+            val existing = glucoseDao.getByTimeRange(timeRange.start, timeRange.endInclusive)
+                .map { it.timestamp }.toSet()
+            val newRecords = readings
+                .filter { it.timestamp !in existing }
+                .map { r -> GlucoseRecord(timestamp = r.timestamp, value = r.valueMmol, source = "xdrip", trend = r.trend) }
+            if (newRecords.isNotEmpty()) glucoseDao.insertAll(newRecords)
+            val savedCount = newRecords.size
 
             if (savedCount > 0) {
                 Log.d(TAG, "xDrip+同步完成，新增${savedCount}条血糖数据")

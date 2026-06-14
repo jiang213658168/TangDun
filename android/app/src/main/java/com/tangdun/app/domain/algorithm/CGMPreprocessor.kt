@@ -125,7 +125,7 @@ class CGMPreprocessor {
                     }
                     prevIdx >= 0 -> data[prevIdx]
                     nextIdx < data.size -> data[nextIdx]
-                    else -> 7.0  // 默认值
+                    else -> Double.NaN  // 无法插值，标记为缺失
                 }
             }
         }

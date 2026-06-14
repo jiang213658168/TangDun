@@ -53,6 +53,15 @@ class DallaManModel {
         val kp3: Double = 0.03,           // 利用通道激活率
         val kp2: Double = 0.06            // 肝糖抑制通道激活率
     ) {
+        init {
+            require(bodyWeight > 0) { "体重必须>0 kg" }
+            require(Ib > 0) { "基础胰岛素必须>0 mU/L" }
+            require(kStomach > 0) { "胃排空率必须>0" }
+            require(kGut > 0) { "肠道吸收率必须>0" }
+            require(ke > 0) { "胰岛素清除率必须>0" }
+            require(ViPerKg > 0) { "胰岛素分布体积必须>0" }
+        }
+
         /** 计算个人化的分布体积 */
         val Vg: Double get() = (bodyWeight * VgPerKg).coerceIn(60.0, 300.0)
         val Vi: Double get() = (bodyWeight * ViPerKg).coerceIn(2.0, 25.0)

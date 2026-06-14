@@ -29,6 +29,9 @@ import java.util.*
  */
 class CGMNotificationListener : NotificationListenerService() {
 
+    // 绑定Service生命周期的协程作用域，避免每次通知创建新Scope
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
     companion object {
         private const val TAG = "CGMNotify"
 
@@ -123,11 +126,12 @@ class CGMNotificationListener : NotificationListenerService() {
 
                 Log.i(TAG, "血糖: ${String.format("%.1f", glucoseMmol)} mmol/L ($mgdl mg/dL)")
 
-                CoroutineScope(Dispatchers.IO).launch {
+                serviceScope.launch {
                     try {
                         val dao = TangDunApp.getDatabase(this@CGMNotificationListener).glucoseDao()
                         val latest = dao.getLatest()
-                        if (latest != null && kotlin.math.abs(now - latest.timestamp) < 60_000) return@launch
+                        // 仅当最近记录也是CGM来源且时间接近才跳过（防止阻断手动输入）
+                        if (latest != null && latest.source == "cgm_notify" && kotlin.math.abs(now - latest.timestamp) < 60_000) return@launch
                         dao.insert(GlucoseRecord(timestamp = now, value = glucoseMmol, source = "cgm_notify"))
                         try { GlucoseAlarmService(this@CGMNotificationListener).checkAndAlarm(glucoseMmol, null) } catch (_: Exception) {}
                     } catch (e: Exception) { Log.e(TAG, "保存失败: ${e.message}") }
@@ -137,6 +141,11 @@ class CGMNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {}
+
+    override fun onDestroy() {
+        serviceScope.cancel()
+        super.onDestroy()
+    }
 
     /**
      * 从通知中提取血糖值 — 移植自 UiBasedCollector.tryExtractString()

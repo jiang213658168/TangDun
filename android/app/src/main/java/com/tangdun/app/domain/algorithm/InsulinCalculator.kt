@@ -62,8 +62,8 @@ class InsulinCalculator(private val settingsManager: SettingsManager) {
         // 3. 总剂量 = 碳水 + 校正 - IOB
         val totalDose = (carbDose + correctionDose - iob).coerceAtLeast(0.0)
 
-        // 4. 四舍五入到0.5U
-        val roundedDose = (totalDose * 2).toLong() / 2.0
+        // 4. 四舍五入到0.5U (kotlin.math.roundToLong 四舍五入)
+        val roundedDose = kotlin.math.round(totalDose * 2) / 2.0
 
         // 生成说明
         val explanation = buildExplanation(
@@ -100,7 +100,7 @@ class InsulinCalculator(private val settingsManager: SettingsManager) {
 
         val correctionDose = (currentGlucose - targetGlucose) / sensitivity
         val totalDose = (correctionDose - iob).coerceAtLeast(0.0)
-        val roundedDose = (totalDose * 2).toLong() / 2.0
+        val roundedDose = kotlin.math.round(totalDose * 2) / 2.0
 
         val explanation = """
             校正剂量计算:
