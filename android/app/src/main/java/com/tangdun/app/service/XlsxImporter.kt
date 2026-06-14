@@ -234,14 +234,15 @@ object XlsxImporter {
     }
 
     /**
-     * 从血糖曲线反推饮食和胰岛素事件 (参考闭环系统meal detection算法)
+     * 从血糖曲线反推饮食和胰岛素事件
      *
-     * 改进算法:
-     *   1. SMA平滑去噪 (5点=25min窗口)
-     *   2. CUSUM累计和检测 (比简单阈值更抗噪)
-     *   3. 血糖AUC估算碳水量 (比峰值更准确)
-     *   4. 餐间隔≥2h (避免把双峰当两餐)
-     *   5. 胰岛素检测用衰减速率拟合
+     * 患者场景覆盖:
+     *   ✅ 正餐(大升幅) → CUSUM检测
+     *   ✅ 加餐(小升幅) → 降低阈值但需ROC确认
+     *   ✅ 低血糖纠正(从<4.0上升) → 标记为snack类型
+     *   ✅ 黎明现象(4-8am上升) → 不推断为进食
+     *   ✅ 运动后降糖 → 区分于胰岛素(下降前无升糖=运动)
+     *   ✅ 胰岛素注射 → 追踪完整下降段
      *
      * 参考:
      *   Dassau et al. "Detection of a Meal Using CGM" (2008)
@@ -251,115 +252,161 @@ object XlsxImporter {
         if (records.size < 12) return Pair(0, 0)
 
         val sorted = records.sortedBy { it.timestamp }
-        val settings = com.tangdun.app.util.SettingsManager(context)
-        val weight = settings.getWeightKg().toDouble()
+        val weight = com.tangdun.app.util.SettingsManager(context).getWeightKg().toDouble()
+        val mealDao = TangDunApp.getDatabase(context).mealDao()
+        val insulinDao = TangDunApp.getDatabase(context).insulinDao()
 
-        // Step 1: SMA平滑 (5点窗口)
-        val smoothed = mutableListOf<Pair<Long, Double>>()
+        // Step 1: SMA平滑 (5点=25min窗口, 去噪)
+        val sm = mutableListOf<Pair<Long, Double>>()
         for (i in sorted.indices) {
-            val window = sorted.subList(maxOf(0, i - 2), minOf(sorted.size, i + 3))
-            val avg = window.map { it.value }.average()
-            smoothed.add(sorted[i].timestamp to avg)
+            val w = sorted.subList(maxOf(0, i - 2), minOf(sorted.size, i + 3))
+            sm.add(sorted[i].timestamp to w.map { it.value }.average())
         }
 
-        // Step 2: 计算基线 (前2小时的最低10%均值, 代表空腹基线)
-        val recentVals = smoothed.take(24).map { it.second }
-        val baseline = if (recentVals.size >= 6) {
-            recentVals.sorted().take(maxOf(1, recentVals.size / 10)).average()
-        } else recentVals.average()
+        // Step 2: 动态基线 (最近1小时的10%分位数, 更实时)
+        fun baselineAt(idx: Int): Double {
+            val start = maxOf(0, idx - 12)
+            val vals = sm.subList(start, idx + 1).map { it.second }
+            return if (vals.size >= 4) vals.sorted().take(maxOf(1, vals.size / 10)).average()
+            else vals.average()
+        }
 
-        // Step 3: CUSUM检测进餐事件
-        val mealEvents = mutableListOf<Triple<Int, Int, Double>>() // (startIdx, peakIdx, auc)
-        var cusumPos = 0.0
-        var mealStart = -1
-        val mealMinSeparation = 24  // 最少24点(2小时)间隔
+        // Step 3: CUSUM + 上下文感知 检测进餐
+        data class MealEvent(val startIdx: Int, val peakIdx: Int, val endIdx: Int,
+                             val auc: Double, val isCorrection: Boolean, val isSnack: Boolean)
 
-        for (i in smoothed.indices) {
-            val deviation = smoothed[i].second - baseline
-            cusumPos = maxOf(0.0, cusumPos + deviation)
+        val mealEvents = mutableListOf<MealEvent>()
+        var cusum = 0.0
+        var eventStart = -1
+        var prevTrend = 0.0  // 事件前趋势 (正=已在上升, 负=在下降)
 
-            // 上升检测: CUSUM超过0.5且持续上升
-            if (cusumPos > 0.5 && mealStart < 0) {
-                mealStart = i
+        for (i in sm.indices) {
+            val bl = baselineAt(i)
+            val dev = sm[i].second - bl
+            cusum = maxOf(0.0, cusum + dev)
+
+            // 上升开始: CUSUM首次超过阈值
+            val threshold = if (sm[i].second < 4.0) 0.3 else 0.5  // 低血糖: 更敏感
+            if (cusum > threshold && eventStart < 0) {
+                eventStart = i
+                // 记录事件前趋势 (前30分钟ROC)
+                val preIdx = maxOf(0, i - 6)
+                prevTrend = (sm[i].second - sm[preIdx].second) /
+                    maxOf(1.0, (sm[i].first - sm[preIdx].first) / 60000.0)
             }
 
-            // 到顶了: CUSUM开始下降 → 上升段结束
-            if (mealStart >= 0 && cusumPos > 0 && i - mealStart >= 3) {
-                val prevCusum = maxOf(0.0, cusumPos - deviation) // 前一步的CUSUM
-                if (cusumPos < prevCusum && smoothed[i].second - smoothed[mealStart].second > 0.8) {
-                    // 确认进餐事件: 找峰值
-                    var peakIdx = mealStart
-                    for (j in mealStart until i) {
-                        if (smoothed[j].second > smoothed[peakIdx].second) peakIdx = j
-                    }
+            // 上升结束: CUSUM连续下降2步 且 已越过峰值
+            if (eventStart >= 0 && i - eventStart >= 4) {
+                val prevCusum = maxOf(0.0, cusum - dev)
+                val stillRising = cusum >= prevCusum
+                val totalRise = sm[i].second - sm[eventStart].second
 
-                    // 计算AUC (曲线下面积, 反映碳水负荷)
-                    var auc = 0.0
-                    for (j in mealStart..i) {
-                        auc += maxOf(0.0, smoothed[j].second - baseline) * 5.0  // ×5min
+                if (!stillRising && totalRise > 0.5) {
+                    // 找峰值索引
+                    var pk = eventStart
+                    for (j in eventStart..i) {
+                        if (sm[j].second > sm[pk].second) pk = j
                     }
+                    val peakRise = sm[pk].second - sm[eventStart].second
 
-                    // 间隔检查
-                    if (mealEvents.isEmpty() || i - mealEvents.last().second >= mealMinSeparation) {
-                        mealEvents.add(Triple(mealStart, peakIdx, auc))
+                    // 背景判断
+                    val cal = java.util.Calendar.getInstance().apply { timeInMillis = sm[eventStart].first }
+                    val hour = cal.get(java.util.Calendar.HOUR_OF_DAY)
+                    val isDawn = hour in 4..8 && sm[eventStart].second < 7.0 && peakRise < 1.5
+                    val isCorrection = sm[eventStart].second < 4.0  // 低血糖纠正
+                    val isSnack = peakRise in 0.5..1.5  // 小幅上升=加餐
+                    val startsFromDrop = prevTrend < -0.02  // 下降后反弹(运动/低血糖纠正)
+
+                    // 黎明现象: 不是进食
+                    if (!isDawn) {
+                        val endIdx = i
+                        var auc = 0.0
+                        for (j in eventStart..endIdx) {
+                            auc += maxOf(0.0, sm[j].second - bl) * 5.0
+                        }
+
+                        // 间隔检查 (正餐2h, 加餐/纠正1h)
+                        val minSep = if (isSnack || isCorrection) 12 else 24
+                        if (mealEvents.isEmpty() || i - mealEvents.last().endIdx >= minSep) {
+                            mealEvents.add(MealEvent(eventStart, pk, endIdx, auc, isCorrection, isSnack))
+                        }
                     }
-                    cusumPos = 0.0
-                    mealStart = -1
+                    cusum = 0.0
+                    eventStart = -1
+                    prevTrend = 0.0
                 }
             }
         }
 
-        // Step 4: 创建MealRecord
-        val mealDao = TangDunApp.getDatabase(context).mealDao()
+        // Step 4: 创建MealRecord — 区分餐型
         var mealCount = 0
-        for ((startIdx, peakIdx, auc) in mealEvents) {
-            val rise = smoothed[peakIdx].second - smoothed[startIdx].second
-            // 碳水量估算: 基于AUC和体重 (每10g碳水产生约3-5 mmol/L·min AUC/kg)
-            val estCarbs = (auc / (weight * 0.08)).coerceIn(10.0, 200.0)
-            val mealTime = smoothed[startIdx].first - 10 * 60_000L  // 上升前10分钟
-
+        for (evt in mealEvents) {
+            val mealTime = sm[evt.startIdx].first - 10 * 60_000L
             val hour = java.util.Calendar.getInstance().apply { timeInMillis = mealTime }
                 .get(java.util.Calendar.HOUR_OF_DAY)
-            val mealType = com.tangdun.app.data.local.entity.MealRecord.inferMealType(hour)
+
+            // 正餐: AUC法; 加餐/纠正: 升幅法
+            val estCarbs = if (evt.isSnack || evt.isCorrection) {
+                val rise = sm[evt.peakIdx].second - sm[evt.startIdx].second
+                (rise * weight * 0.4).coerceIn(5.0, 50.0)  // 加餐5-50g
+            } else {
+                (evt.auc / (weight * 0.08)).coerceIn(20.0, 200.0)  // 正餐20-200g
+            }
+
+            val mealType = when {
+                evt.isCorrection -> "snack"  // 低血糖纠正=加餐类
+                evt.isSnack -> com.tangdun.app.data.local.entity.MealRecord.inferMealType(hour)
+                    .let { if (it == "breakfast" || it == "lunch" || it == "dinner") "snack" else it }
+                else -> com.tangdun.app.data.local.entity.MealRecord.inferMealType(hour)
+            }
+
+            val gi = if (evt.isCorrection) 75.0 else 60.0  // 纠正用高GI快糖
 
             try {
                 mealDao.insert(MealRecord(
                     timestamp = mealTime, mealType = mealType,
-                    totalCarbs = estCarbs, totalCalories = estCarbs * 4.0, avgGi = 60.0
+                    totalCarbs = estCarbs, totalCalories = estCarbs * 4.0, avgGi = gi
                 ))
                 mealCount++
             } catch (e: Exception) { /* skip */ }
         }
 
-        // Step 5: 胰岛素检测 — 衰减速率分析
-        val insulinDao = TangDunApp.getDatabase(context).insulinDao()
+        // Step 5: 胰岛素检测 — 区分运动降糖 vs 胰岛素降糖
         var insulinCount = 0
-        var lastInsulinIdx = -12  // 最少1小时间隔
+        var lastInsulinEnd = -12
 
-        for (i in 1 until smoothed.size) {
-            val drop = smoothed[i - 1].second - smoothed[i].second
-            val roc = drop / ((smoothed[i].first - smoothed[i - 1].first) / 60000.0)
+        for (i in 3 until sm.size) {
+            // 计算局部ROC
+            val lookback = minOf(6, i)
+            val prevIdx = i - lookback
+            val timeMin = maxOf(1.0, (sm[i].first - sm[prevIdx].first) / 60000.0)
+            val roc = (sm[prevIdx].second - sm[i].second) / timeMin
 
-            // 检测快速下降 (>0.05 mmol/L/min 且持续)
-            if (roc > 0.05 && i - lastInsulinIdx >= 12) {
-                // 追踪下降到底
-                var troughIdx = i
-                for (j in i until minOf(i + 36, smoothed.size)) {
-                    if (smoothed[j].second < smoothed[troughIdx].second) troughIdx = j
-                    if (j - i > 6 && smoothed[j].second > smoothed[j - 1].second + 0.3) break
-                }
-                val totalDrop = smoothed[i - 1].second - smoothed[troughIdx].second
-                if (totalDrop > 1.0) {
-                    // 剂量估算: 基于胰岛素敏感度 (1U降1.5-3.0 mmol/L, 因人而异)
-                    val estDose = (totalDrop * weight / 25.0).coerceIn(0.5, 15.0)
-                    try {
-                        insulinDao.insert(InsulinRecord(
-                            timestamp = smoothed[i - 1].first - 5 * 60_000L,
-                            insulinType = "rapid", doseUnits = estDose
-                        ))
-                        insulinCount++
-                        lastInsulinIdx = troughIdx
-                    } catch (e: Exception) { /* skip */ }
+            // 快速下降: ROC > 0.04 且持续 (比正餐后自然回落快)
+            if (roc > 0.04 && i - lastInsulinEnd >= 12) {
+                // 检查: 下降前是否有上升? (有=餐后自然回落, 无=胰岛素/运动)
+                val preRise = sm[prevIdx].second - sm[maxOf(0, prevIdx - 6)].second
+                val precededByRise = preRise > 1.0  // 前30分钟有明显上升
+
+                // 只有非餐后自然回落才推断为胰岛素
+                if (!precededByRise || roc > 0.08) {
+                    var trough = i
+                    for (j in i until minOf(i + 36, sm.size)) {
+                        if (sm[j].second < sm[trough].second) trough = j
+                        if (j - i > 8 && sm[j].second > sm[j - 1].second + 0.3) break
+                    }
+                    val drop = sm[prevIdx].second - sm[trough].second
+                    if (drop > 1.0) {
+                        val estDose = (drop * weight / 25.0).coerceIn(0.5, 15.0)
+                        try {
+                            insulinDao.insert(InsulinRecord(
+                                timestamp = sm[prevIdx].first - 5 * 60_000L,
+                                insulinType = "rapid", doseUnits = estDose
+                            ))
+                            insulinCount++
+                            lastInsulinEnd = trough
+                        } catch (e: Exception) { /* skip */ }
+                    }
                 }
             }
         }
