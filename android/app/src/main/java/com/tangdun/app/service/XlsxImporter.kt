@@ -54,29 +54,53 @@ object XlsxImporter {
                 return@withContext ImportResult(0, 0, 0, listOf("未解析到血糖数据"))
             }
 
-            total = records.size
+            // 单位自检: 若全部值>30→mg/dL需转换
+            val allHigh = records.all { it.value > 30.0 }
+            val converted = if (allHigh) {
+                Log.w(TAG, "检测到mg/dL单位, 自动转换为mmol/L")
+                records.map { it.copy(value = it.value / 18.0) }
+            } else records
 
-            // 批量去重写入
-            val dao = TangDunApp.getDatabase(context).glucoseDao()
-            val existing = dao.getByTimeRange(
-                records.first().timestamp, records.last().timestamp
-            ).map { it.timestamp to it.value }.toSet()
-
-            records.forEach { r ->
-                if (existing.none { (t, v) ->
-                    kotlin.math.abs(t - r.timestamp) < 120_000 &&
-                    kotlin.math.abs(v - r.value) < 0.1
-                }) {
-                    dao.insert(r)
-                    imported++
-                } else {
-                    skipped++
+            // 排序+去重 (同时间戳保留第一个)
+            val sorted = converted.sortedBy { it.timestamp }
+            val deduped = mutableListOf<GlucoseRecord>()
+            for (r in sorted) {
+                if (deduped.isEmpty() || r.timestamp - deduped.last().timestamp > 60_000) {
+                    deduped.add(r)
                 }
             }
 
-            // 从血糖曲线反推饮食和胰岛素事件
-            val inferred = inferMealsAndInsulin(context, records)
-            Log.i(TAG, "推断事件: ${inferred.first}餐 ${inferred.second}针")
+            total = deduped.size
+            if (total < 3) {
+                return@withContext ImportResult(total, 0, 0, listOf("数据量不足(需>3条)"))
+            }
+
+            // 数据库去重写入
+            val dao = TangDunApp.getDatabase(context).glucoseDao()
+            val existing = dao.getByTimeRange(
+                deduped.first().timestamp, deduped.last().timestamp
+            ).map { it.timestamp to it.value }.toSet()
+
+            deduped.forEach { r ->
+                if (existing.none { (t, v) ->
+                    kotlin.math.abs(t - r.timestamp) < 120_000 &&
+                    kotlin.math.abs(v - r.value) < 0.1
+                }) { dao.insert(r); imported++ }
+                else { skipped++ }
+            }
+
+            // 按间隙(>1h)切分为连续段，逐段推断事件
+            var segStart = 0
+            var mealTotal = 0; var insulinTotal = 0
+            for (i in 1 until deduped.size) {
+                if (deduped[i].timestamp - deduped[i-1].timestamp > 60 * 60_000L || i == deduped.size - 1) {
+                    val seg = deduped.subList(segStart, if (i == deduped.size - 1) deduped.size else i)
+                    val (m, ins) = inferMealsAndInsulin(context, seg)
+                    mealTotal += m; insulinTotal += ins
+                    segStart = i
+                }
+            }
+            Log.i(TAG, "推断事件: ${mealTotal}餐 ${insulinTotal}针 (${total}条血糖)")
 
             ImportResult(total, imported, skipped, errors)
         } catch (e: Exception) {
@@ -401,7 +425,8 @@ object XlsxImporter {
                         try {
                             insulinDao.insert(InsulinRecord(
                                 timestamp = sm[prevIdx].first - 5 * 60_000L,
-                                insulinType = "rapid", doseUnits = estDose
+                                insulinType = "rapid", doseUnits = estDose,
+                                notes = "[推断] ~${String.format("%.1f", estDose)}U"
                             ))
                             insulinCount++
                             lastInsulinEnd = trough
