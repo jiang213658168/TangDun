@@ -152,7 +152,8 @@ class CGMNotificationListener : NotificationListenerService() {
                         ))
 
                         // 质量评分≥50才触发警报 (过滤噪声误报)
-                        if (processed != null && processed.qualityScore >= 50) {
+                        // 质量达标OR严重低血糖→触发告警 (严重情况永不静默)
+                        if (processed != null && (processed.qualityScore >= 50 || saveValue < 3.0)) {
                             val pred30 = saveValue + (processed.roc * 30)
                             try { GlucoseAlarmService(this@CGMNotificationListener).checkAndAlarm(saveValue, saveTrend, pred30) } catch (e: Exception) { Log.w(TAG, "警报检查失败: ${e.message}") }
                         }
