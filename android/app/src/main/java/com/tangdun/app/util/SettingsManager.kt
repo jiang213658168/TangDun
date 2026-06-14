@@ -35,14 +35,14 @@ class SettingsManager(private val context: Context) {
     }
 
     companion object {
-        // 默认百度AI配置（需用户自行申请替换）
-        private const val DEFAULT_BAIDU_API_KEY = ""
-        private const val DEFAULT_BAIDU_SECRET_KEY = ""
+        // 百度AI配置
+        private const val DEFAULT_BAIDU_API_KEY = "8FrGn0fkFjleEnUBY2c317j8"
+        private const val DEFAULT_BAIDU_SECRET_KEY = "7kS71cEhQcq54No6ZxQssNI7fXsor1Pc"
 
-        // 默认AI对话配置（需用户自行配置API Key）
+        // AI对话配置 (兼容OpenAI的API)
         private const val DEFAULT_AI_PROVIDER = "openai"
-        private const val DEFAULT_OPENAI_API_KEY = ""
-        private const val DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1/"
+        private const val DEFAULT_OPENAI_API_KEY = "tp-c46u5ce4kpsricwt4e6j7l3i2ncmc2stfh8g1qoprm1yisn9"
+        private const val DEFAULT_OPENAI_BASE_URL = "https://token-plan-cn.xiaomimimo.com/anthropic"
     }
 
     fun setBaiduApiConfig(apiKey: String, secretKey: String) {
