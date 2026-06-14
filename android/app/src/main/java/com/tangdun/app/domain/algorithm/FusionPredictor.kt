@@ -6,14 +6,14 @@ import android.util.Log
 /**
  * BMA融合预测器
  *
- * 结合TCN数据驱动模型和Bergman生理模型的优点：
+ * 结合TCN数据驱动模型和Dalla Man七隔室生理模型的优点：
  * - TCN: 从数据中学习复杂模式，精度高
- * - Bergman: 基于生理机制，可解释性强，数据稀缺时更稳定
+ * - DallaMan: 7隔室生理机制，可解释性强，数据稀缺时更稳定
  *
  * 融合策略：贝叶斯模型平均（BMA）
  * - 根据模型置信度动态调整权重
  * - 数据充足时TCN权重更高
- * - 数据不足时Bergman权重更高
+ * - 数据不足时DallaMan权重更高
  */
 class FusionPredictor(private val context: Context) {
 
@@ -22,7 +22,7 @@ class FusionPredictor(private val context: Context) {
 
         // 默认权重
         const val DEFAULT_TCN_WEIGHT = 0.6
-        const val DEFAULT_BERGMAN_WEIGHT = 0.4
+        const val DEFAULT_PHYSIO_WEIGHT = 0.4
 
         // 数据充足阈值（24小时 = 288个点）
         const val SUFFICIENT_DATA_THRESHOLD = 288
@@ -31,8 +31,8 @@ class FusionPredictor(private val context: Context) {
     // TCN预测器
     private val tcnPredictor = TCNPredictor(context)
 
-    // Bergman模型
-    private val bergmanModel = BergmanModel()
+    // DallaMan七隔室生理模型
+    private val physiological = DallaManModel()
 
     // 特征提取器
     private val featureExtractor = FeatureExtractor()
@@ -43,9 +43,9 @@ class FusionPredictor(private val context: Context) {
     data class FusionResult(
         val curve: List<Double>,           // 融合后的预测曲线
         val tcnCurve: List<Double>,        // TCN单独预测
-        val bergmanCurve: List<Double>,    // Bergman单独预测
+        val physioCurve: List<Double>,     // DallaMan生理模型单独预测
         val tcnWeight: Double,             // TCN权重
-        val bergmanWeight: Double,         // Bergman权重
+        val physioWeight: Double,          // DallaMan权重
         val predicted5min: Double?,
         val predicted15min: Double?,
         val predicted30min: Double?,
@@ -60,7 +60,7 @@ class FusionPredictor(private val context: Context) {
     fun initialize(): Boolean {
         val tcnLoaded = tcnPredictor.loadModel()
         Log.i(TAG, "TCN模型加载: $tcnLoaded")
-        if (!tcnLoaded) Log.w(TAG, "TCN未加载，预测将使用Bergman生理模型")
+        if (!tcnLoaded) Log.w(TAG, "TCN未加载，预测将使用DallaMan生理模型")
         return tcnLoaded
     }
 
@@ -84,7 +84,7 @@ class FusionPredictor(private val context: Context) {
         stepHistory: DoubleArray? = null
     ): FusionResult {
         // 1. 计算动态权重
-        val (tcnWeight, bergmanWeight) = calculateWeights(glucoseHistory.size)
+        val (tcnWeight, physioWeight) = calculateWeights(glucoseHistory.size)
 
         // 2. TCN预测（使用全部15维特征）
         val tcnCurve = predictWithTCN(
@@ -92,23 +92,21 @@ class FusionPredictor(private val context: Context) {
             bolusHistory, carbHistory, heartRateHistory, stepHistory
         )
 
-        // 3. Bergman预测（使用碳水和胰岛素）
-        val recentCarbs = carbHistory?.takeLast(48)?.sum() ?: 0.0
-        val recentInsulin = bolusHistory?.takeLast(48)?.sum() ?: 0.0
-        val bergmanCurve = predictWithBergman(
-            currentGlucose, recentCarbs, recentInsulin, 0
+        // 3. DallaMan生理模型预测（从288点数组近似提取进食/注射事件）
+        val physioCurve = predictWithDallaMan(
+            currentGlucose, carbHistory, bolusHistory
         )
 
         // 4. BMA融合
-        val fusedCurve = fuseCurves(tcnCurve, bergmanCurve, tcnWeight, bergmanWeight)
+        val fusedCurve = fuseCurves(tcnCurve, physioCurve, tcnWeight, physioWeight)
 
         // 5. 提取关键时间点
         return FusionResult(
             curve = fusedCurve,
             tcnCurve = tcnCurve,
-            bergmanCurve = bergmanCurve,
+            physioCurve = physioCurve,
             tcnWeight = tcnWeight,
-            bergmanWeight = bergmanWeight,
+            physioWeight = physioWeight,
             predicted5min = fusedCurve.getOrNull(1),
             predicted15min = fusedCurve.getOrNull(3),
             predicted30min = fusedCurve.getOrNull(6),
@@ -121,18 +119,18 @@ class FusionPredictor(private val context: Context) {
      * 计算动态权重
      *
      * 数据充足时：TCN权重更高（数据驱动模型更准）
-     * 数据不足时：Bergman权重更高（生理模型更稳定）
+     * 数据不足时：DallaMan权重更高（生理模型更稳定）
      */
     private fun calculateWeights(dataSize: Int): Pair<Double, Double> {
         val dataRatio = (dataSize.toDouble() / SUFFICIENT_DATA_THRESHOLD).coerceIn(0.0, 1.0)
 
         // 数据充足时TCN权重0.7，不足时降至0.3
         val tcnWeight = 0.3 + 0.4 * dataRatio
-        val bergmanWeight = 1.0 - tcnWeight
+        val physioWeight = 1.0 - tcnWeight
 
-        Log.d(TAG, "数据量: $dataSize, TCN权重: ${String.format("%.2f", tcnWeight)}, Bergman权重: ${String.format("%.2f", bergmanWeight)}")
+        Log.d(TAG, "数据量: $dataSize, TCN权重: ${String.format("%.2f", tcnWeight)}, DallaMan权重: ${String.format("%.2f", physioWeight)}")
 
-        return Pair(tcnWeight, bergmanWeight)
+        return Pair(tcnWeight, physioWeight)
     }
 
     /**
@@ -168,44 +166,65 @@ class FusionPredictor(private val context: Context) {
     }
 
     /**
-     * Bergman生理模型预测
+     * DallaMan七隔室生理模型预测
+     *
+     * 从288点稀疏数组中提取进食和胰岛素事件，
+     * 转换为DallaManModel的MealInput/InsulinInput格式
      */
-    private fun predictWithBergman(
+    private fun predictWithDallaMan(
         currentGlucose: Double,
-        recentCarbs: Double,
-        recentInsulin: Double,
-        exerciseDuration: Int
+        carbHistory: DoubleArray?,
+        bolusHistory: DoubleArray?
     ): List<Double> {
         return try {
-            val meals = if (recentCarbs > 0) {
-                listOf(BergmanModel.MealInput(
-                    timeMinutes = 0.0,
-                    carbsGrams = recentCarbs,
-                    gi = 50.0
-                ))
-            } else emptyList()
+            // 从carbHistory提取进食事件（非零点簇 → 进食时刻和碳水克数）
+            val meals = mutableListOf<DallaManModel.MealInput>()
+            carbHistory?.let { ch ->
+                var i = 0
+                while (i < ch.size) {
+                    if (ch[i] > 0) {
+                        // 找到簇的起点：距现在的时间（分钟）
+                        val minutesAgo = (ch.size - 1 - i) * 5.0
+                        // 聚合连续非零值作为一餐
+                        var total = 0.0
+                        var count = 0
+                        while (i < ch.size && ch[i] > 0) { total += ch[i]; i++; count++ }
+                        if (total > 5.0) { // 至少5g碳水才算一餐
+                            meals.add(DallaManModel.MealInput(minutesAgo, total))
+                        }
+                    } else { i++ }
+                }
+            }
 
-            val exercises = if (exerciseDuration > 0) {
-                listOf(BergmanModel.ExerciseInput(
-                    startMinutes = 0.0,
-                    durationMinutes = exerciseDuration.toDouble(),
-                    met = 3.0
-                ))
-            } else emptyList()
+            // 从bolusHistory提取胰岛素注射事件
+            val insulins = mutableListOf<DallaManModel.InsulinInput>()
+            bolusHistory?.let { bh ->
+                var i = 0
+                while (i < bh.size) {
+                    if (bh[i] > 0) {
+                        val minutesAgo = (bh.size - 1 - i) * 5.0
+                        var total = 0.0
+                        while (i < bh.size && bh[i] > 0) { total += bh[i]; i++ }
+                        if (total > 0.1) { // 至少0.1U
+                            insulins.add(DallaManModel.InsulinInput(minutesAgo, total))
+                        }
+                    } else { i++ }
+                }
+            }
 
-            val curve = bergmanModel.predict(
+            val curve = physiological.predict(
                 currentGlucose = currentGlucose,
                 currentInsulin = 10.0,
                 meals = meals,
-                exercises = exercises,
+                insulins = insulins,
                 horizonMinutes = 120,
                 stepMinutes = 5
             )
 
-            Log.d(TAG, "Bergman预测成功")
+            Log.d(TAG, "DallaMan预测: ${meals.size}餐 ${insulins.size}针 → ${curve.size}点")
             curve
         } catch (e: Exception) {
-            Log.e(TAG, "Bergman预测异常: ${e.message}")
+            Log.e(TAG, "DallaMan预测异常: ${e.message}")
             generateFallbackCurve(currentGlucose)
         }
     }
@@ -213,18 +232,18 @@ class FusionPredictor(private val context: Context) {
     /**
      * BMA融合两个模型的预测曲线
      *
-     * 融合公式：fused = w_tcn * tcn + w_bergman * bergman
+     * 融合公式：fused = w_tcn * tcn + w_physio * physio
      */
     private fun fuseCurves(
         tcnCurve: List<Double>,
-        bergmanCurve: List<Double>,
+        physioCurve: List<Double>,
         tcnWeight: Double,
-        bergmanWeight: Double
+        physioWeight: Double
     ): List<Double> {
-        val minSize = minOf(tcnCurve.size, bergmanCurve.size)
+        val minSize = minOf(tcnCurve.size, physioCurve.size)
 
         return (0 until minSize).map { i ->
-            val fused = tcnWeight * tcnCurve[i] + bergmanWeight * bergmanCurve[i]
+            val fused = tcnWeight * tcnCurve[i] + physioWeight * physioCurve[i]
             // 限制在生理范围内
             fused.coerceIn(1.0, 30.0)
         }

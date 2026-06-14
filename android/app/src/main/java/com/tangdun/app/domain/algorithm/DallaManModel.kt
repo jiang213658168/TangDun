@@ -263,4 +263,51 @@ class DallaManModel {
 
         return doubleArrayOf(dG, dI, dX, dX_L, dStomach, dGut, dSubQ1, dSubQ2)
     }
+
+    /**
+     * What-if模拟：模拟进食后的血糖变化
+     */
+    fun whatIfSimulation(
+        currentGlucose: Double,
+        meals: List<MealInput>,
+        horizonMinutes: Int = 180
+    ): WhatIfResult {
+        val curve = predict(
+            currentGlucose = currentGlucose,
+            meals = meals,
+            horizonMinutes = horizonMinutes
+        )
+
+        val peak = curve.max()
+        val peakIndex = curve.indexOf(peak)
+        val peakTime = peakIndex * 5  // 每5分钟一个点
+
+        // 计算低GI替代方案（减慢胃排空速率来模拟低GI）
+        val lowGiParams = Parameters(kStomach = 0.035, kGut = 0.040)
+        val lowGiCurve = predict(
+            currentGlucose = currentGlucose,
+            meals = meals,
+            horizonMinutes = horizonMinutes,
+            params = lowGiParams
+        )
+        val lowGiPeak = lowGiCurve.max()
+
+        return WhatIfResult(
+            curve = curve,
+            peakGlucose = peak,
+            peakTimeMinutes = peakTime,
+            lowGiAlternative = lowGiCurve,
+            lowGiPeak = lowGiPeak,
+            peakReduction = peak - lowGiPeak
+        )
+    }
+
+    data class WhatIfResult(
+        val curve: List<Double>,
+        val peakGlucose: Double,
+        val peakTimeMinutes: Int,
+        val lowGiAlternative: List<Double>,
+        val lowGiPeak: Double,
+        val peakReduction: Double
+    )
 }

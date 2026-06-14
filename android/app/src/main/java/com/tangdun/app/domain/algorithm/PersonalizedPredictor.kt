@@ -8,11 +8,11 @@ import com.tangdun.app.data.local.dao.GlucoseDao
  * 个性化预测器 — 四层自进化架构
  *
  * 1. TCN (ONNX, MAE 0.552) → 15维特征 → 曲线参数 [a,b,c,d]
- * 2. Bergman 生理模型 → RK4 ODE → 物理约束曲线
+ * 2. DallaMan 七隔室生理模型 → RK4 ODE → 物理约束曲线
  * 3. OnlineLearner → 统计学习 (EWMA/卡尔曼/贝叶斯/时段模式)
  * 4. IncrementalLearner → TCN残差 SGD 在线学习 (304参数)
  *
- * BMA融合: TCN_w + Bergman_w = 1.0, 数据充足→TCN权重高
+ * BMA融合: TCN_w + DallaMan_w = 1.0, 数据充足→TCN权重高
  */
 class PersonalizedPredictor(private val context: Context) {
 
@@ -36,7 +36,7 @@ class PersonalizedPredictor(private val context: Context) {
         bolusHistory: DoubleArray? = null, carbHistory: DoubleArray? = null,
         heartRateHistory: DoubleArray? = null, stepHistory: DoubleArray? = null
     ): FusionPredictor.FusionResult {
-        // 1. TCN + Bergman 基础预测
+        // 1. TCN + DallaMan 基础预测
         val base = fusionPredictor.predict(
             glucoseHistory, currentGlucose,
             bolusHistory, carbHistory, heartRateHistory, stepHistory
@@ -71,8 +71,8 @@ class PersonalizedPredictor(private val context: Context) {
 
         val label = buildString { append("BMA+个性"); if (hasInc) append("+Inc") }
         return FusionPredictor.FusionResult(
-            curve = curve, tcnCurve = base.tcnCurve, bergmanCurve = base.bergmanCurve,
-            tcnWeight = base.tcnWeight, bergmanWeight = base.bergmanWeight,
+            curve = curve, tcnCurve = base.tcnCurve, physioCurve = base.physioCurve,
+            tcnWeight = base.tcnWeight, physioWeight = base.physioWeight,
             predicted5min = curve.getOrNull(1), predicted15min = curve.getOrNull(3),
             predicted30min = curve.getOrNull(6), predicted60min = curve.getOrNull(12),
             predicted120min = curve.getOrNull(24), modelType = label

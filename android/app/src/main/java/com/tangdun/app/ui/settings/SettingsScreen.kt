@@ -1125,7 +1125,7 @@ fun BodyInfoCard(settingsManager: SettingsManager) {
     Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.MonitorWeight, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text("身高体重", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
-            Spacer(Modifier.height(4.dp)); Text("用于预测模型个性化参数计算 (Bergman Vg/Vi)", fontSize = 11.sp, color = TextHint)
+            Spacer(Modifier.height(4.dp)); Text("用于预测模型个性化参数计算 (DallaMan Vg/Vi)", fontSize = 11.sp, color = TextHint)
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(value = weight, onValueChange = { weight = it; isSaved = false }, label = { Text("体重 (kg)") }, modifier = Modifier.weight(1f), singleLine = true, shape = RoundedCornerShape(8.dp), keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
@@ -1351,7 +1351,7 @@ fun AboutCard() {
             }
             Spacer(modifier = Modifier.height(12.dp))
             InfoItem("版本", "1.0.0")
-            InfoItem("预测引擎", "TCN (MAE 0.552) + Bergman ODE")
+            InfoItem("预测引擎", "TCN (MAE 0.552) + DallaMan(7室)")
             InfoItem("构建日期", "2026-06-13")
             InfoItem("包名", context.packageName)
             Divider(modifier = Modifier.padding(vertical = 8.dp))

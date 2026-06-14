@@ -134,7 +134,7 @@ fun MainScreen() {
             startDestination = Screen.Home.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(Screen.Home.route) { HomeScreen() }
+            composable(Screen.Home.route) { HomeScreen(navController = navController) }
             composable(Screen.Prediction.route) { PredictionScreen() }
             composable(Screen.Record.route) { RecordScreen(navController) }
             composable(Screen.Report.route) { ReportScreen() }
@@ -157,6 +157,7 @@ fun RecordScreen(navController: androidx.navigation.NavController) {
         Triple("胰岛素", Icons.Default.MedicalServices, SubScreen.INSULIN),
         Triple("运动", Icons.Default.DirectionsRun, SubScreen.EXERCISE),
         Triple("健康", Icons.Default.HealthAndSafety, SubScreen.HEALTH),
+        Triple("AI助手", Icons.Default.Chat, SubScreen.CHAT),
     )
     Column(Modifier.fillMaxSize()) {
         // 卡片式入口，不用TabRow
@@ -166,7 +167,7 @@ fun RecordScreen(navController: androidx.navigation.NavController) {
             contentPadding = PaddingValues(horizontal = 12.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            items(4) { i ->
+            items(items.size) { i ->
                 val (name, icon, route) = items[i]
                 Card(
                     Modifier.fillMaxWidth().padding(4.dp).height(120.dp).clickable { navController.navigate(route) },

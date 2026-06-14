@@ -33,6 +33,7 @@ import java.util.Calendar
 
 @Composable
 fun HomeScreen(
+    navController: androidx.navigation.NavController? = null,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -53,6 +54,10 @@ fun HomeScreen(
                 )
             },
             actions = {
+                // AI助手
+                IconButton(onClick = { navController?.navigate("chat") }) {
+                    Icon(Icons.Default.Chat, contentDescription = "AI助手")
+                }
                 // 添加血糖按钮
                 IconButton(onClick = { showAddGlucoseDialog = true }) {
                     Icon(Icons.Default.Add, contentDescription = "记录血糖")

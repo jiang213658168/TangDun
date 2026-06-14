@@ -92,7 +92,7 @@ fun PredictionScreen(
                 isfEstimate = uiState.isfEstimate,
                 crEstimate = uiState.crEstimate,
                 tcnWeight = uiState.tcnWeight,
-                bergmanWeight = uiState.bergmanWeight
+                physioWeight = uiState.physioWeight
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -186,7 +186,7 @@ fun EngineInfoCard(
     totalRecords: Int, fastingBaseline: Double, variability: Double,
     activeInsulin: Double, todayCarbs: Double,
     isfEstimate: Double, crEstimate: Double,
-    tcnWeight: Double, bergmanWeight: Double
+    tcnWeight: Double, physioWeight: Double
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -202,8 +202,8 @@ fun EngineInfoCard(
             // 模型权重 — 明确展示用的是什么
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 if (tcnWeight > 0) StatItem2("TCN (MAE 0.552)", "${String.format("%.0f%%", tcnWeight * 100)}")
-                StatItem2("Bergman ODE", "${String.format("%.0f%%", bergmanWeight * 100)}")
-                StatItem2("个性化", "${String.format("%.0f%%", (1 - tcnWeight - bergmanWeight).coerceAtLeast(0.0) * 100)}")
+                StatItem2("DallaMan(7室)", "${String.format("%.0f%%", physioWeight * 100)}")
+                StatItem2("个性化", "${String.format("%.0f%%", (1 - tcnWeight - physioWeight).coerceAtLeast(0.0) * 100)}")
             }
             Spacer(modifier = Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {

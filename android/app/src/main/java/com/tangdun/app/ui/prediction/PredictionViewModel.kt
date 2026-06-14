@@ -27,7 +27,7 @@ data class PredictionUiState(
     val fastingBaseline: Double = 0.0, val variability: Double = 0.0,
     val activeInsulin: Double = 0.0, val todayCarbs: Double = 0.0,
     val targetLow: Double = 3.9, val targetHigh: Double = 10.0,
-    val tcnWeight: Double = 0.0, val bergmanWeight: Double = 0.0,
+    val tcnWeight: Double = 0.0, val physioWeight: Double = 0.0,
     val peakValue: Double = 0.0, val peakMinute: Int = 0,
     val isfEstimate: Double = 1.5, val crEstimate: Double = 12.0,
     val error: String? = null
@@ -128,7 +128,7 @@ class PredictionViewModel @Inject constructor(
                     curve = merged, historyData = records.map { it.timestamp to it.value }, modelLabel = modelLabel, predictionTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
                     confidence = confidence,
                     totalRecords = records.size, fastingBaseline = olParams.fastingBaseline, variability = olParams.glucoseVariability,
-                    activeInsulin = iob, todayCarbs = todayCarbs, tcnWeight = tcnW, bergmanWeight = 1 - tcnW,
+                    activeInsulin = iob, todayCarbs = todayCarbs, tcnWeight = tcnW, physioWeight = 1 - tcnW,
                     targetLow = settings.getTargetLow().toDouble(), targetHigh = settings.getTargetHigh().toDouble(),
                     peakValue = peak, peakMinute = pi * 5,
                     isfEstimate = est.insulinSensitivity, crEstimate = est.carbRatio, error = null

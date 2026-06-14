@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.tangdun.app.domain.algorithm.BergmanModel
+import com.tangdun.app.domain.algorithm.DallaManModel
 import com.tangdun.app.ui.theme.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -319,7 +319,7 @@ class WhatIfViewModel @Inject constructor() : ViewModel() {
     val uiState: StateFlow<WhatIfUiState> = _uiState.asStateFlow()
 
     private val selectedFoods = mutableListOf<Pair<String, Double>>()
-    private val bergmanModel = BergmanModel()
+    private val physiological = DallaManModel()
 
     fun addFood(name: String, carbs: Double) {
         selectedFoods.add(name to carbs)
@@ -328,19 +328,19 @@ class WhatIfViewModel @Inject constructor() : ViewModel() {
     fun simulate(currentGlucose: Double) {
         viewModelScope.launch {
             val meals = selectedFoods.map { (name, carbs) ->
-                BergmanModel.MealInput(
+                DallaManModel.MealInput(
                     timeMinutes = 0.0,
                     carbsGrams = carbs,
                     gi = 50.0
                 )
             }
 
-            val result = bergmanModel.whatIfSimulation(currentGlucose, meals)
+            val result = physiological.whatIfSimulation(currentGlucose, meals)
             _uiState.value = WhatIfUiState(result = result)
         }
     }
 }
 
 data class WhatIfUiState(
-    val result: BergmanModel.WhatIfResult? = null
+    val result: DallaManModel.WhatIfResult? = null
 )
