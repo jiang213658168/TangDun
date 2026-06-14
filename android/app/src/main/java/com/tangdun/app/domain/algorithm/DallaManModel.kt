@@ -43,6 +43,10 @@ class DallaManModel {
         val renalThreshold: Double = 10.0, // 肾糖阈 (mmol/L)
         val renalClearance: Double = 0.005, // 肾清除率 (min⁻¹)
 
+        // ── 内源性胰岛素分泌 ──
+        val sigma: Double = 3.0,          // 胰腺分泌系数 (mU/L/min per mmol/L>Gb)
+                                          // T1DM=0, 健康=8, T2DM=2-5
+
         // ── 肝糖输出 ──
         val hepaticBase: Double = 2.4,    // 基础肝糖输出 (mg/kg/min)
 
@@ -90,6 +94,7 @@ class DallaManModel {
                 kGut = 0.065,           // ★ 更快肠吸收→即时利用
                 fCarbs = 0.9,
                 VmaxGastric = 10.0,     // 最大胃排空 mg/kg/min (大餐更慢)
+                sigma = 3.0,            // T2DM保留~40% β细胞功能
                 // 葡萄糖动力学 (Michaelis-Menten)
                 VgPerKg = 1.6,          // 体脂较低→分布体积略小
                 k1 = 0.055,             // 略低非胰岛素利用
@@ -112,7 +117,8 @@ class DallaManModel {
             /** 西方人群参数 (文献默认, 默认体重70kg) */
             fun forWestern(bodyWeight: Double = 70.0) = Parameters(
                 bodyWeight = bodyWeight,
-                kStomach = 0.055, kGut = 0.056, fCarbs = 0.9,
+                kStomach = 0.055, kGut = 0.056, fCarbs = 0.9, VmaxGastric = 15.0,
+                sigma = 0.0,  // T1DM: 无内源性胰岛素
                 VgPerKg = 1.8, k1 = 0.065, Vm0 = 2.5, VmX = 0.05, Km0 = 25.0,
                 Gb = 5.0, Ib = 10.0,
                 renalThreshold = 10.0, renalClearance = 0.005,
@@ -312,7 +318,9 @@ class DallaManModel {
         // 从皮下单体隔室吸收入血
         val insAppearance = p.ka2 * subQ2 / Vi   // mU/L/min
         val insClearance  = p.ke * I              // mU/L/min
-        val dI = insAppearance - insClearance
+        // 内源性胰岛素分泌: 血糖高于基础时胰腺分泌 (T2DM保留部分功能)
+        val endogenous = p.sigma * maxOf(0.0, G - p.Gb)  // mU/L/min
+        val dI = insAppearance - insClearance + endogenous
 
         // ── dX/dt: 胰岛素远端利用作用 ──
         // 由高于基础的胰岛素驱动，kp3控制激活速率
