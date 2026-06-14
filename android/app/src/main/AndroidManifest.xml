@@ -28,6 +28,10 @@
 
     <!-- 前台服务 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
 
     <!-- xDrip+ 广播权限（xDrip+ 定义，我们需要持有才能收到带权限的广播） -->
     <uses-permission android:name="com.eveningoutpost.dexdrip.permissions.RECEIVE_BG_ESTIMATE"/>
@@ -75,10 +79,22 @@
             </intent-filter>
         </service>
 
+        <!-- 前台服务: 保持App后台运行, 持久通知显示血糖 (参考 xDrip+ ForegroundServiceStarter) -->
+        <service android:name=".service.GlucoseForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"/>
+
         <!-- xDrip+ 广播接收器 -->
         <receiver android:name=".sync.DirectGlucoseBroadcastReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="com.eveningoutpost.dexdrip.BgEstimate"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- 服务恢复接收器: 开机启动 + 定时唤醒 + 划掉后重启 (参考 xDrip+ WakeLockTrampoline) -->
+        <receiver android:name=".service.RestartReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
             </intent-filter>
         </receiver>
     </application>

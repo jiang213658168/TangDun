@@ -107,8 +107,7 @@ class DataSyncWorker(
             Log.d(TAG, "数据同步完成")
             Result.success()
         } catch (e: Exception) {
-            Log.e(TAG, "同步失败: ${e.message}")
-            e.printStackTrace()
+            Log.e(TAG, "同步失败: ${e.message}", e)
             Result.retry()
         }
     }

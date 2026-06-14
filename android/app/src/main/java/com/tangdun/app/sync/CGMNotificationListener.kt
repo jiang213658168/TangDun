@@ -133,7 +133,7 @@ class CGMNotificationListener : NotificationListenerService() {
                         // 仅当最近记录也是CGM来源且时间接近才跳过（防止阻断手动输入）
                         if (latest != null && latest.source == "cgm_notify" && kotlin.math.abs(now - latest.timestamp) < 60_000) return@launch
                         dao.insert(GlucoseRecord(timestamp = now, value = glucoseMmol, source = "cgm_notify"))
-                        try { GlucoseAlarmService(this@CGMNotificationListener).checkAndAlarm(glucoseMmol, null) } catch (_: Exception) {}
+                        try { GlucoseAlarmService(this@CGMNotificationListener).checkAndAlarm(glucoseMmol, null) } catch (e: Exception) { Log.w(TAG, "警报检查失败: ${e.message}") }
                     } catch (e: Exception) { Log.e(TAG, "保存失败: ${e.message}") }
                 }
             }

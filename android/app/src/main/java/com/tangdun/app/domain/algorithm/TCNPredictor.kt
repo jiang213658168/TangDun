@@ -77,7 +77,7 @@ class TCNPredictor(private val context: Context) {
 
             output?.firstOrNull()
         } catch (e: Exception) {
-            e.printStackTrace()
+            android.util.Log.e("TCNPredictor", "ONNX推理失败: ${e.message}", e)
             null
         }
     }

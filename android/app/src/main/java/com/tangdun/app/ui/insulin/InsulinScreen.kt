@@ -490,7 +490,7 @@ fun AddInsulinDialog(
                                 )
                             }
                         },
-                        enabled = dose.toDoubleOrNull() != null && dose.toDoubleOrNull()!! > 0
+                        enabled = (dose.toDoubleOrNull() ?: 0.0) > 0
                     ) {
                         Text("保存")
                     }

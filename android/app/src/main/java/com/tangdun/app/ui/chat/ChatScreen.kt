@@ -129,7 +129,7 @@ fun ChatScreen(
         }
 
         // 错误提示
-        if (uiState.error != null) {
+        uiState.error?.let { error ->
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -148,7 +148,7 @@ fun ChatScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = uiState.error!!,
+                        text = error,
                         style = MaterialTheme.typography.bodySmall,
                         color = AlertCritical
                     )

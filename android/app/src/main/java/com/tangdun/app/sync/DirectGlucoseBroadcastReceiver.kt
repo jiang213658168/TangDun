@@ -107,7 +107,7 @@ class DirectGlucoseBroadcastReceiver : BroadcastReceiver() {
                 try {
                     val calibrator = CGMCalibrator(context)
                     glucoseMmol = calibrator.applyCalibration(glucoseMmol)
-                } catch (_: Exception) {}
+                } catch (e: Exception) { Log.w(TAG, "校准失败，使用原始值: ${e.message}") }
 
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
@@ -125,7 +125,7 @@ class DirectGlucoseBroadcastReceiver : BroadcastReceiver() {
                         Log.i(TAG, "💾 已保存: ${String.format("%.1f", glucoseMmol)} mmol/L ${trend ?: ""}")
                         logEvent(context, "保存: ${String.format("%.1f", glucoseMmol)} mmol/L", source)
 
-                        try { GlucoseAlarmService(context).checkAndAlarm(glucoseMmol, trend) } catch (_: Exception) {}
+                        try { GlucoseAlarmService(context).checkAndAlarm(glucoseMmol, trend) } catch (e: Exception) { Log.w(TAG, "警报检查失败: ${e.message}") }
                     } catch (e: Exception) {
                         Log.e(TAG, "保存失败: ${e.message}")
                     }
@@ -145,6 +145,6 @@ class DirectGlucoseBroadcastReceiver : BroadcastReceiver() {
             val entry = "[$now] $src: $msg\n"
             val old = prefs.getString("events", "") ?: ""
             prefs.edit().putString("events", (entry + old).take(2000)).apply()
-        } catch (_: Exception) {}
+        } catch (e: Exception) { Log.w(TAG, "日志记录失败: ${e.message}") }
     }
 }

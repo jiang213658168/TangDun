@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import com.tangdun.app.data.local.AppDatabase
+import com.tangdun.app.service.GlucoseForegroundService
+import com.tangdun.app.service.RestartReceiver
 import dagger.hilt.android.HiltAndroidApp
 
 /**
@@ -40,6 +42,10 @@ class TangDunApp : Application() {
         super.onCreate()
         instance = this
         createNotificationChannels()
+
+        // 启动前台服务 + 定时唤醒 (参考 xDrip+ 后台模式)
+        GlucoseForegroundService.start(this)
+        RestartReceiver.scheduleAlarm(this)
     }
 
     /** 全局Application实例 */

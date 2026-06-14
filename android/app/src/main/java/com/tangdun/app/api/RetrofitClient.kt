@@ -50,7 +50,7 @@ object RetrofitClient {
             .addConverterFactory(GsonConverterFactory.create())
             .build()
 
-        apiService = retrofit!!.create(ApiService::class.java)
+        apiService = retrofit?.create(ApiService::class.java)
     }
 
     fun getApi(): ApiService {

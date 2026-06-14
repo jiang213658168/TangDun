@@ -147,7 +147,8 @@ fun WhatIfScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // 模拟结果
-        if (uiState.result != null) {
+        val result = uiState.result
+        if (result != null) {
             // 预测峰值
             Card(
                 modifier = Modifier
@@ -156,8 +157,8 @@ fun WhatIfScreen(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = when {
-                        uiState.result!!.peakGlucose > 10.0 -> AlertWarning.copy(alpha = 0.1f)
-                        uiState.result!!.peakGlucose < 3.9 -> AlertCritical.copy(alpha = 0.1f)
+                        result.peakGlucose > 10.0 -> AlertWarning.copy(alpha = 0.1f)
+                        result.peakGlucose < 3.9 -> AlertCritical.copy(alpha = 0.1f)
                         else -> AlertSuccess.copy(alpha = 0.1f)
                     }
                 )
@@ -172,17 +173,17 @@ fun WhatIfScreen(
                         color = TextSecondary
                     )
                     Text(
-                        text = String.format("%.1f mmol/L", uiState.result!!.peakGlucose),
+                        text = String.format("%.1f mmol/L", result.peakGlucose),
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Bold,
                         color = when {
-                            uiState.result!!.peakGlucose > 10.0 -> AlertWarning
-                            uiState.result!!.peakGlucose < 3.9 -> AlertCritical
+                            result.peakGlucose > 10.0 -> AlertWarning
+                            result.peakGlucose < 3.9 -> AlertCritical
                             else -> AlertSuccess
                         }
                     )
                     Text(
-                        text = "达峰时间: ${uiState.result!!.peakTimeMinutes}分钟",
+                        text = "达峰时间: ${result.peakTimeMinutes}分钟",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextHint
                     )
@@ -211,7 +212,7 @@ fun WhatIfScreen(
                             .fillMaxWidth()
                             .height(200.dp)
                     ) {
-                        val curve = uiState.result!!.curve
+                        val curve = result.curve
                         val width = size.width
                         val height = size.height
                         val padding = 50f
@@ -243,7 +244,7 @@ fun WhatIfScreen(
                         drawPath(path, ChartLine1, style = Stroke(width = 3f))
 
                         // 低GI替代曲线
-                        val lowGiCurve = uiState.result!!.lowGiAlternative
+                        val lowGiCurve = result.lowGiAlternative
                         val lowGiPath = Path()
                         lowGiPath.moveTo(toX(0), toY(lowGiCurve[0]))
                         for (i in 1 until lowGiCurve.size) {
@@ -272,7 +273,7 @@ fun WhatIfScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // 低GI建议
-            if (uiState.result!!.peakReduction > 0.5) {
+            if (result.peakReduction > 0.5) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -298,7 +299,7 @@ fun WhatIfScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "选择低GI食物可使血糖峰值降低 ${String.format("%.1f", uiState.result!!.peakReduction)} mmol/L",
+                                text = "选择低GI食物可使血糖峰值降低 ${String.format("%.1f", result.peakReduction)} mmol/L",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = TextSecondary
                             )

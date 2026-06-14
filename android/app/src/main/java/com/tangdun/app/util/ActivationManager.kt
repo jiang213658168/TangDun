@@ -17,7 +17,13 @@ class ActivationManager(context: Context) {
 
     companion object {
         private const val PREFS = "tangdun_activation_v2"
-        private val AES_KEY = SecretKeySpec("TangDun@2026!Key".toByteArray(), "AES")
+        // 密钥通过拼接生成，增加反编译提取难度 (完全安全需Android Keystore)
+        private val AES_KEY = SecretKeySpec(
+            (getKeyPart1() + getKeyPart2() + getKeyPart3()).toByteArray(), "AES"
+        )
+        private fun getKeyPart1(): String = "TangDun"
+        private fun getKeyPart2(): String = "@2026!"
+        private fun getKeyPart3(): String = "Key"
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

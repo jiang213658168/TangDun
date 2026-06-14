@@ -160,15 +160,16 @@ class AiChatService(private val context: Context) {
 
             val response = api.chatCompletions("Bearer $apiKey", request)
 
-            if (response.isSuccessful && response.body()?.choices != null) {
-                val content = response.body()!!.choices!!.firstOrNull()?.message?.content
+            val body = response.body()
+            if (response.isSuccessful && body?.choices != null) {
+                val content = body.choices!!.firstOrNull()?.message?.content
                 if (content != null) {
                     Result.success(content)
                 } else {
                     Result.failure(Exception("AI返回内容为空"))
                 }
             } else {
-                val error = response.body()?.error?.message ?: "请求失败: ${response.code()}"
+                val error = body?.error?.message ?: "请求失败: ${response.code()}"
                 Result.failure(Exception(error))
             }
         } catch (e: Exception) {
@@ -202,10 +203,11 @@ class AiChatService(private val context: Context) {
 
             val response = api.ernieChat("Bearer $token", request)
 
-            if (response.isSuccessful && response.body()?.result != null) {
-                Result.success(response.body()!!.result!!)
+            val body = response.body()
+            if (response.isSuccessful && body?.result != null) {
+                Result.success(body.result!!)
             } else {
-                val error = response.body()?.error_msg ?: "请求失败"
+                val error = body?.error_msg ?: "请求失败"
                 Result.failure(Exception(error))
             }
         } catch (e: Exception) {
@@ -265,6 +267,6 @@ object AiChatRetrofitClient {
             currentApi = retrofit.create(AiChatApi::class.java)
             currentBaseUrl = normalizedUrl
         }
-        return currentApi!!
+        return currentApi ?: throw IllegalStateException("AiChatApi未初始化，请先调用getApi()")
     }
 }

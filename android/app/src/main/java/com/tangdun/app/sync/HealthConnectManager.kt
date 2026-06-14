@@ -6,9 +6,11 @@ import androidx.health.connect.client.records.*
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.Instant
+import android.util.Log
 import java.time.temporal.ChronoUnit
 
 class HealthConnectManager(private val context: Context) {
+    companion object { private const val TAG = "HealthConnect" }
 
     private val healthConnectClient = HealthConnectClient.getOrCreate(context)
 
@@ -35,7 +37,7 @@ class HealthConnectManager(private val context: Context) {
                 )
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "读取健康数据失败: ${e.message}", e)
             emptyList()
         }
     }
