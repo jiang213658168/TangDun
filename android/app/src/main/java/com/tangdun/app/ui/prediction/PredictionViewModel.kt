@@ -48,7 +48,7 @@ class PredictionViewModel @Inject constructor(
 
     private val predictor = PersonalizedPredictor(ctx)
     private val onlineLearner = OnlineLearner(ctx)
-    private val bergman = BergmanModel()
+    private val physiological = DallaManModel()
     private val tcnOk = predictor.initialize()
 
     init {
@@ -78,29 +78,27 @@ class PredictionViewModel @Inject constructor(
                 val todayCarbs = meals24h.sumOf { it.totalCarbs }
                 val iob = insulin.fold(0.0) { a, r -> val m = (now - r.timestamp) / 60000.0; if (m in 0.0..240.0 && r.insulinType == "rapid") a + r.doseUnits * 0.5.pow(m / 55.0) else a }
 
-                // 运动数据（合并到 Bergman）
+                // 运动数据
                 val exercises = exerciseDao.getTodayRecords(todayStart)
 
                 // 自动测算
                 val est = AutoParamEstimator.estimate(glucoseDao.getRecent(500), insulinDao.getRecent(300), mealDao.getRecent(100))
 
-                // Bergman: 24h内的全部进食 + 今日运动
-                val mealInputs = meals24h.takeLast(5).map { BergmanModel.MealInput((now - it.timestamp) / 60000.0, it.totalCarbs, it.avgGi) }
-                val exerciseInputs = exercises.map { BergmanModel.ExerciseInput((now - it.startTime) / 60000.0, (it.durationMin ?: 30).toDouble(), ExerciseRecord.getMET(it.exerciseType, it.intensity)) }
-                // IOB→mU/L (1U ≈ 10 mU/L blood level), 保底5
-                val insulinMU = maxOf(iob * 15.0, 5.0)
+                // Dalla Man 生理模型: 24h进食 + 24h胰岛素
                 val weight = settings.getWeightKg().toDouble()
-                val bgParams = BergmanModel.Parameters.forUser(weight, est.insulinSensitivity)
-                val bgCurve = bergman.predict(g, insulinMU, mealInputs, exerciseInputs, horizonMinutes = 120, stepMinutes = 5, params = bgParams)
+                val dmParams = DallaManModel.Parameters(bodyWeight = weight)
+                val mealInputs = meals24h.takeLast(5).map { DallaManModel.MealInput((now - it.timestamp) / 60000.0, it.totalCarbs, it.avgGi) }
+                val insulinInputs = insulin.filter { it.insulinType == "rapid" }.takeLast(10).map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }
+                val dmCurve = physiological.predict(g, maxOf(iob * 15.0, 5.0), mealInputs, insulinInputs, horizonMinutes = 120, stepMinutes = 5, params = dmParams)
 
-                // 个性化: 从OnlineLearner拿到学到的参数校准Bergman基线
+                // 个性化校正
                 val olParams = onlineLearner.getPersonalParams()
-                val personalizedCurve = bgCurve.map { onlineLearner.applyPersonalization(it, g) }
+                val personalizedCurve = dmCurve.map { onlineLearner.applyPersonalization(it, g) }
 
-                // TCN增强（24h carb数组）
+                // TCN增强
                 var tcnW = 0.0
-                var modelLabel = "Bergman(${meals24h.size}餐 IOB${"%.1f".format(iob)}U 碳水${"%.0f".format(todayCarbs)}g 体重${"%.0f".format(weight)}kg)"
-                if (!tcnOk) modelLabel += " [TCN未加载-仅Bergman]"
+                var modelLabel = "DallaMan(7室 ${mealInputs.size}餐 ${insulinInputs.size}针 ${"%.0f".format(weight)}kg)"
+                if (!tcnOk) modelLabel += " [TCN未加载]"
                 var merged = personalizedCurve
                 if (tcnOk && records.size >= 10) {
                     try {
@@ -110,9 +108,9 @@ class PredictionViewModel @Inject constructor(
                         val r = predictor.predict(gh, g, bh, ch)
                         if (r != null && r.curve.size >= 25) {
                             tcnW = r.tcnWeight; merged = (0 until 25).map { i -> tcnW * r.curve[i] + (1 - tcnW) * personalizedCurve[i] }
-                            modelLabel = "TCN+Bergman(体重${"%.0f".format(weight)}kg ${meals24h.size}餐 ${insulin.size}针)"
+                            modelLabel = "TCN+DallaMan(7室 ${"%.0f".format(weight)}kg ${mealInputs.size}餐 ${insulinInputs.size}针)"
                         }
-                    } catch (e: Exception) { Log.w(TAG, "TCN预测异常: ${e.message}") }
+                    } catch (e: Exception) { Log.w(TAG, "TCN异常: ${e.message}") }
                 }
 
                 val riskLabel = when {
