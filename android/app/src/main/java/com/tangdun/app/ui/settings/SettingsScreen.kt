@@ -88,8 +88,8 @@ fun SettingsScreen() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 胰岛素参数设置
-        InsulinParamsCard(settingsManager)
+        // 身高体重 (用于预测模型个性化)
+        BodyInfoCard(settingsManager)
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -1118,41 +1118,21 @@ fun GlucoseSettingsCard(settingsManager: SettingsManager) {
 }
 
 @Composable
-fun InsulinParamsCard(settingsManager: SettingsManager) {
-    var sensitivity by remember { mutableStateOf(settingsManager.getInsulinSensitivity().toString()) }
-    var carbRatio by remember { mutableStateOf(settingsManager.getCarbRatio().toString()) }
+fun BodyInfoCard(settingsManager: SettingsManager) {
+    var weight by remember { mutableStateOf(settingsManager.getWeightKg().toString()) }
+    var height by remember { mutableStateOf(settingsManager.getHeightCm().toString()) }
     var isSaved by remember { mutableStateOf(false) }
-
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.MedicalServices, contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("胰岛素参数", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.MonitorWeight, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text("身高体重", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
+            Spacer(Modifier.height(4.dp)); Text("用于预测模型个性化参数计算 (Bergman Vg/Vi)", fontSize = 11.sp, color = TextHint)
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(value = weight, onValueChange = { weight = it; isSaved = false }, label = { Text("体重 (kg)") }, modifier = Modifier.weight(1f), singleLine = true, shape = RoundedCornerShape(8.dp), keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+                OutlinedTextField(value = height, onValueChange = { height = it; isSaved = false }, label = { Text("身高 (cm)") }, modifier = Modifier.weight(1f), singleLine = true, shape = RoundedCornerShape(8.dp), keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text("用于计算建议剂量，请遵医嘱设置", style = MaterialTheme.typography.bodySmall, color = TextHint)
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(value = sensitivity, onValueChange = { sensitivity = it; isSaved = false },
-                label = { Text("敏感因子 (mmol/L/U)") }, modifier = Modifier.fillMaxWidth(),
-                singleLine = true, shape = RoundedCornerShape(8.dp))
-            Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(value = carbRatio, onValueChange = { carbRatio = it; isSaved = false },
-                label = { Text("碳水系数 (g/U)") }, modifier = Modifier.fillMaxWidth(),
-                singleLine = true, shape = RoundedCornerShape(8.dp))
-            Spacer(modifier = Modifier.height(12.dp))
-            Button(onClick = {
-                settingsManager.setInsulinSensitivity(sensitivity.toFloatOrNull() ?: 1.5f)
-                settingsManager.setCarbRatio(carbRatio.toFloatOrNull() ?: 12.0f)
-                isSaved = true
-            }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
-                Text(if (isSaved) "已保存" else "保存设置")
-            }
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = { settingsManager.setWeightKg(weight.toFloatOrNull() ?: 60f); settingsManager.setHeightCm(height.toIntOrNull() ?: 165); isSaved = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) { Text(if (isSaved) "已保存" else "保存") }
         }
     }
 }
