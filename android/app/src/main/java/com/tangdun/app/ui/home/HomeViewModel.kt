@@ -70,35 +70,13 @@ class HomeViewModel @Inject constructor(
         checkXDripStatus()
         startXDripSync()
 
-        // 监听新血糖数据 → 刷新UI + 触发快速自学习
+        // 监听新血糖数据 → 刷新UI (自学习由SelfLearningManager统一管理)
         viewModelScope.launch {
             glucoseDao.getLatestFlow()
                 .filterNotNull()
                 .distinctUntilChanged { old, new -> old.timestamp == new.timestamp }
                 .debounce(2000)
-                .collect { latest ->
-                    loadData()
-                    // ★ 每次新数据都触发统计学习 (OnlineLearner, 轻量)
-                    try {
-                        val learner = com.tangdun.app.domain.algorithm.OnlineLearner(context)
-                        if (learner.learn(glucoseDao)) {
-                            Log.d("HomeVM", "快速学习: ${learner.getStageDescription()}")
-                        }
-                    } catch (e: Exception) { Log.w("HomeVM", "快速学习失败: ${e.message}") }
-                }
-        }
-
-        // 每30分钟触发完整自学习 (含增量SGD, 较重)
-        viewModelScope.launch {
-            while (true) {
-                kotlinx.coroutines.delay(30 * 60 * 1000L)
-                try {
-                    val learner = com.tangdun.app.domain.algorithm.PersonalizedPredictor(context)
-                    learner.initialize()
-                    learner.learn(glucoseDao)
-                    Log.i("HomeVM", "深度自学习: ${learner.getLearningStatus()}")
-                } catch (e: Exception) { Log.w("HomeVM", "自学习失败: ${e.message}") }
-            }
+                .collect { loadData() }
         }
 
         // 监听设置变化（目标范围改变时自动刷新）

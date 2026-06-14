@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import com.tangdun.app.data.local.AppDatabase
+import com.tangdun.app.domain.algorithm.SelfLearningManager
 import com.tangdun.app.service.GlucoseForegroundService
 import com.tangdun.app.service.RestartReceiver
 import dagger.hilt.android.HiltAndroidApp
@@ -46,6 +47,9 @@ class TangDunApp : Application() {
         // 启动前台服务 + 定时唤醒 (参考 xDrip+ 后台模式)
         GlucoseForegroundService.start(this)
         RestartReceiver.scheduleAlarm(this)
+
+        // 自学习引擎 (唯一入口，常驻Application Scope)
+        SelfLearningManager.init(this)
     }
 
     /** 全局Application实例 */

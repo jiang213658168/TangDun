@@ -52,9 +52,6 @@ class PredictionViewModel @Inject constructor(
     private val cgmCalibrator = com.tangdun.app.domain.algorithm.CGMCalibrator(ctx)
     private val tcnOk = predictor.initialize()
 
-    // 自学习节流: 最多每15分钟学习一次
-    private var lastLearnTime = 0L
-
     init {
         Log.i(TAG, "TCN=${if (tcnOk) "ONNX" else "降级"}")
         loadPrediction()
@@ -173,16 +170,6 @@ class PredictionViewModel @Inject constructor(
                     isfEstimate = est.insulinSensitivity, crEstimate = est.carbRatio, error = null
                 )
                 Log.i(TAG, "预测: ${String.format("%.1f", g)} IOB${String.format("%.1f", iob)} 碳水${String.format("%.0f", todayCarbs)} 模型=$modelLabel ISF≈${String.format("%.1f", est.insulinSensitivity)} CR≈${String.format("%.1f", est.carbRatio)}")
-
-                // ★ 触发自学习: 最多每15分钟一次
-                val now2 = System.currentTimeMillis()
-                if (now2 - lastLearnTime > 15 * 60 * 1000L) {
-                    lastLearnTime = now2
-                    viewModelScope.launch {
-                        try { predictor.learn(glucoseDao); Log.i(TAG, "自学习完成: ${onlineLearner.getStageDescription()} inc=${predictor.getIncrementalStats()["updates"]}次") }
-                        catch (e: Exception) { Log.w(TAG, "自学习失败: ${e.message}") }
-                    }
-                }
             } catch (e: Exception) { Log.e(TAG, "预测失败: ${e.message}", e); _uiState.value = _uiState.value.copy(isLoading = false, error = "预测失败: ${e.message}") }
         }
     }
