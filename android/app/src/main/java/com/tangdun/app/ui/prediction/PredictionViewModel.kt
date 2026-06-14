@@ -104,7 +104,8 @@ class PredictionViewModel @Inject constructor(
                 // 刚记录的饮食加最小消化时间，避免曲线延迟上升
                 val mealInputs = meals24h.takeLast(5).map {
                     val rawMinutes = (now - it.timestamp) / 60000.0
-                    val effectiveMinutes = if (rawMinutes < 10.0) maxOf(rawMinutes, 5.0) else rawMinutes
+                    // 最小消化10分钟: 确保胃已部分排空+Ra>Uid (避免餐后曲线假下降)
+                    val effectiveMinutes = if (rawMinutes < 15.0) maxOf(rawMinutes, 10.0) else rawMinutes
                     DallaManModel.MealInput(effectiveMinutes, it.totalCarbs, it.avgGi)
                 }
                 val insulinInputs = insulin.filter { it.insulinType == "rapid" }.takeLast(10).map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }
