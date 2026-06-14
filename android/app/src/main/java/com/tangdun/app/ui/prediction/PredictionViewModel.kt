@@ -87,8 +87,13 @@ class PredictionViewModel @Inject constructor(
                 val todayCarbs = meals24h.sumOf { it.totalCarbs }
                 val iob = insulin.fold(0.0) { a, r -> val m = (now - r.timestamp) / 60000.0; if (m in 0.0..240.0 && r.insulinType == "rapid") a + r.doseUnits * 0.5.pow(m / 55.0) else a }
 
-                // 运动数据
+                // 运动数据 — 影响血糖预测(运动增加葡萄糖利用)
                 val exercises = exerciseDao.getTodayRecords(todayStart)
+                // 运动降糖效应: 每30分钟中等强度运动约降0.5-1.0 mmol/L
+                val exerciseEffect = if (exercises.isNotEmpty()) {
+                    val totalMinutes = exercises.sumOf { it.durationMin ?: 0 }
+                    totalMinutes * 0.02  // 约0.02 mmol/L per minute of exercise
+                } else 0.0
 
                 // 自动测算
                 val est = AutoParamEstimator.estimate(glucoseDao.getRecent(500), insulinDao.getRecent(300), mealDao.getRecent(100))
@@ -107,7 +112,12 @@ class PredictionViewModel @Inject constructor(
 
                 // 个性化校正
                 val olParams = onlineLearner.getPersonalParams()
-                val personalizedCurve = dmCurve.map { onlineLearner.applyPersonalization(it, g) }
+                val personalizedCurve = dmCurve.mapIndexed { i, v ->
+                    val personal = onlineLearner.applyPersonalization(v, g)
+                    // 运动降糖效应: 随预测时间指数衰减(运动后2h内有效)
+                    if (exerciseEffect > 0) personal - exerciseEffect * kotlin.math.exp(-i * 5.0 / 120.0)
+                    else personal
+                }
 
                 // TCN增强
                 var tcnW = 0.0

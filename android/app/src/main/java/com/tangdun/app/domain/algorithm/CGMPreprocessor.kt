@@ -47,9 +47,9 @@ class CGMPreprocessor {
         var x = data[0]  // 状态估计
         var p = 1.0      // 估计协方差
 
-        // 模型参数
-        val q = 0.01     // 过程噪声（血糖变化率）
-        val r = 0.1      // 观测噪声（CGM传感器精度）
+        // 模型参数 (调优: 增大过程噪声以快速跟踪真实血糖变化)
+        val q = 0.5      // 过程噪声 (血糖可在5min内变化>1mmol/L)
+        val r = 0.1      // 观测噪声 (CGM传感器精度约0.3mmol/L)
 
         for (z in data) {
             // 预测步骤
