@@ -32,8 +32,8 @@ class FoodRecognitionService(private val context: Context) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private var accessToken: String? = null
-    private var tokenExpiry: Long = 0
+    @Volatile private var accessToken: String? = null
+    @Volatile private var tokenExpiry: Long = 0
 
     /**
      * 检查API是否已配置
@@ -121,18 +121,25 @@ class FoodRecognitionService(private val context: Context) {
      * 获取access_token
      */
     private suspend fun getAccessToken(): String? = withContext(Dispatchers.IO) {
-        // 检查缓存
-        if (accessToken != null && System.currentTimeMillis() < tokenExpiry) {
-            return@withContext accessToken
+        // 双重检查锁：先快速检查缓存，未命中则同步获取
+        val cached = accessToken
+        if (cached != null && System.currentTimeMillis() < tokenExpiry) {
+            return@withContext cached
         }
 
-        val apiKey = settingsManager.getBaiduApiKey()
-        val secretKey = settingsManager.getBaiduSecretKey()
+        return@withContext synchronized(this) {
+            // 再次检查（防止并发时重复获取）
+            if (accessToken != null && System.currentTimeMillis() < tokenExpiry) {
+                return@synchronized accessToken
+            }
 
-        if (apiKey.isEmpty() || secretKey.isEmpty()) {
-            Log.w(TAG, "API Key未配置")
-            return@withContext null
-        }
+            val apiKey = settingsManager.getBaiduApiKey()
+            val secretKey = settingsManager.getBaiduSecretKey()
+
+            if (apiKey.isEmpty() || secretKey.isEmpty()) {
+                Log.w(TAG, "API Key未配置")
+                return@synchronized null
+            }
 
         try {
             val body = FormBody.Builder()
@@ -157,9 +164,9 @@ class FoodRecognitionService(private val context: Context) {
 
                 if (token.isNotEmpty()) {
                     accessToken = token
-                    tokenExpiry = System.currentTimeMillis() + (expiresIn - 60) * 1000
+                    tokenExpiry = System.currentTimeMillis() + maxOf(expiresIn - 60, 0) * 1000
                     Log.d(TAG, "获取token成功: ${token.take(20)}...")
-                    return@withContext token
+                    return@synchronized token
                 }
             }
 
@@ -169,6 +176,7 @@ class FoodRecognitionService(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "获取token异常: ${e.message}")
             null
+        }
         }
     }
 }

@@ -68,7 +68,18 @@ class ChatViewModel @Inject constructor(
      * 发送消息
      */
     fun sendMessage(content: String) {
-        val conversationId = _uiState.value.conversationId ?: return
+        if (_uiState.value.isLoading) return  // 防止并发发送
+        var conversationId = _uiState.value.conversationId
+
+        // 如果还未创建会话，先同步创建
+        if (conversationId == null) {
+            conversationId = UUID.randomUUID().toString().replace("-", "")
+            val conversation = Conversation(id = conversationId, title = "新对话")
+            viewModelScope.launch {
+                chatDao.insertConversation(conversation)
+                _uiState.value = _uiState.value.copy(conversationId = conversationId)
+            }
+        }
 
         viewModelScope.launch {
             // 添加用户消息

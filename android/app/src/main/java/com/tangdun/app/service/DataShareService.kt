@@ -108,7 +108,11 @@ class DataShareService(private val context: Context) {
             type = "text/plain"
             putExtra(Intent.EXTRA_SUBJECT, title)
             putExtra(Intent.EXTRA_TEXT, text)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(Intent.createChooser(intent, "分享报告"))
+        // 检查是否有可处理的应用
+        if (context.packageManager.resolveActivity(intent, 0) != null) {
+            context.startActivity(Intent.createChooser(intent, "分享报告"))
+        }
     }
 }

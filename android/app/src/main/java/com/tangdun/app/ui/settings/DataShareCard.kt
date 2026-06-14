@@ -17,7 +17,9 @@ import com.tangdun.app.TangDunApp
 import com.tangdun.app.data.local.entity.InsulinRecord
 import com.tangdun.app.data.local.entity.MealRecord
 import com.tangdun.app.ui.theme.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -96,7 +98,7 @@ fun DataShareCard() {
     }
 }
 
-private suspend fun generateReport(context: Context): String {
+private suspend fun generateReport(context: Context): String = withContext(Dispatchers.IO) {
     val dateFormatShort = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
 
     val db = TangDunApp.getDatabase(context)
@@ -163,7 +165,7 @@ private suspend fun generateReport(context: Context): String {
     sb.appendLine("═══════════════════════════════")
     sb.appendLine("由糖盾App生成")
 
-    return sb.toString()
+    sb.toString()
 }
 
 private fun shareText(context: Context, title: String, text: String) {
@@ -171,6 +173,7 @@ private fun shareText(context: Context, title: String, text: String) {
         type = "text/plain"
         putExtra(Intent.EXTRA_SUBJECT, title)
         putExtra(Intent.EXTRA_TEXT, text)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
     context.startActivity(Intent.createChooser(intent, "分享报告"))
 }

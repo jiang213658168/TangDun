@@ -50,8 +50,8 @@ data class MealRecord(
         /** 自动判断餐型 */
         fun inferMealType(hour: Int): String = when (hour) {
             in 5..9 -> "breakfast"
-            in 10..11 -> "morning_snack"
-            in 11..13 -> "lunch"
+            in 10..10 -> "morning_snack"     // 10:00-10:59
+            in 11..13 -> "lunch"             // 11:00-13:59
             in 14..16 -> "afternoon_snack"
             in 17..19 -> "dinner"
             in 20..22 -> "evening_snack"

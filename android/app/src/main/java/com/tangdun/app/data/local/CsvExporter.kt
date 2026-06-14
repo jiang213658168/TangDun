@@ -20,6 +20,13 @@ class CsvExporter(private val context: Context) {
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
     private val dateFormatFile = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
 
+    /** CSV字段转义：含逗号/双引号/换行时用双引号包裹并转义内部双引号 */
+    private fun csvEscape(value: String): String {
+        return if (value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r")) {
+            "\"${value.replace("\"", "\"\"")}\""
+        } else value
+    }
+
     /**
      * 导出血糖数据
      */
@@ -52,7 +59,7 @@ class CsvExporter(private val context: Context) {
                     val mealType = MealRecord.getMealTypeName(record.mealType)
                     val mealItems = items[record.id] ?: emptyList()
                     for (item in mealItems) {
-                        writer.write("${dateFormat.format(Date(record.timestamp))},$mealType,${item.foodName},${item.portionGrams},${item.carbs},${item.calories},${item.protein},${item.fat},${item.gi}\n")
+                        writer.write("${dateFormat.format(Date(record.timestamp))},$mealType,${csvEscape(item.foodName)},${item.portionGrams},${item.carbs},${item.calories},${item.protein},${item.fat},${item.gi}\n")
                     }
                 }
             }
@@ -72,7 +79,7 @@ class CsvExporter(private val context: Context) {
                 writer.write("﻿")
                 writer.write("时间,类型,剂量(U),注射部位,备注\n")
                 for (record in records) {
-                    writer.write("${dateFormat.format(Date(record.timestamp))},${InsulinRecord.getInsulinTypeName(record.insulinType)},${record.doseUnits},${InsulinRecord.getInjectionSiteName(record.injectionSite)},${record.notes ?: ""}\n")
+                    writer.write("${dateFormat.format(Date(record.timestamp))},${InsulinRecord.getInsulinTypeName(record.insulinType)},${record.doseUnits},${csvEscape(InsulinRecord.getInjectionSiteName(record.injectionSite))},${csvEscape(record.notes ?: "")}\n")
                 }
             }
             file

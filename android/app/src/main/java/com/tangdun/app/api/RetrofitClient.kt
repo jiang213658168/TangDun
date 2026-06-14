@@ -21,7 +21,7 @@ object RetrofitClient {
         val tokenManager = TokenManager(context)
 
         val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = HttpLoggingInterceptor.Level.NONE  // 生产环境不记录body(含JWT/健康数据)
         }
 
         val authInterceptor = Interceptor { chain ->
