@@ -156,12 +156,8 @@ class RealTimeGlucoseMonitor(private val context: Context) {
             alpha * rawMmol + (1 - alpha) * lastReading.filteredValue
         } else rawMmol
 
-        // ── 7. 指尖血校准 (仅在校准次数≥3且最近12h内有时应用) ──
-        val calibrated = if (calibrator.needsCalibration().not() || calibrator.getCount() < 3) {
-            filtered  // 校准不可用→保留滤波值
-        } else {
-            calibrator.applyCalibration(filtered)
-        }
+        // ── 7. 指尖血校准 (用原来的简单逻辑) ──
+        val calibrated = calibrator.applyCalibration(filtered)
 
         // ── 8. 噪声检测 (多项式拟合误差方差) ──
         val (noiseLevel, noiseVar) = detectNoise(window)
