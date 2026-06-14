@@ -202,6 +202,11 @@ class CGMNotificationListener : NotificationListenerService() {
      */
     private fun tryExtract(raw: String): Int {
         if (raw.isBlank()) return -1
+        // CGM超出范围标记: LOW→39mg/dL, HIGH→406mg/dL (触发告警但不丢数据)
+        val upper = raw.uppercase()
+        if (upper.contains("LOW") || upper.contains("LO")) return 39
+        if (upper.contains("HIGH") || upper.contains("HI")) return 406
+
         // 去掉单位、箭头等 — 移植自 basicFilterString() + arrowFilterString()
         var s = raw
             .replace(" ", " ").replace("⁠", "")

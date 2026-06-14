@@ -295,8 +295,9 @@ class SmartAdvisor {
                 ))
             }
 
-            // 血糖平稳时的运动建议
-            if (trend == "stable" && currentGlucose in 5.0..8.0) {
+            // 血糖平稳时的运动建议 (白天6-20点，排除睡前)
+            val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+            if (trend == "stable" && currentGlucose in 5.0..8.0 && hour in 6..20) {
                 advices.add(Advice(
                     type = AdviceType.EXERCISE,
                     title = "适合运动",

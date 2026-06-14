@@ -30,7 +30,7 @@ class DallaManModel {
         val kStomach: Double = 0.055,     // 胃排空率
         val kGut: Double = 0.056,         // 肠道吸收率
         val fCarbs: Double = 0.9,         // 碳水生物利用度
-        val VmaxGastric: Double = 15.0,   // 最大胃排空 (mg/kg/min, ~60g/h for 65kg)
+        val VmaxGastric: Double = 10.0,   // 最大胃排空 (mg/kg/min)
 
         // ── 葡萄糖动力学 ──
         val VgPerKg: Double = 1.8,        // 葡萄糖分布体积 (dL/kg)
@@ -93,13 +93,13 @@ class DallaManModel {
                 kStomach = 0.040,       // ★ 更慢胃排空→持续释放→平稳峰
                 kGut = 0.065,           // ★ 更快肠吸收→即时利用
                 fCarbs = 0.9,
-                VmaxGastric = 10.0,     // 最大胃排空 mg/kg/min (大餐更慢)
+                VmaxGastric = 7.0,      // ★ 胃排空更慢(T2DM胃轻瘫) 65kg=455mg/min
                 sigma = 3.0,            // T2DM保留~40% β细胞功能
                 // 葡萄糖动力学 (Michaelis-Menten)
                 VgPerKg = 1.6,          // 体脂较低→分布体积略小
                 k1 = 0.055,             // 略低非胰岛素利用
-                Vm0 = 2.0,              // ★ 基础利用略低 (西方2.5)
-                VmX = 0.06,             // ★ 胰岛素乘数 (西方0.05, 中国略高补偿低Vm0)
+                Vm0 = 3.5,              // ★ 基础利用 (西方2.5, 中国T2DM静息消耗高)
+                VmX = 0.12,             // ★ 胰岛素乘数 (纠正餐后清糖偏慢)
                 Km0 = 25.0,             // Michaelis常数 (与种族无关)
                 Gb = 5.2,               // 中国人群基础血糖略高
                 Ib = 8.0,               // 更瘦→基础胰岛素更低

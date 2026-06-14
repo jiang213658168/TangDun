@@ -118,12 +118,9 @@ class PredictionViewModel @Inject constructor(
                 // 胃排空速率按加权GI调整 (高GI→快排空, 低GI/高脂→慢排空)
                 val avgGi = if (mealInputs.isNotEmpty()) mealInputs.map { it.gi }.average() else 50.0
                 val giFactor = (avgGi / 50.0).coerceIn(0.7, 1.5)
-                // 长效胰岛素: 24h缓释 → 提高基础胰岛素Ib (非bolus建模)
-                val longInsulin = insulin.filter { it.insulinType == "long" || it.insulinType == "long-acting" }
-                val longBasalBoost = if (longInsulin.isNotEmpty()) {
-                    val dailyDose = longInsulin.sumOf { it.doseUnits }
-                    dailyDose * 0.4  // ~0.4 mU/L per daily unit (稳态估算)
-                } else 0.0
+                // 长效胰岛素: 指数加权→提高Ib (半衰12h, 最近剂量权重大)
+                val longBasalBoost = insulin.filter { it.insulinType == "long" || it.insulinType == "long-acting" }
+                    .sumOf { it.doseUnits * 0.5.pow(((now - it.timestamp) / 3600000.0) / 12.0) } * 0.4
 
                 val dmParams = DallaManModel.Parameters.forChinese(bodyWeight = weight)
                     .copy(kStomach = (0.040 * giFactor).coerceIn(0.025, 0.080),
