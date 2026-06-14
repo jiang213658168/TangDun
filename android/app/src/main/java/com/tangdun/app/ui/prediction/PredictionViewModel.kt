@@ -128,7 +128,7 @@ class PredictionViewModel @Inject constructor(
 
                 // 速效/短效胰岛素: 皮下bolus建模
                 val insulinInputs = insulin.filter { it.insulinType == "rapid" || it.insulinType == "short" }.takeLast(10).map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }
-                val dmCurve = physiological.predict(g, maxOf(iob * 15.0, 5.0), mealInputs, insulinInputs, horizonMinutes = 120, stepMinutes = 5, params = dmParams)
+                val dmCurve = physiological.predict(g, maxOf(iob * 15.0, 5.0), mealInputs, insulinInputs, horizonMinutes = 180, stepMinutes = 5, params = dmParams)
 
                 // 个性化校正
                 val olParams = onlineLearner.getPersonalParams()
@@ -150,8 +150,9 @@ class PredictionViewModel @Inject constructor(
                         for (r in insulin) { val i = (287 - ((now - r.timestamp) / 300000).toInt()); if (i in 0..287) bh[i] += r.doseUnits }
                         for (m in meals24h) { val i = (287 - ((now - m.timestamp) / 300000).toInt()); if (i in 0..287) ch[i] += m.totalCarbs }
                         val r = predictor.predict(gh, g, bh, ch)
-                        if (r != null && r.curve.size >= 25) {
-                            tcnW = r.tcnWeight; merged = (0 until 25).map { i -> tcnW * r.curve[i] + (1 - tcnW) * personalizedCurve[i] }
+                        val nPoints = minOf(r.curve.size, personalizedCurve.size)
+                        if (r != null && nPoints >= 25) {
+                            tcnW = r.tcnWeight; merged = (0 until nPoints).map { i -> tcnW * r.curve[i] + (1 - tcnW) * personalizedCurve[i] }
                             modelLabel = "TCN+DallaMan(7室 ${"%.0f".format(weight)}kg ${mealInputs.size}餐 ${insulinInputs.size}针)"
                         }
                     } catch (e: Exception) { Log.w(TAG, "TCN异常: ${e.message}") }
