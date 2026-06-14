@@ -76,8 +76,8 @@ fun SplashScreen(onFinish: () -> Unit) {
                 else { onFinish() }
             },
             onReject = {
-                // 退出应用
-                android.os.Process.killProcess(android.os.Process.myPid())
+                // 退出应用（标准方式：关闭所有Activity）
+                (context as? android.app.Activity)?.finishAffinity()
             }
         )
     }
@@ -93,10 +93,11 @@ fun SplashScreen(onFinish: () -> Unit) {
 
 @Composable
 fun ActivationDialog(activator: ActivationManager, onSuccess: () -> Unit) {
+    val context = LocalContext.current
     var code by remember { mutableStateOf("") }; var msg by remember { mutableStateOf("") }; var loading by remember { mutableStateOf(false) }
     AlertDialog(onDismissRequest = {}, title = { Text("请输入激活码") }, text = {
         Column { Text("请输入有效的激活码以使用糖盾。", fontSize = 13.sp); Spacer(Modifier.height(12.dp)); OutlinedTextField(value = code, onValueChange = { code = it }, label = { Text("激活码") }, singleLine = true); if (msg.isNotEmpty()) { Spacer(Modifier.height(8.dp)); Text(msg, fontSize = 12.sp, color = if (msg.contains("成功") || msg.contains("管理员")) Color(0xFF4CAF50) else Color(0xFFE53935)) } }
-    }, confirmButton = { TextButton(onClick = { if (code.isNotBlank()) { loading = true; val r = activator.activate(code); msg = r.msg; loading = false; if (r.ok) { code = ""; onSuccess() } } }, enabled = !loading) { Text(if (loading) "验证中..." else "激活") } }, dismissButton = { TextButton(onClick = { android.os.Process.killProcess(android.os.Process.myPid()) }) { Text("退出") } })
+    }, confirmButton = { TextButton(onClick = { if (code.isNotBlank()) { loading = true; val r = activator.activate(code); msg = r.msg; loading = false; if (r.ok) { code = ""; onSuccess() } } }, enabled = !loading) { Text(if (loading) "验证中..." else "激活") } }, dismissButton = { TextButton(onClick = { (context as? android.app.Activity)?.finishAffinity() }) { Text("退出") } })
 }
 
 @Composable
