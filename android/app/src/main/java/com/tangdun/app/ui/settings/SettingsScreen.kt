@@ -133,14 +133,12 @@ fun SettingsScreen() {
 @Composable
 fun SelfLearningCard() {
     val context = LocalContext.current
-    val onlineLearner = remember { com.tangdun.app.domain.algorithm.OnlineLearner(context) }
-    // 强制每次重组都读取最新值 (不用remember缓存, SharedPreferences读取很快)
+    // ★ 使用SelfLearningManager共享实例 (唯一OnlineLearner)
+    val onlineLearner = remember { com.tangdun.app.domain.algorithm.SelfLearningManager.getOnlineLearner() }
     var refreshTick by remember { mutableStateOf(0) }
     val params = remember(refreshTick) { onlineLearner.getPersonalParams() }
     val stage = remember(refreshTick) { onlineLearner.getLearningStage() }
     val stageDesc = remember(refreshTick) { onlineLearner.getStageDescription() }
-    val ewcStatus = remember(refreshTick) { onlineLearner.getEWCStatus() }
-    // 每次进入页面自动刷新
     LaunchedEffect(Unit) { refreshTick++ }
 
     // 学习阶段颜色

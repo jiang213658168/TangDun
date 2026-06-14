@@ -28,11 +28,15 @@ class SelfLearningManager(private val context: Context) {
                 instance?.start()
             }
         }
+
+        /** 读取学习状态 (供Settings/Prediction等使用) */
+        fun getOnlineLearner(): OnlineLearner = instance!!.onlineLearner
+        fun getIncrementalLearner(): IncrementalLearner = instance!!.incrementalLearner
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val onlineLearner = OnlineLearner(context)
-    private val incrementalLearner = IncrementalLearner(context)
+    val onlineLearner = OnlineLearner(context)
+    val incrementalLearner = IncrementalLearner(context)
     private var lastIncrementalTime = 0L
 
     private fun start() {

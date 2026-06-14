@@ -47,10 +47,12 @@ class PredictionViewModel @Inject constructor(
     val uiState = _uiState.asStateFlow()
 
     private val predictor = PersonalizedPredictor(ctx)
-    private val onlineLearner = OnlineLearner(ctx)  // 与predictor内部共享SharedPreferences
     private val physiological = DallaManModel()
-    private val cgmCalibrator = com.tangdun.app.domain.algorithm.CGMCalibrator(ctx)
     private val tcnOk = predictor.initialize()
+
+    // 从SelfLearningManager读取共享实例 (避免重复创建)
+    private val onlineLearner get() = SelfLearningManager.getOnlineLearner()
+    private val cgmCalibrator get() = com.tangdun.app.domain.algorithm.CGMCalibrator(ctx)
 
     init {
         Log.i(TAG, "TCN=${if (tcnOk) "ONNX" else "降级"}")

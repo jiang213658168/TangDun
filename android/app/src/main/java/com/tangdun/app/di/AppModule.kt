@@ -12,7 +12,6 @@ import com.tangdun.app.domain.algorithm.CarbCalculator
 import com.tangdun.app.domain.algorithm.FeatureExtractor
 import com.tangdun.app.domain.algorithm.InsulinCalculator
 import com.tangdun.app.domain.algorithm.NightMonitor
-import com.tangdun.app.domain.algorithm.OnlineLearner
 import com.tangdun.app.domain.algorithm.TrendCalculator
 import com.tangdun.app.domain.algorithm.SmartAdvisor
 import com.tangdun.app.util.SettingsManager
@@ -172,12 +171,6 @@ object AppModule {
     @Singleton
     fun provideSymptomDao(database: AppDatabase): SymptomDao {
         return database.symptomDao()
-    }
-
-    @Provides
-    @Singleton
-    fun provideOnlineLearner(@ApplicationContext context: Context): OnlineLearner {
-        return OnlineLearner(context)
     }
 
     @Provides
