@@ -140,8 +140,11 @@ class PredictionViewModel @Inject constructor(
                 val dynSigma = (3.0 * 2.0 / isf.coerceIn(0.5, 6.0)).coerceIn(0.5, 6.0)
                 val fastingGlucose = onlineLearner.getPersonalParams().fastingBaseline
                 val basalI = (8.0 + longBasalBoost).coerceIn(4.0, 30.0)
-                // 活动量: 从运动记录估算 (有运动习惯=0.6, 久坐=0.3)
-                val activityLevel = if (exercises.isNotEmpty() && exercises.sumOf { it.durationMin ?: 0 } > 20) 0.6 else 0.4
+                // 活动量: 7天滚动平均运动时长 (30min/天→0.7, 久坐→0.3)
+                val recentExercises = exerciseDao.getByTimeRange(now - 7 * 24 * 3600 * 1000L, now)
+                val avgDailyMin = if (recentExercises.isNotEmpty())
+                    recentExercises.sumOf { it.durationMin ?: 0 } / 7.0 else 0.0
+                val activityLevel = (0.35 + avgDailyMin / 60.0 * 0.5).coerceIn(0.3, 0.8)
                 val dmParams = DallaManModel.Parameters.forUser(
                     bodyWeight = weight, fastingGlucose = fastingGlucose,
                     isf = isf, basalInsulin = basalI, sigma = dynSigma,
