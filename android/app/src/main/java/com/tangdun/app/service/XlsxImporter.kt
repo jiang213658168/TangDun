@@ -400,29 +400,40 @@ object XlsxImporter {
             } catch (e: Exception) { /* skip */ }
         }
 
-        // Step 5: 胰岛素检测 (仅检测非餐后快速下降)
+        // Step 5: 胰岛素检测 — 更保守(宁漏勿错)
         var insulinCount = 0
-        var lastInsulinEnd = -24
-        for (i in 6 until sm.size - 3) {
+        var lastInsulinEnd = -36  // 3小时间隔
+        for (i in 6 until sm.size - 6) {
+            // 30min ROC
             val roc = (sm[i - 6].second - sm[i].second) /
                 maxOf(1.0, (sm[i].first - sm[i - 6].first) / 60000.0)
 
-            // 快速下降: 30min ROC>0.05 且下降超过1.0
-            if (roc > 0.05 && sm[i - 6].second - sm[i].second > 0.8 && i - lastInsulinEnd >= 24) {
-                // 检查是否是餐后自然回落: 前1h有>1.5的上升→跳过
-                val priorRise = sm[i - 6].second - sm[maxOf(0, i - 18)].second
-                if (priorRise < 1.5 || roc > 0.08) {
+            // 严格条件: ROC>0.06(下降够快) + 持续(下一点也在降) + 降幅>1.2
+            val nextDrop = if (i + 1 < sm.size) sm[i].second - sm[i + 1].second else 0.0
+            if (roc > 0.06 && nextDrop > 0 && sm[i - 6].second - sm[i].second > 1.2
+                && i - lastInsulinEnd >= 36) {
+
+                // 排除餐后: 前2h有>2.0升幅→大概率是餐后自然回落
+                val priorMax = sm.subList(maxOf(0, i - 24), i).maxOf { it.second }
+                val priorMin = sm.subList(maxOf(0, i - 24), i).minOf { it.second }
+                val priorSwing = priorMax - priorMin
+
+                // 只有下降前无明显餐后摆动才推断胰岛素
+                if (priorSwing < 3.0) {
                     var trough = i
-                    for (j in i until minOf(i + 36, sm.size)) {
+                    for (j in i until minOf(i + 30, sm.size)) {
                         if (sm[j].second < sm[trough].second) trough = j
-                        if (j - i > 8 && sm[j].second > sm[j - 1].second + 0.2) break
+                        // 停止条件: 连续2点回升→已到底
+                        if (j - trough >= 2 && sm[j].second > sm[j - 1].second) break
                     }
                     val drop = sm[i - 6].second - sm[trough].second
-                    if (drop > 1.2) {
+                    // 排除运动(运动降糖通常<2.0, 胰岛素降糖通常>1.5)
+                    if (drop in 1.5..8.0) {
                         try {
                             insulinDao.insert(InsulinRecord(
                                 timestamp = sm[i - 6].first - 8 * 60_000L,
-                                insulinType = "rapid", doseUnits = (drop / isf).coerceIn(0.5, 15.0),
+                                insulinType = "rapid",
+                                doseUnits = (drop / isf).coerceIn(0.5, 12.0),
                                 notes = "[推断] ~${String.format("%.1f", drop / isf)}U"
                             ))
                             insulinCount++
