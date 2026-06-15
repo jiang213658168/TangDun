@@ -111,30 +111,33 @@ class DallaManModel {
                 basalInsulin: Double = 8.0,
                 sigma: Double = 3.0,
                 activityLevel: Double = 0.5
-            ) = Parameters(
+            ): Parameters {
+                val isfFactor = (1.5 / isf.coerceIn(0.5, 6.0)).coerceIn(0.3, 3.0)
+                return Parameters(
                 bodyWeight = bodyWeight,
-                // 胃肠道: 胃排空随ISF调整 (更抵抗→更慢排空)
-                kStomach = (0.040 + (1.5 / isf.coerceIn(0.5, 6.0)) * 0.005).coerceIn(0.030, 0.060),
+                // 胃肠道: 更抵抗→自主神经病变→更慢排空
+                kStomach = (0.050 - isfFactor * 0.005).coerceIn(0.030, 0.055),
                 kGut = 0.065, fCarbs = 0.9,
-                VmaxGastric = (7.0 + (1.5 / isf.coerceIn(0.5, 6.0)) * 2.0).coerceIn(5.0, 12.0),
+                VmaxGastric = (10.0 - isfFactor * 2.0).coerceIn(5.0, 12.0),
                 sigma = sigma,
                 // 葡萄糖动力学: 全部个性化
                 VgPerKg = (1.6 + (bodyWeight - 65.0) * 0.01).coerceIn(1.4, 2.0),
                 k1 = (0.040 + activityLevel * 0.030).coerceIn(0.035, 0.080),  // 运动多→利用高
-                Vm0 = (2.5 + activityLevel * 2.0 + (1.5 / isf.coerceIn(0.5, 6.0)) * 0.5).coerceIn(2.0, 5.0),
-                VmX = (0.08 + (1.5 / isf.coerceIn(0.5, 6.0)) * 0.04).coerceIn(0.04, 0.18),
+                Vm0 = (2.5 + activityLevel * 2.0 + isfFactor * 0.5).coerceIn(2.0, 5.0),
+                VmX = (0.08 + isfFactor * 0.04).coerceIn(0.04, 0.18),
                 Km0 = 25.0,
-                Gb = fastingGlucose,            // ★ 用户真实空腹基线
+                Gb = fastingGlucose,
                 Ib = basalInsulin.coerceIn(4.0, 30.0),
                 renalThreshold = (8.0 + fastingGlucose * 0.3).coerceIn(8.0, 12.0),
                 renalClearance = 0.005,
-                // 肝糖输出: ISF低(抵抗)→输出更高
-                hepaticBase = (1.8 + (1.5 / isf.coerceIn(0.5, 6.0)) * 0.6).coerceIn(1.5, 3.0),
+                // 肝糖输出: ISF低(抵抗)→输出更高 (isfFactor大→抵抗)
+                hepaticBase = (1.8 + isfFactor * 0.6).coerceIn(1.5, 3.0),
                 ka1 = 0.018, ka2 = 0.018, ke = 0.138, ViPerKg = 0.05,
-                // 胰岛素远端作用: ISF敏感→更快起效
-                kp3 = (0.025 + (isf / 3.0) * 0.015).coerceIn(0.020, 0.050),
-                kp2 = (0.040 + (isf / 3.0) * 0.015).coerceIn(0.035, 0.065)
+                // 胰岛素远端作用: ISF高(敏感, isfFactor小)→更快起效
+                kp3 = (0.045 - isfFactor * 0.007).coerceIn(0.020, 0.050),
+                kp2 = (0.060 - isfFactor * 0.007).coerceIn(0.035, 0.065)
             )
+            }
 
             /** 西方人群参数 (文献默认, 默认体重70kg) */
             fun forWestern(bodyWeight: Double = 70.0) = Parameters(
