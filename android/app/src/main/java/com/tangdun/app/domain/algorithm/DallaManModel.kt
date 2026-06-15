@@ -123,8 +123,8 @@ class DallaManModel {
                 // 葡萄糖动力学: 全部个性化
                 VgPerKg = (1.6 + (bodyWeight - 65.0) * 0.01).coerceIn(1.4, 2.0),
                 k1 = (0.040 + activityLevel * 0.030).coerceIn(0.035, 0.080),  // 运动多→利用高
-                Vm0 = (2.5 + activityLevel * 2.0 + isfFactor * 0.5).coerceIn(2.0, 5.0),
-                VmX = (0.08 + isfFactor * 0.04).coerceIn(0.04, 0.18),
+                Vm0 = (4.5 - isfFactor * 0.5 + activityLevel * 0.5).coerceIn(2.0, 5.0),
+                VmX = (0.16 - isfFactor * 0.03).coerceIn(0.04, 0.18),
                 Km0 = 25.0,
                 Gb = fastingGlucose,
                 Ib = basalInsulin.coerceIn(4.0, 30.0),
