@@ -373,12 +373,13 @@ object XlsxImporter {
             val hour = java.util.Calendar.getInstance().apply { timeInMillis = mealTime }
                 .get(java.util.Calendar.HOUR_OF_DAY)
 
-            // 正餐: AUC法; 加餐/纠正: 升幅法 (使用用户实际CR)
+            // 碳水估算 (临床公式, 基于体重而非CR)
+            val rise = sm[evt.peakIdx].second - sm[evt.startIdx].second
             val estCarbs = if (evt.isSnack || evt.isCorrection) {
-                val rise = sm[evt.peakIdx].second - sm[evt.startIdx].second
-                (rise * cr * 0.5).coerceIn(5.0, 50.0)  // CR越大→碳水需求越多
+                (rise * weight * 0.18).coerceIn(5.0, 50.0)  // ~0.18g/kg per mmol/L rise
             } else {
-                (evt.auc / (cr * 0.3)).coerceIn(20.0, 200.0)
+                // AUC法: 闭环系统公式 carbs≈AUC×BW×0.012
+                (evt.auc * weight * 0.012).coerceIn(20.0, 200.0)
             }
 
             val mealType = when {
