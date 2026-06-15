@@ -219,7 +219,7 @@ class FusionPredictor(private val context: Context) {
                 insulins = insulins,
                 horizonMinutes = 120,
                 stepMinutes = 5,
-                params = DallaManModel.Parameters.forChinese()
+                params = DallaManModel.Parameters.forUser()
             )
 
             Log.d(TAG, "DallaMan预测: ${meals.size}餐 ${insulins.size}针 → ${curve.size}点")
