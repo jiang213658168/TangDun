@@ -126,17 +126,25 @@ class PredictionViewModel @Inject constructor(
                 val longBasalBoost = insulin.filter { it.insulinType == "long" || it.insulinType == "long-acting" }
                     .sumOf { it.doseUnits * 0.5.pow(((now - it.timestamp) / 3600000.0) / 12.0) } * 0.4
 
-                // sigma随ISF动态调整: ISF高→更敏感→内源需求更少
+                // ★ 全部个性化: 空腹基线/ISF/活动量/体重全部从用户数据读取
                 val isf = settings.getInsulinSensitivity().toDouble()
                 val dynSigma = (3.0 * 2.0 / isf.coerceIn(0.5, 6.0)).coerceIn(0.5, 6.0)
-                val dmParams = DallaManModel.Parameters.forChinese(bodyWeight = weight)
-                    .copy(kStomach = (0.040 * giFactor).coerceIn(0.025, 0.080),
-                          Ib = (8.0 + longBasalBoost).coerceIn(4.0, 30.0),
-                          sigma = dynSigma)
+                val fastingGlucose = onlineLearner.getPersonalParams().fastingBaseline
+                val basalI = (8.0 + longBasalBoost).coerceIn(4.0, 30.0)
+                // 活动量: 从运动记录估算 (有运动习惯=0.6, 久坐=0.3)
+                val activityLevel = if (exercises.isNotEmpty() && exercises.sumOf { it.durationMin ?: 0 } > 20) 0.6 else 0.4
+                val dmParams = DallaManModel.Parameters.forUser(
+                    bodyWeight = weight, fastingGlucose = fastingGlucose,
+                    isf = isf, basalInsulin = basalI, sigma = dynSigma,
+                    activityLevel = activityLevel
+                )
+                // GI调整胃排空
+                val adjKStomach = (dmParams.kStomach * giFactor).coerceIn(0.025, 0.080)
+                val finalParams = dmParams.copy(kStomach = adjKStomach)
 
                 // 速效/短效胰岛素: 皮下bolus建模
                 val insulinInputs = insulin.filter { it.insulinType == "rapid" || it.insulinType == "short" }.takeLast(10).map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }
-                val dmCurve = physiological.predict(g, maxOf(iob * 15.0, 5.0), mealInputs, insulinInputs, horizonMinutes = 180, stepMinutes = 5, params = dmParams)
+                val dmCurve = physiological.predict(g, maxOf(iob * 15.0, 5.0), mealInputs, insulinInputs, horizonMinutes = 180, stepMinutes = 5, params = finalParams)
 
                 // 个性化校正
                 val olParams = onlineLearner.getPersonalParams()
@@ -149,7 +157,7 @@ class PredictionViewModel @Inject constructor(
 
                 // TCN增强
                 var tcnW = 0.0
-                var modelLabel = "DallaMan(7室 ${mealInputs.size}餐 ${insulinInputs.size}针 ${"%.0f".format(weight)}kg)"
+                var modelLabel = "DallaMan(ISF${"%.1f".format(isf)} ${mealInputs.size}餐 ${insulinInputs.size}针 ${"%.0f".format(weight)}kg)"
                 if (!tcnOk) modelLabel += " [TCN未加载]"
                 var merged = personalizedCurve
                 if (tcnOk && records.size >= 10) {

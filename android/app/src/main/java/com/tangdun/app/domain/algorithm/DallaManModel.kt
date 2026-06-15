@@ -87,31 +87,53 @@ class DallaManModel {
              * 参考: China National Diabetes Survey, Li et al. 2020
              *       Bi Y et al. " metabolic profile of T2DM in Chinese", LDE 2021
              */
-            fun forChinese(bodyWeight: Double = 65.0) = Parameters(
+            /** 中国T2DM默认参数 (向后兼容) */
+            fun forChinese(bodyWeight: Double = 65.0) = forUser(
                 bodyWeight = bodyWeight,
-                // 胃肠道：米饭/面食消化慢但持续释放(高碳水+纤维素→缓释)
-                kStomach = 0.040,       // ★ 更慢胃排空→持续释放→平稳峰
-                kGut = 0.065,           // ★ 更快肠吸收→即时利用
-                fCarbs = 0.9,
-                VmaxGastric = 7.0,      // ★ 胃排空更慢(T2DM胃轻瘫) 65kg=455mg/min
-                sigma = 3.0,            // T2DM保留~40% β细胞功能
-                // 葡萄糖动力学 (Michaelis-Menten)
-                VgPerKg = 1.6,          // 体脂较低→分布体积略小
-                k1 = 0.055,             // 略低非胰岛素利用
-                Vm0 = 3.5,              // ★ 基础利用 (西方2.5, 中国T2DM静息消耗高)
-                VmX = 0.12,             // ★ 胰岛素乘数 (纠正餐后清糖偏慢)
-                Km0 = 25.0,             // Michaelis常数 (与种族无关)
-                Gb = 5.2,               // 中国人群基础血糖略高
-                Ib = 8.0,               // 更瘦→基础胰岛素更低
-                renalThreshold = 9.5,   // 略低肾糖阈
+                fastingGlucose = 5.2, isf = 1.5, basalInsulin = 8.0,
+                sigma = 3.0, activityLevel = 0.5  // 中等活动量
+            )
+
+            /**
+             * 用户个性化参数 — 全部从OnlineLearner/SettingsManager读取
+             *
+             * @param bodyWeight 体重kg
+             * @param fastingGlucose 实测空腹血糖 (来自OnlineLearner)
+             * @param isf 胰岛素敏感因子 (来自SettingsManager/AutoParamEstimator)
+             * @param basalInsulin 基础胰岛素 (8.0 + 长效贡献)
+             * @param sigma 内源性分泌 (ISF自适应)
+             * @param activityLevel 活动水平 0( sedentary)-1(athlete), 影响k1和Vm0
+             */
+            fun forUser(
+                bodyWeight: Double = 65.0,
+                fastingGlucose: Double = 5.2,
+                isf: Double = 1.5,
+                basalInsulin: Double = 8.0,
+                sigma: Double = 3.0,
+                activityLevel: Double = 0.5
+            ) = Parameters(
+                bodyWeight = bodyWeight,
+                // 胃肠道: 胃排空随ISF调整 (更抵抗→更慢排空)
+                kStomach = (0.040 + (1.5 / isf.coerceIn(0.5, 6.0)) * 0.005).coerceIn(0.030, 0.060),
+                kGut = 0.065, fCarbs = 0.9,
+                VmaxGastric = (7.0 + (1.5 / isf.coerceIn(0.5, 6.0)) * 2.0).coerceIn(5.0, 12.0),
+                sigma = sigma,
+                // 葡萄糖动力学: 全部个性化
+                VgPerKg = (1.6 + (bodyWeight - 65.0) * 0.01).coerceIn(1.4, 2.0),
+                k1 = (0.040 + activityLevel * 0.030).coerceIn(0.035, 0.080),  // 运动多→利用高
+                Vm0 = (2.5 + activityLevel * 2.0 + (1.5 / isf.coerceIn(0.5, 6.0)) * 0.5).coerceIn(2.0, 5.0),
+                VmX = (0.08 + (1.5 / isf.coerceIn(0.5, 6.0)) * 0.04).coerceIn(0.04, 0.18),
+                Km0 = 25.0,
+                Gb = fastingGlucose,            // ★ 用户真实空腹基线
+                Ib = basalInsulin.coerceIn(4.0, 30.0),
+                renalThreshold = (8.0 + fastingGlucose * 0.3).coerceIn(8.0, 12.0),
                 renalClearance = 0.005,
-                // 肝糖输出
-                hepaticBase = 2.0,      // 肝糖输出略低
-                // 胰岛素皮下吸收 (速效，与种族无关)
+                // 肝糖输出: ISF低(抵抗)→输出更高
+                hepaticBase = (1.8 + (1.5 / isf.coerceIn(0.5, 6.0)) * 0.6).coerceIn(1.5, 3.0),
                 ka1 = 0.018, ka2 = 0.018, ke = 0.138, ViPerKg = 0.05,
-                // 胰岛素远端作用
-                kp3 = 0.035,            // 利用通道 (加速→更快抑制餐后峰)
-                kp2 = 0.050             // 肝糖抑制
+                // 胰岛素远端作用: ISF敏感→更快起效
+                kp3 = (0.025 + (isf / 3.0) * 0.015).coerceIn(0.020, 0.050),
+                kp2 = (0.040 + (isf / 3.0) * 0.015).coerceIn(0.035, 0.065)
             )
 
             /** 西方人群参数 (文献默认, 默认体重70kg) */

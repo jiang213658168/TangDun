@@ -122,13 +122,24 @@ class ChatViewModel @Inject constructor(
 
             result.fold(
                 onSuccess = { aiResponse ->
-                    // 添加AI回复
+                    // ★ 处理AI回复中的自然语言记录指令 (如"我吃了米饭200g")
+                    val (displayText, executed) = aiChatService.processRecordingCommands(context, aiResponse)
+
+                    // 添加AI回复 (已清理JSON指令块)
                     val assistantMessage = ChatMessage(
                         conversationId = conversationId,
                         role = ChatMessage.ROLE_ASSISTANT,
-                        content = aiResponse
+                        content = displayText
                     )
                     chatDao.insertMessage(assistantMessage)
+
+                    // 如果执行了记录操作，更新会话标题
+                    if (executed > 0) {
+                        val conv = chatDao.getConversation(conversationId)
+                        if (conv != null && conv.title == "新对话" || conv?.title?.startsWith("AI") == true) {
+                            chatDao.updateConversation(conv.copy(title = "📝 记录与咨询"))
+                        }
+                    }
 
                     // 更新UI
                     _uiState.value = _uiState.value.copy(
