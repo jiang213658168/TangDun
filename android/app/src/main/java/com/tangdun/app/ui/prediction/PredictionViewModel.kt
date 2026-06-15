@@ -30,6 +30,7 @@ data class PredictionUiState(
     val tcnWeight: Double = 0.0, val physioWeight: Double = 0.0,
     val peakValue: Double = 0.0, val peakMinute: Int = 0,
     val isfEstimate: Double = 1.5, val crEstimate: Double = 12.0,
+    val historyHours: Int = 3,  // 历史窗口(小时)
     val error: String? = null
 )
 
@@ -70,14 +71,22 @@ class PredictionViewModel @Inject constructor(
     }
 
     fun refresh() { loadPrediction() }
+    fun setHistoryHours(hours: Int) {
+        _uiState.value = _uiState.value.copy(historyHours = hours)
+        loadPrediction()
+    }
 
     private fun loadPrediction() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
             try {
-                val records = glucoseDao.getRecent(288).reversed()
+                // 根据选择的历史窗口获取数据 (默认3h=36点)
+                val histHours = _uiState.value.historyHours
+                val histPoints = histHours * 12  // 每小时12个5分钟点
+                val allRecords = glucoseDao.getRecent(maxOf(histPoints, 288)).reversed()
+                val records = allRecords.takeLast(histPoints)
                 if (records.size < 3) { _uiState.value = _uiState.value.copy(isLoading = false, error = "数据不足，等待血糖数据..."); return@launch }
-                val g = records.last().value; val gh = records.map { it.value }.toDoubleArray()
+                val g = records.last().value; val gh = allRecords.map { it.value }.toDoubleArray() // TCN用全288点
                 val now = System.currentTimeMillis()
                 val todayStart = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
 

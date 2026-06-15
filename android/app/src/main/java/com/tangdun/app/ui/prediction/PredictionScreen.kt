@@ -95,7 +95,18 @@ fun PredictionScreen(
                 physioWeight = uiState.physioWeight
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // 时间范围选择
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (h in listOf(1, 3, 6, 12, 24)) {
+                    FilterChip(
+                        selected = uiState.historyHours == h,
+                        onClick = { viewModel.setHistoryHours(h) },
+                        label = { Text("${h}h", fontSize = 12.sp) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             // 预测曲线图（历史 + 预测叠加）
             PredictionCurveCard(

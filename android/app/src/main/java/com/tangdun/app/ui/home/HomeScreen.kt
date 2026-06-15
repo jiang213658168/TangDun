@@ -155,9 +155,23 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // 今日血糖曲线
+        // 时间范围选择
+        var chartHours by remember { mutableStateOf(6) }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (h in listOf(1, 3, 6, 12, 24)) {
+                FilterChip(
+                    selected = chartHours == h,
+                    onClick = { chartHours = h },
+                    label = { Text("${h}h", fontSize = 11.sp) },
+                    modifier = Modifier.height(28.dp)
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+
+        // 血糖曲线 (按选择的时间范围过滤)
         GlucoseChartCard(
-            data = uiState.glucoseData,
+            data = uiState.glucoseData.takeLast(chartHours * 12),
             targetLow = uiState.targetLow.toDouble(),
             targetHigh = uiState.targetHigh.toDouble()
         )
