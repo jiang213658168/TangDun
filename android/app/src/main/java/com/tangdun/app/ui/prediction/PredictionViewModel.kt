@@ -103,8 +103,12 @@ class PredictionViewModel @Inject constructor(
                     totalMinutes * 0.02  // 约0.02 mmol/L per minute of exercise
                 } else 0.0
 
-                // 自动测算
+                // 自动测算 + 自动更新用户设置 (样本≥15时可信)
                 val est = AutoParamEstimator.estimate(glucoseDao.getRecent(500), insulinDao.getRecent(300), mealDao.getRecent(100))
+                if (est.confidence == "高" || est.confidence == "中") {
+                    settings.setInsulinSensitivity(est.insulinSensitivity.toFloat())
+                    settings.setCarbRatio(est.carbRatio.toFloat())
+                }
 
                 // Dalla Man 生理模型: 24h进食 + 24h胰岛素
                 val weight = settings.getWeightKg().toDouble()
@@ -122,9 +126,13 @@ class PredictionViewModel @Inject constructor(
                 val longBasalBoost = insulin.filter { it.insulinType == "long" || it.insulinType == "long-acting" }
                     .sumOf { it.doseUnits * 0.5.pow(((now - it.timestamp) / 3600000.0) / 12.0) } * 0.4
 
+                // sigma随ISF动态调整: ISF高→更敏感→内源需求更少
+                val isf = settings.getInsulinSensitivity().toDouble()
+                val dynSigma = (3.0 * 2.0 / isf.coerceIn(0.5, 6.0)).coerceIn(0.5, 6.0)
                 val dmParams = DallaManModel.Parameters.forChinese(bodyWeight = weight)
                     .copy(kStomach = (0.040 * giFactor).coerceIn(0.025, 0.080),
-                          Ib = (8.0 + longBasalBoost).coerceIn(4.0, 30.0))
+                          Ib = (8.0 + longBasalBoost).coerceIn(4.0, 30.0),
+                          sigma = dynSigma)
 
                 // 速效/短效胰岛素: 皮下bolus建模
                 val insulinInputs = insulin.filter { it.insulinType == "rapid" || it.insulinType == "short" }.takeLast(10).map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }

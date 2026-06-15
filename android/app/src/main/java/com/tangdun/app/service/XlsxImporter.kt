@@ -276,7 +276,10 @@ object XlsxImporter {
         if (records.size < 12) return Pair(0, 0)
 
         val sorted = records.sortedBy { it.timestamp }
-        val weight = com.tangdun.app.util.SettingsManager(context).getWeightKg().toDouble()
+        val settings = com.tangdun.app.util.SettingsManager(context)
+        val weight = settings.getWeightKg().toDouble()
+        val isf = settings.getInsulinSensitivity().toDouble()  // 用户实际ISF
+        val cr = settings.getCarbRatio().toDouble()             // 用户实际CR
         val mealDao = TangDunApp.getDatabase(context).mealDao()
         val insulinDao = TangDunApp.getDatabase(context).insulinDao()
 
@@ -369,12 +372,12 @@ object XlsxImporter {
             val hour = java.util.Calendar.getInstance().apply { timeInMillis = mealTime }
                 .get(java.util.Calendar.HOUR_OF_DAY)
 
-            // 正餐: AUC法; 加餐/纠正: 升幅法
+            // 正餐: AUC法; 加餐/纠正: 升幅法 (使用用户实际CR)
             val estCarbs = if (evt.isSnack || evt.isCorrection) {
                 val rise = sm[evt.peakIdx].second - sm[evt.startIdx].second
-                (rise * weight * 0.4).coerceIn(5.0, 50.0)  // 加餐5-50g
+                (rise * cr * 0.5).coerceIn(5.0, 50.0)  // CR越大→碳水需求越多
             } else {
-                (evt.auc / (weight * 0.08)).coerceIn(20.0, 200.0)  // 正餐20-200g
+                (evt.auc / (cr * 0.3)).coerceIn(20.0, 200.0)
             }
 
             val mealType = when {
@@ -421,7 +424,7 @@ object XlsxImporter {
                     }
                     val drop = sm[prevIdx].second - sm[trough].second
                     if (drop > 1.0) {
-                        val estDose = (drop * weight / 25.0).coerceIn(0.5, 15.0)
+                        val estDose = (drop / isf).coerceIn(0.5, 15.0)  // 使用用户实际ISF
                         try {
                             insulinDao.insert(InsulinRecord(
                                 timestamp = sm[prevIdx].first - 5 * 60_000L,
