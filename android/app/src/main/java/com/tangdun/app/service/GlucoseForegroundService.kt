@@ -202,7 +202,7 @@ class GlucoseForegroundService : Service() {
                     val weight = settings.getWeightKg().toDouble()
                     val model = DallaManModel()
                     val curve = model.predict(g, 5.0, emptyList(), emptyList(), 60, 5,
-                        DallaManModel.Parameters.forChinese(weight))
+                        DallaManModel.Parameters.forUser(bodyWeight = weight))
                     chart = NotificationChartRenderer.render(history, curve,
                         settings.getTargetLow().toDouble(), settings.getTargetHigh().toDouble())
                 }
