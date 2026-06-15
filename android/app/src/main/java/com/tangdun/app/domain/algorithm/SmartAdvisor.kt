@@ -127,19 +127,24 @@ class SmartAdvisor {
             return advices  // 紧急情况，只返回这个建议
         }
 
-        // 低血糖
+        // 低血糖: 建议碳水=15g + IOB×ISF×4 (有活性胰岛素时需更多)
         if (currentGlucose < targetLow) {
+            val iobExtraCarbs = (iob * insulinSensitivity * 4).coerceIn(0.0, 45.0)
+            val totalCarbs = (15.0 + iobExtraCarbs).toInt()
+            val detail = if (iobExtraCarbs > 5) {
+                "活性胰岛素${"%.1f".format(iob)}U→需额外碳水抵消→总计${totalCarbs}g"
+            } else "15分钟后复查血糖"
             advices.add(Advice(
                 type = AdviceType.CARB_INTAKE,
                 title = "血糖偏低",
-                message = "补充15g快速碳水",
+                message = "补充${totalCarbs}g快速碳水",
                 details = listOf(
-                    "推荐：葡萄糖片4-5片 或 果汁150ml",
-                    "15分钟后复查血糖",
+                    "推荐：葡萄糖片${(totalCarbs/4).toInt()}片 或 果汁${totalCarbs*10}ml",
+                    detail,
                     "避免吃太多导致反弹"
                 ),
                 priority = Priority.HIGH,
-                action = "补充碳水"
+                action = "补充${totalCarbs}g碳水"
             ))
             return advices
         }
