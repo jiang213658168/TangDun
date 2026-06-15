@@ -243,7 +243,10 @@ class OnlineLearner(private val context: Context) {
         val params = getPersonalParams()
 
         // 根据用户真实空腹基线调整 (模型平衡≈4.7, 患者可能6-8)
-        val baselineAdjustment = (params.fastingBaseline - 5.2) * 0.5
+        // 自适应强度: 数据越多→信任模型越多(权重降低)
+        val dataWeight = minOf(params.dataDays / 14.0, 1.0)  // 0(新用户) → 1.0(14天+)
+        val adaptStrength = 0.7 * (1.0 - dataWeight * 0.5)   // 0.7(新) → 0.35(老用户)
+        val baselineAdjustment = (params.fastingBaseline - 5.2) * adaptStrength
 
         // 高变异→预测偏保守(微降), 低变异→信任模型
         val variabilityFactor = when {

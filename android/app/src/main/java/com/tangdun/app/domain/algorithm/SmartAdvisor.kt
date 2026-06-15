@@ -286,14 +286,16 @@ class SmartAdvisor {
                 ))
             }
 
-            // 如果IOB较高，提醒注意低血糖
-            if (iob > 2.0) {
+            // IOB警告阈值: ISF敏感者低阈值 (ISF=3→0.5U, ISF=1→1.5U)
+            val iobWarnThreshold = (1.5 / insulinSensitivity).coerceIn(0.5, 3.0)
+            if (iob > iobWarnThreshold) {
                 advices.add(Advice(
                     type = AdviceType.WARNING,
                     title = "活性胰岛素较高",
                     message = "注意预防低血糖",
                     details = listOf(
                         "当前活性胰岛素: ${String.format("%.1f", iob)} 单位",
+                        "胰岛素敏感因子: ${String.format("%.1f", insulinSensitivity)}",
                         "建议随身携带糖果",
                         "2小时内避免剧烈运动"
                     ),

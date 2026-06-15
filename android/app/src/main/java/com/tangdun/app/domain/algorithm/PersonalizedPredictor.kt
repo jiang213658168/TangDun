@@ -48,9 +48,11 @@ class PersonalizedPredictor(private val context: Context) {
             bolusHistory, carbHistory, heartRateHistory, stepHistory
         )
 
-        // 3. 增量残差修正
+        // 3. 增量残差修正 (自适应: 更新数越多→权重越大)
         val residual = incrementalLearner.forward(features)
-        val hasInc = incrementalLearner.getStats()["updates"] as Int > 50
+        val incUpdates = incrementalLearner.getStats()["updates"] as Int
+        val hasInc = incUpdates > 20  // 降门槛: 50→20 (约10h数据即可)
+        val incWeight = minOf(incUpdates.toDouble() / 300.0, 0.4)  // 300次→满权重0.4
 
         // 4. 时段模式
         val hourlyDev = onlineLearner.getHourlyDeviation(
@@ -63,8 +65,7 @@ class PersonalizedPredictor(private val context: Context) {
             if (hourlyDev != 0.0) a += hourlyDev * kotlin.math.exp(-i * 5.0 / 60.0)
             if (hasInc) {
                 val t = i / 24.0
-                a += currentGlucose * (residual[0]*t*t*t + residual[1]*t*t + residual[2]*t + residual[3]) *
-                    minOf((incrementalLearner.getStats()["updates"] as Int).toDouble() / 500.0, 0.3)
+                a += currentGlucose * (residual[0]*t*t*t + residual[1]*t*t + residual[2]*t + residual[3]) * incWeight
             }
             a.coerceIn(1.0, 30.0)
         }
