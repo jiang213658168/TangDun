@@ -337,16 +337,20 @@ object XlsxImporter {
 
                 if (!isDawn) {
                     val isCorrection = mealBaseline < 4.0
-                    val isSnack = peakRise < 1.8
+                    // 进餐类型判定: 时间优先, 升幅辅助
+                    val mealTypeByHour = com.tangdun.app.data.local.entity.MealRecord.inferMealType(hour)
+                    val isMainMeal = mealTypeByHour in listOf("breakfast", "lunch", "dinner")
+                    // 主餐时段+升幅>1.0→正餐; 其他→加餐
+                    val isSnack = !isCorrection && (!isMainMeal || peakRise < 1.2)
 
-                    // AUC: 超过起始基线的面积
+                    // AUC: 超过起始基线的面积 (延伸到返回基线)
                     var auc = 0.0
                     for (k in start..minOf(end, sm.size - 1)) {
                         auc += maxOf(0.0, sm[k].second - mealBaseline) * 5.0
                     }
 
                     // 与上一餐间隔检查
-                    val minSep = if (isSnack || isCorrection) 12 else 24
+                    val minSep = if (isSnack || isCorrection) 8 else 20  // 正餐1.7h 加餐40min
                     if (mealEvents.isEmpty() || start - mealEvents.last().endIdx >= minSep) {
                         mealEvents.add(MealEvent(start, peak, end, auc, isCorrection, isSnack))
                     }
@@ -372,15 +376,17 @@ object XlsxImporter {
                 .get(java.util.Calendar.HOUR_OF_DAY)
             val rise = sm[evt.peakIdx].second - sm[evt.startIdx].second
 
-            val estCarbs = if (evt.isSnack || evt.isCorrection)
+            val estCarbs = if (evt.isSnack || evt.isCorrection) {
                 (rise * weight * 0.18).coerceIn(5.0, 50.0)
-            else
-                (evt.auc * weight * 0.012).coerceIn(20.0, 200.0)
+            } else {
+                // 正餐: AUC+rise融合估算 (更稳健)
+                val aucEst = evt.auc * weight * 0.012
+                val riseEst = rise * weight * 0.4
+                ((aucEst + riseEst) / 2.0).coerceIn(20.0, 200.0)
+            }
 
             val mealType = when {
                 evt.isCorrection -> "snack"
-                evt.isSnack -> com.tangdun.app.data.local.entity.MealRecord.inferMealType(hour)
-                    .let { if (it in listOf("breakfast", "lunch", "dinner")) "snack" else it }
                 else -> com.tangdun.app.data.local.entity.MealRecord.inferMealType(hour)
             }
 
