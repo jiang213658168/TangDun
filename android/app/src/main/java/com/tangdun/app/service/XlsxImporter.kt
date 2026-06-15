@@ -273,165 +273,151 @@ object XlsxImporter {
      *   Cameron et al. "Closed-Loop AP Based on Risk Management" (2009)
      */
     private suspend fun inferMealsAndInsulin(context: Context, records: List<GlucoseRecord>): Pair<Int, Int> {
-        if (records.size < 12) return Pair(0, 0)
+        if (records.size < 24) return Pair(0, 0)  // 至少2h数据
 
         val sorted = records.sortedBy { it.timestamp }
-        val settings = com.tangdun.app.util.SettingsManager(context)
-        val weight = settings.getWeightKg().toDouble()
-        val isf = settings.getInsulinSensitivity().toDouble()  // 用户实际ISF
-        val cr = settings.getCarbRatio().toDouble()             // 用户实际CR
+        val weight = com.tangdun.app.util.SettingsManager(context).getWeightKg().toDouble()
+        val isf = com.tangdun.app.util.SettingsManager(context).getInsulinSensitivity().toDouble()
         val mealDao = TangDunApp.getDatabase(context).mealDao()
         val insulinDao = TangDunApp.getDatabase(context).insulinDao()
 
-        // Step 1: SMA平滑 (5点=25min窗口, 去噪)
+        // Step 1: SMA平滑 (3点窗口, 15min → 更快速响应)
         val sm = mutableListOf<Pair<Long, Double>>()
         for (i in sorted.indices) {
-            val w = sorted.subList(maxOf(0, i - 2), minOf(sorted.size, i + 3))
+            val w = sorted.subList(maxOf(0, i - 1), minOf(sorted.size, i + 2))
             sm.add(sorted[i].timestamp to w.map { it.value }.average())
         }
 
-        // Step 2: 动态基线 (最近2h的20%分位数, EWMA平滑→更稳定)
-        var baseline = sm.take(12).map { it.second }.average()  // 初始基线
-        fun updateBaseline(idx: Int) {
-            if (idx < 6) return
-            val vals = sm.subList(maxOf(0, idx - 24), idx + 1).map { it.second }
-            val rawBa = vals.sorted().take(maxOf(1, vals.size / 5)).average()
-            baseline = baseline * 0.7 + rawBa * 0.3  // EWMA: 基线缓慢漂移
-        }
+        // Step 2: 稳健基线 (取前2h的最低25%均值)
+        val initVals = sm.take(24).map { it.second }.sorted()
+        var baseline = initVals.take(maxOf(1, initVals.size / 4)).average()
 
-        // Step 3: CUSUM + 上下文感知 检测进餐
+        // Step 3: 进餐检测 (滑动窗口法, 比CUSUM更直观)
         data class MealEvent(val startIdx: Int, val peakIdx: Int, val endIdx: Int,
                              val auc: Double, val isCorrection: Boolean, val isSnack: Boolean)
-
         val mealEvents = mutableListOf<MealEvent>()
-        var cusum = 0.0
-        var eventStart = -1
-        var prevTrend = 0.0  // 事件前趋势 (正=已在上升, 负=在下降)
 
-        for (i in sm.indices) {
-            updateBaseline(i)
-            val dev = sm[i].second - baseline
-            cusum = maxOf(0.0, cusum + dev)
+        var i = 6  // 从第6点开始(30min后)
+        while (i < sm.size - 6) {
+            // 前向ROC: 过去30min的变化率
+            val pastRoc = (sm[i].second - sm[i - 6].second) /
+                maxOf(1.0, (sm[i].first - sm[i - 6].first) / 60000.0)
 
-            // 上升开始: CUSUM首次超过阈值
-            val threshold = if (sm[i].second < 4.0) 0.3 else 0.5  // 低血糖: 更敏感
-            if (cusum > threshold && eventStart < 0) {
-                eventStart = i
-                // 记录事件前趋势 (前30分钟ROC)
-                val preIdx = maxOf(0, i - 6)
-                prevTrend = (sm[i].second - sm[preIdx].second) /
-                    maxOf(1.0, (sm[i].first - sm[preIdx].first) / 60000.0)
+            // 检测上升: 30min升幅>0.5 且 ROC>0.015
+            if (pastRoc > 0.015 && sm[i].second - sm[i - 6].second > 0.5) {
+                // 回溯找起点 (升幅开始的位置)
+                var start = i - 6
+                while (start > 0 && sm[start].second > sm[start - 1].second) start--
+                val mealBaseline = sm[start].second
+
+                // 前向找峰值 (最多搜索2h=24点)
+                var peak = i
+                var j = i
+                while (j < sm.size - 1 && j - i < 24) {
+                    if (sm[j].second > sm[peak].second) peak = j
+                    // 连续3点下降→峰值已过
+                    if (j - peak >= 3 && sm[j].second < sm[peak].second - 0.3) break
+                    j++
+                }
+                val peakRise = sm[peak].second - mealBaseline
+                if (peakRise < 0.5) { i++; continue }  // 升幅太小
+
+                // 找结束点 (回到基线+0.3 或 升幅的30%)
+                val returnLevel = mealBaseline + peakRise * 0.3
+                var end = peak
+                while (end < sm.size - 1 && end - peak < 36) {
+                    if (sm[end].second <= returnLevel) break
+                    end++
+                }
+
+                // 黎明过滤
+                val cal = java.util.Calendar.getInstance().apply { timeInMillis = sm[start].first }
+                val hour = cal.get(java.util.Calendar.HOUR_OF_DAY)
+                val isDawn = hour in 4..8 && mealBaseline < 7.0 && peakRise < 1.5
+
+                if (!isDawn) {
+                    val isCorrection = mealBaseline < 4.0
+                    val isSnack = peakRise < 1.8
+
+                    // AUC: 超过起始基线的面积
+                    var auc = 0.0
+                    for (k in start..minOf(end, sm.size - 1)) {
+                        auc += maxOf(0.0, sm[k].second - mealBaseline) * 5.0
+                    }
+
+                    // 与上一餐间隔检查
+                    val minSep = if (isSnack || isCorrection) 12 else 24
+                    if (mealEvents.isEmpty() || start - mealEvents.last().endIdx >= minSep) {
+                        mealEvents.add(MealEvent(start, peak, end, auc, isCorrection, isSnack))
+                    }
+                }
+                i = end + 1  // 跳过后继续
             }
-
-            // 上升结束: CUSUM连续下降2步 且 已越过峰值
-            if (eventStart >= 0 && i - eventStart >= 4) {
-                val prevCusum = maxOf(0.0, cusum - dev)
-                val stillRising = cusum >= prevCusum
-                val totalRise = sm[i].second - sm[eventStart].second
-
-                if (!stillRising && totalRise > 0.5) {
-                    // 找峰值索引
-                    var pk = eventStart
-                    for (j in eventStart..i) {
-                        if (sm[j].second > sm[pk].second) pk = j
-                    }
-                    val peakRise = sm[pk].second - sm[eventStart].second
-
-                    // 背景判断
-                    val cal = java.util.Calendar.getInstance().apply { timeInMillis = sm[eventStart].first }
-                    val hour = cal.get(java.util.Calendar.HOUR_OF_DAY)
-                    val isDawn = hour in 4..8 && sm[eventStart].second < 7.0 && peakRise < 1.5
-                    val isCorrection = sm[eventStart].second < 4.0  // 低血糖纠正
-                    val isSnack = peakRise in 0.5..1.5  // 小幅上升=加餐
-                    val startsFromDrop = prevTrend < -0.02  // 下降后反弹(运动/低血糖纠正)
-
-                    // 黎明现象: 不是进食
-                    if (!isDawn) {
-                        val endIdx = i
-                        var auc = 0.0
-                        for (j in eventStart..endIdx) {
-                            auc += maxOf(0.0, sm[j].second - baseline) * 5.0
-                        }
-
-                        // 间隔检查 (正餐2h, 加餐/纠正1h)
-                        val minSep = if (isSnack || isCorrection) 12 else 24
-                        if (mealEvents.isEmpty() || i - mealEvents.last().endIdx >= minSep) {
-                            mealEvents.add(MealEvent(eventStart, pk, endIdx, auc, isCorrection, isSnack))
-                        }
-                    }
-                    cusum *= 0.3  // 保留30%→重叠的餐后波动不被截断
-                    eventStart = -1
-                    prevTrend = 0.0
+            // 更新基线: 取最近2h的15%分位数 (偏保守)
+            if (i % 12 == 0) {
+                val recent = sm.subList(maxOf(0, i - 24), i + 1).map { it.second }.sorted()
+                if (recent.size >= 8) {
+                    val rawBaseline = recent.take(maxOf(1, (recent.size * 0.15).toInt())).average()
+                    baseline = baseline * 0.8 + rawBaseline * 0.2
                 }
             }
+            i++
         }
 
-        // Step 4: 创建MealRecord — 区分餐型
+        // Step 4: 创建MealRecord
         var mealCount = 0
         for (evt in mealEvents) {
-            val mealTime = sm[evt.startIdx].first - 10 * 60_000L
+            val mealTime = sm[evt.startIdx].first - 8 * 60_000L
             val hour = java.util.Calendar.getInstance().apply { timeInMillis = mealTime }
                 .get(java.util.Calendar.HOUR_OF_DAY)
-
-            // 碳水估算 (临床公式, 基于体重而非CR)
             val rise = sm[evt.peakIdx].second - sm[evt.startIdx].second
-            val estCarbs = if (evt.isSnack || evt.isCorrection) {
-                (rise * weight * 0.18).coerceIn(5.0, 50.0)  // ~0.18g/kg per mmol/L rise
-            } else {
-                // AUC法: 闭环系统公式 carbs≈AUC×BW×0.012
+
+            val estCarbs = if (evt.isSnack || evt.isCorrection)
+                (rise * weight * 0.18).coerceIn(5.0, 50.0)
+            else
                 (evt.auc * weight * 0.012).coerceIn(20.0, 200.0)
-            }
 
             val mealType = when {
-                evt.isCorrection -> "snack"  // 低血糖纠正=加餐类
+                evt.isCorrection -> "snack"
                 evt.isSnack -> com.tangdun.app.data.local.entity.MealRecord.inferMealType(hour)
-                    .let { if (it == "breakfast" || it == "lunch" || it == "dinner") "snack" else it }
+                    .let { if (it in listOf("breakfast", "lunch", "dinner")) "snack" else it }
                 else -> com.tangdun.app.data.local.entity.MealRecord.inferMealType(hour)
             }
-
-            val gi = if (evt.isCorrection) 75.0 else 60.0  // 纠正用高GI快糖
 
             try {
                 mealDao.insert(MealRecord(
                     timestamp = mealTime, mealType = mealType,
-                    totalCarbs = estCarbs, totalCalories = estCarbs * 4.0, avgGi = gi
+                    totalCarbs = estCarbs, totalCalories = estCarbs * 4.0,
+                    avgGi = if (evt.isCorrection) 75.0 else 60.0
                 ))
                 mealCount++
             } catch (e: Exception) { /* skip */ }
         }
 
-        // Step 5: 胰岛素检测 — 区分运动降糖 vs 胰岛素降糖
+        // Step 5: 胰岛素检测 (仅检测非餐后快速下降)
         var insulinCount = 0
-        var lastInsulinEnd = -12
+        var lastInsulinEnd = -24
+        for (i in 6 until sm.size - 3) {
+            val roc = (sm[i - 6].second - sm[i].second) /
+                maxOf(1.0, (sm[i].first - sm[i - 6].first) / 60000.0)
 
-        for (i in 3 until sm.size) {
-            // 计算局部ROC
-            val lookback = minOf(6, i)
-            val prevIdx = i - lookback
-            val timeMin = maxOf(1.0, (sm[i].first - sm[prevIdx].first) / 60000.0)
-            val roc = (sm[prevIdx].second - sm[i].second) / timeMin
-
-            // 快速下降: ROC > 0.04 且持续 (比正餐后自然回落快)
-            if (roc > 0.04 && i - lastInsulinEnd >= 12) {
-                // 检查: 下降前是否有上升? (有=餐后自然回落, 无=胰岛素/运动)
-                val preRise = sm[prevIdx].second - sm[maxOf(0, prevIdx - 6)].second
-                val precededByRise = preRise > 1.0  // 前30分钟有明显上升
-
-                // 只有非餐后自然回落才推断为胰岛素
-                if (!precededByRise || roc > 0.08) {
+            // 快速下降: 30min ROC>0.05 且下降超过1.0
+            if (roc > 0.05 && sm[i - 6].second - sm[i].second > 0.8 && i - lastInsulinEnd >= 24) {
+                // 检查是否是餐后自然回落: 前1h有>1.5的上升→跳过
+                val priorRise = sm[i - 6].second - sm[maxOf(0, i - 18)].second
+                if (priorRise < 1.5 || roc > 0.08) {
                     var trough = i
                     for (j in i until minOf(i + 36, sm.size)) {
                         if (sm[j].second < sm[trough].second) trough = j
-                        if (j - i > 8 && sm[j].second > sm[j - 1].second + 0.3) break
+                        if (j - i > 8 && sm[j].second > sm[j - 1].second + 0.2) break
                     }
-                    val drop = sm[prevIdx].second - sm[trough].second
-                    if (drop > 1.0) {
-                        val estDose = (drop / isf).coerceIn(0.5, 15.0)  // 使用用户实际ISF
+                    val drop = sm[i - 6].second - sm[trough].second
+                    if (drop > 1.2) {
                         try {
                             insulinDao.insert(InsulinRecord(
-                                timestamp = sm[prevIdx].first - 5 * 60_000L,
-                                insulinType = "rapid", doseUnits = estDose,
-                                notes = "[推断] ~${String.format("%.1f", estDose)}U"
+                                timestamp = sm[i - 6].first - 8 * 60_000L,
+                                insulinType = "rapid", doseUnits = (drop / isf).coerceIn(0.5, 15.0),
+                                notes = "[推断] ~${String.format("%.1f", drop / isf)}U"
                             ))
                             insulinCount++
                             lastInsulinEnd = trough
