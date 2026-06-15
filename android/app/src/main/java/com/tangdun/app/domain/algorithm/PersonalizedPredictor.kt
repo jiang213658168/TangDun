@@ -61,7 +61,7 @@ class PersonalizedPredictor(private val context: Context) {
 
         // 5. 合成曲线
         val curve = base.curve.mapIndexed { i, v ->
-            var a = onlineLearner.applyPersonalization(v, currentGlucose)
+            var a = onlineLearner.applyPersonalization(v, currentGlucose, i)
             if (hourlyDev != 0.0) a += hourlyDev * kotlin.math.exp(-i * 5.0 / 60.0)
             if (hasInc) {
                 val t = i / 24.0

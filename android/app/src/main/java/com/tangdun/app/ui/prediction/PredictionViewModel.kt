@@ -158,8 +158,7 @@ class PredictionViewModel @Inject constructor(
                 // 个性化校正
                 val olParams = onlineLearner.getPersonalParams()
                 val personalizedCurve = dmCurve.mapIndexed { i, v ->
-                    val personal = onlineLearner.applyPersonalization(v, g)
-                    // 运动降糖效应: 随预测时间指数衰减(运动后2h内有效)
+                    val personal = onlineLearner.applyPersonalization(v, g, i)
                     if (exerciseEffect > 0) personal - exerciseEffect * kotlin.math.exp(-i * 5.0 / 120.0)
                     else personal
                 }

@@ -254,9 +254,16 @@ class AiChatService(private val context: Context) {
      * @return Pair<显示文本, 执行结果数量>
      */
     suspend fun processRecordingCommands(context: Context, aiReply: String): Pair<String, Int> {
+        // 匹配JSON: 支持裸JSON和```json```包裹
+        var text = aiReply
+        // 先提取```json```块
+        val codeBlock = Regex("```json\\s*([\\s\\S]*?)```")
+        codeBlock.find(text)?.let { text = it.groupValues[1] }
+
+        // 匹配record指令JSON (支持嵌套对象如{"action":"record_meal","food":"米饭","carbs":200})
         val jsonPattern = Regex("""\{[^{}]*"action"\s*:\s*"record_[^"]*"[^{}]*\}""")
-        val matches = jsonPattern.findAll(aiReply)
-        var displayText = aiReply
+        val matches = jsonPattern.findAll(text)
+        var displayText = aiReply.replace(Regex("```json[\\s\\S]*?```"), "").replace(jsonPattern, "")
         var executed = 0
 
         for (match in matches) {
@@ -322,8 +329,9 @@ class AiChatService(private val context: Context) {
             }
         }
 
-        // 清理多余空行
-        displayText = displayText.replace(Regex("\n{3,}"), "\n\n").trim()
+        // 清理残留JSON和多余空行
+        displayText = displayText.replace(Regex("```[\\s\\S]*?```"), "")
+            .replace(Regex("\n{3,}"), "\n\n").trim()
         if (executed > 0 && displayText.isBlank()) {
             displayText = "已记录 ✅"
         }

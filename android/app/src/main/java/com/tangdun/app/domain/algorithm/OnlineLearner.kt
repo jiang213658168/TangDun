@@ -239,16 +239,17 @@ class OnlineLearner(private val context: Context) {
     /**
      * 应用个性化到预测
      */
-    fun applyPersonalization(basePrediction: Double, currentGlucose: Double): Double {
+    fun applyPersonalization(basePrediction: Double, currentGlucose: Double, timeIndex: Int = 0): Double {
         val params = getPersonalParams()
 
-        // 根据用户真实空腹基线调整 (模型平衡≈4.7, 患者可能6-8)
-        // 自适应强度: 数据越多→信任模型越多(权重降低)
-        val dataWeight = minOf(params.dataDays / 14.0, 1.0)  // 0(新用户) → 1.0(14天+)
-        val adaptStrength = 0.7 * (1.0 - dataWeight * 0.5)   // 0.7(新) → 0.35(老用户)
-        val baselineAdjustment = (params.fastingBaseline - 5.2) * adaptStrength
+        val dataWeight = minOf(params.dataDays / 14.0, 1.0)
+        val adaptStrength = 0.7 * (1.0 - dataWeight * 0.5)
+        val fullAdjustment = (params.fastingBaseline - 5.2) * adaptStrength
 
-        // 高变异→预测偏保守(微降), 低变异→信任模型
+        // ★ 断崖修复: 当前值不平移, 偏差随时间渐进
+        val timeFraction = minOf(timeIndex / 12.0, 1.0)  // 0→1 over 60min
+        val baselineAdjustment = fullAdjustment * timeFraction
+
         val variabilityFactor = when {
             params.glucoseVariability > 4.0 -> 0.92
             params.glucoseVariability > 3.0 -> 0.96

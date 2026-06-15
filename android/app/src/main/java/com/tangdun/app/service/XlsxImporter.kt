@@ -290,12 +290,13 @@ object XlsxImporter {
             sm.add(sorted[i].timestamp to w.map { it.value }.average())
         }
 
-        // Step 2: 动态基线 (最近1小时的10%分位数, 更实时)
-        fun baselineAt(idx: Int): Double {
-            val start = maxOf(0, idx - 12)
-            val vals = sm.subList(start, idx + 1).map { it.second }
-            return if (vals.size >= 4) vals.sorted().take(maxOf(1, vals.size / 10)).average()
-            else vals.average()
+        // Step 2: 动态基线 (最近2h的20%分位数, EWMA平滑→更稳定)
+        var baseline = sm.take(12).map { it.second }.average()  // 初始基线
+        fun updateBaseline(idx: Int) {
+            if (idx < 6) return
+            val vals = sm.subList(maxOf(0, idx - 24), idx + 1).map { it.second }
+            val rawBa = vals.sorted().take(maxOf(1, vals.size / 5)).average()
+            baseline = baseline * 0.7 + rawBa * 0.3  // EWMA: 基线缓慢漂移
         }
 
         // Step 3: CUSUM + 上下文感知 检测进餐
@@ -308,8 +309,8 @@ object XlsxImporter {
         var prevTrend = 0.0  // 事件前趋势 (正=已在上升, 负=在下降)
 
         for (i in sm.indices) {
-            val bl = baselineAt(i)
-            val dev = sm[i].second - bl
+            updateBaseline(i)
+            val dev = sm[i].second - baseline
             cusum = maxOf(0.0, cusum + dev)
 
             // 上升开始: CUSUM首次超过阈值
@@ -349,7 +350,7 @@ object XlsxImporter {
                         val endIdx = i
                         var auc = 0.0
                         for (j in eventStart..endIdx) {
-                            auc += maxOf(0.0, sm[j].second - bl) * 5.0
+                            auc += maxOf(0.0, sm[j].second - baseline) * 5.0
                         }
 
                         // 间隔检查 (正餐2h, 加餐/纠正1h)
@@ -358,7 +359,7 @@ object XlsxImporter {
                             mealEvents.add(MealEvent(eventStart, pk, endIdx, auc, isCorrection, isSnack))
                         }
                     }
-                    cusum = 0.0
+                    cusum *= 0.3  // 保留30%→重叠的餐后波动不被截断
                     eventStart = -1
                     prevTrend = 0.0
                 }
