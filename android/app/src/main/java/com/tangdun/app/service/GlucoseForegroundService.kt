@@ -192,16 +192,24 @@ class GlucoseForegroundService : Service() {
             val latest = dao.getLatest()
             val settings = SettingsManager(this@GlucoseForegroundService)
 
-            // 生成通知栏曲线图
+            // 生成通知栏曲线图 (含近期饮食/胰岛素)
             var chart: Bitmap? = null
             try {
-                val history = dao.getRecent(36)  // 最近3小时 (36×5min)
+                val history = dao.getRecent(36)  // 最近3小时
                 if (history.size >= 4) {
-                    // 运行快速预测 (仅DallaMan, 不用TCN)
+                    val now = System.currentTimeMillis()
+                    val db = TangDunApp.getDatabase(this@GlucoseForegroundService)
+                    // 读取近期饮食和胰岛素(2h内) → DallaMan有上下文
+                    val recentMeals = db.mealDao().getByTimeRange(now - 4 * 3600_000L, now)
+                        .takeLast(3).map { DallaManModel.MealInput((now - it.timestamp) / 60000.0, it.totalCarbs, it.avgGi) }
+                    val recentInsulin = db.insulinDao().getSince(now - 4 * 3600_000L)
+                        .filter { it.insulinType == "rapid" }.takeLast(5)
+                        .map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }
+
                     val g = history.last().value
                     val weight = settings.getWeightKg().toDouble()
                     val model = DallaManModel()
-                    val curve = model.predict(g, 5.0, emptyList(), emptyList(), 60, 5,
+                    val curve = model.predict(g, 5.0, recentMeals, recentInsulin, 60, 5,
                         DallaManModel.Parameters.forUser(bodyWeight = weight))
                     chart = NotificationChartRenderer.render(history, curve,
                         settings.getTargetLow().toDouble(), settings.getTargetHigh().toDouble())
