@@ -224,8 +224,8 @@ class DallaManModel {
         if (currentInsulin > I * 1.5) I = currentInsulin.coerceAtMost(Ib * 8.0)
 
         // 胰岛素远端作用：从初始I计算预激活
-        var X = max(0.0, (I - Ib) / Ib).coerceIn(0.0, 3.0)
-        var X_L = max(0.0, (I - Ib) / Ib).coerceIn(0.0, 3.0)
+        var X = max(0.0, (I - Ib) / Ib).coerceIn(0.0, 5.0)
+        var X_L = max(0.0, (I - Ib) / Ib).coerceIn(0.0, 5.0)
 
         // 胃肠道：从过去的进食预计算残留
         var stomach = 0.0
