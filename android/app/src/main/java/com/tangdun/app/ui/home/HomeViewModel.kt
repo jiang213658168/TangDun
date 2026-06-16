@@ -108,7 +108,15 @@ class HomeViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     error = "导入完成: ${result.imported}条新增, ${result.skipped}条重复"
                 )
-                if (result.imported > 0) loadData()
+                if (result.imported > 0) {
+                    loadData()
+                    // 触发自学习 → 统计层立即学习新数据
+                    try {
+                        val learner = com.tangdun.app.domain.algorithm.SelfLearningManager.getOnlineLearner()
+                        learner.learn(glucoseDao)
+                        Log.i("HomeVM", "导入后学习: ${learner.getStageDescription()}")
+                    } catch (e: Exception) { Log.w("HomeVM", "导入后学习失败: ${e.message}") }
+                }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = "导入失败: ${e.message}")
             }

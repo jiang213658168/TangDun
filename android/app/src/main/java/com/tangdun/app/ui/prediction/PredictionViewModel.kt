@@ -202,13 +202,16 @@ class PredictionViewModel @Inject constructor(
                 }
 
                 val peak = anchored.max(); val pi = anchored.indexOf(peak)
-                // 置信度: 综合数据量+模型类型+校准状态+噪声
+                // 置信度: 基于总数据量(非显示窗口)
+                val totalRecords = glucoseDao.getCount()  // DB全部记录数
                 val calConf = if (cgmCalibrator.getCount() >= 1) 10.0 else 0.0
+                val qualityBonus = (onlineLearner.getPersonalParams().dataCompleteness * 10).toInt().toDouble()
                 val confidence = when {
-                    tcnOk && records.size >= 200 -> 85.0
-                    tcnOk && records.size >= 100 -> 75.0
-                    records.size >= 50 -> 60.0 + calConf
-                    records.size >= 10 -> 45.0 + calConf
+                    tcnOk && totalRecords >= 5000 -> 90.0
+                    tcnOk && totalRecords >= 2000 -> 80.0
+                    totalRecords >= 1000 -> 65.0 + calConf + qualityBonus
+                    totalRecords >= 200 -> 55.0 + calConf
+                    totalRecords >= 50 -> 45.0 + calConf
                     else -> 30.0
                 }
 
@@ -217,7 +220,7 @@ class PredictionViewModel @Inject constructor(
                     predicted30min = anchored.getOrNull(6), predicted60min = anchored.getOrNull(12), predicted120min = anchored.getOrNull(24),
                     curve = anchored, historyData = records.map { it.timestamp to it.value }, modelLabel = modelLabel, predictionTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
                     confidence = confidence,
-                    totalRecords = records.size, fastingBaseline = olParams.fastingBaseline, variability = olParams.glucoseVariability,
+                    totalRecords = totalRecords, fastingBaseline = olParams.fastingBaseline, variability = olParams.glucoseVariability,
                     activeInsulin = iob, todayCarbs = todayCarbs, tcnWeight = tcnW, physioWeight = 1 - tcnW,
                     targetLow = settings.getTargetLow().toDouble(), targetHigh = settings.getTargetHigh().toDouble(),
                     peakValue = peak, peakMinute = pi * 5,
