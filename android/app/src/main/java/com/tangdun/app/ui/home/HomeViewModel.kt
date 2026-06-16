@@ -35,6 +35,7 @@ data class HomeUiState(
     val tir: Double? = null,
     val recordCount: Int = 0,
     val isXDripConnected: Boolean = false,
+    val selectedDate: Long = System.currentTimeMillis(),  // 查看的日期(毫秒)
     val targetLow: Float = 3.9f,
     val targetHigh: Float = 10.0f,
     val error: String? = null,
@@ -90,9 +91,12 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun refresh() {
+    fun refresh() { loadData(); checkXDripStatus() }
+    fun goToToday() { _uiState.value = _uiState.value.copy(selectedDate = System.currentTimeMillis()); loadData() }
+    fun setDate(daysAgo: Int) {
+        val cal = Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, -daysAgo) }
+        _uiState.value = _uiState.value.copy(selectedDate = cal.timeInMillis)
         loadData()
-        checkXDripStatus()
     }
 
     /** 导入欧态CGM xlsx文件 */
@@ -205,16 +209,12 @@ class HomeViewModel @Inject constructor(
 
             try {
                 // 获取今日开始时间
-                val calendar = Calendar.getInstance().apply {
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-                }
-                val todayStart = calendar.timeInMillis
+                // 选中日期的0点到次日0点
+                val cal = Calendar.getInstance().apply { timeInMillis = _uiState.value.selectedDate; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
+                val dayStart = cal.timeInMillis; cal.add(Calendar.DAY_OF_MONTH, 1); val dayEnd = cal.timeInMillis
 
-                // 获取今日血糖记录
-                val records = glucoseDao.getTodayRecords(todayStart)
+                // 获取选中日期的血糖记录
+                val records = glucoseDao.getByTimeRange(dayStart, dayEnd)
 
                 // 获取最新血糖
                 val latest = glucoseDao.getLatest()
