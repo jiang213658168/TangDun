@@ -129,7 +129,7 @@ fun HomeScreen(
             IconButton(onClick = { viewModel.shiftDate(-1) }) { Icon(Icons.Default.ChevronLeft, "前一天") }
             Text(if (isToday) "今天 $selStr" else selStr, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             if (!isToday) TextButton(onClick = { viewModel.goToToday() }) { Text("今天", fontSize = 12.sp) }
-            IconButton(onClick = { viewModel.shiftDate(1) }) { Icon(Icons.Default.ChevronRight, "后一天") }
+            IconButton(onClick = { viewModel.shiftDate(1) }, enabled = !isToday) { Icon(Icons.Default.ChevronRight, "后一天") }
         }
 
         // 预警横幅

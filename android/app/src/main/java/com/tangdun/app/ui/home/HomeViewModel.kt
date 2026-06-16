@@ -225,9 +225,10 @@ class HomeViewModel @Inject constructor(
 
                 // 获取选中日期的血糖记录
                 val records = glucoseDao.getByTimeRange(dayStart, dayEnd)
+                val isToday = dayStart <= System.currentTimeMillis() && System.currentTimeMillis() < dayEnd
 
-                // 获取最新血糖
-                val latest = glucoseDao.getLatest()
+                // 今天→DB最新值; 历史日期→当天最后一条
+                val latest = if (isToday) glucoseDao.getLatest() else records.lastOrNull()
 
                 // 趋势：优先用 xDrip+ 广播自带的（更准确），其次本地计算
                 val trend = latest?.trend
