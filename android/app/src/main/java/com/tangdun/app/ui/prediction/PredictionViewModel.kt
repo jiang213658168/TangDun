@@ -156,6 +156,9 @@ class PredictionViewModel @Inject constructor(
 
                 // 速效/短效胰岛素: 皮下bolus建模
                 val insulinInputs = insulin.filter { it.insulinType == "rapid" || it.insulinType == "short" }.takeLast(10).map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }
+                // 更新数据质量标记
+                onlineLearner.updateDataCompleteness(mealInputs.isNotEmpty(), insulinInputs.isNotEmpty())
+
                 val dmCurve = physiological.predict(g, maxOf(iob * 15.0, 5.0), mealInputs, insulinInputs, horizonMinutes = 180, stepMinutes = 5, params = finalParams)
 
                 // 个性化校正

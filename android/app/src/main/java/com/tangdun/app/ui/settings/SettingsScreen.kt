@@ -180,8 +180,9 @@ fun SelfLearningCard() {
             Spacer(Modifier.height(10.dp))
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                val qText = if (params.dataCompleteness >= 0.8) "完整" else if (params.dataCompleteness >= 0.4) "部分" else "血糖"
                 StatItem2("数据", "${"%.1f".format(params.dataDays)}天")
-                StatItem2("基线", "${"%.1f".format(params.fastingBaseline)}")
+                StatItem2("质量", qText)
                 StatItem2("变异", "${"%.1f".format(params.glucoseVariability)}%")
             }
 

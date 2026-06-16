@@ -57,7 +57,9 @@ class OnlineLearner(private val context: Context) {
         // 统计信息
         val dataDays: Double = 0.0,
         val updateCount: Int = 0,
-        val lastUpdate: Long = 0
+        val lastUpdate: Long = 0,
+        // 数据质量: 0=纯血糖, 0.5=有饮食, 1.0=饮食+胰岛素齐全
+        val dataCompleteness: Double = 0.0
     )
 
     /**
@@ -84,7 +86,8 @@ class OnlineLearner(private val context: Context) {
             adaptiveHighThreshold = sharedPref.getFloat("adaptive_high", 10.0f).toDouble(),
             dataDays = sharedPref.getFloat("data_days", 0f).toDouble(),
             updateCount = sharedPref.getInt("update_count", 0),
-            lastUpdate = sharedPref.getLong("last_update", 0)
+            lastUpdate = sharedPref.getLong("last_update", 0),
+            dataCompleteness = sharedPref.getFloat("data_completeness", 0f).toDouble()
         )
     }
 
@@ -102,6 +105,7 @@ class OnlineLearner(private val context: Context) {
             putFloat("adaptive_low", params.adaptiveLowThreshold.toFloat())
             putFloat("adaptive_high", params.adaptiveHighThreshold.toFloat())
             putFloat("data_days", params.dataDays.toFloat())
+            putFloat("data_completeness", params.dataCompleteness.toFloat())
             putInt("update_count", params.updateCount)
             putLong("last_update", System.currentTimeMillis())
             apply()
@@ -242,8 +246,10 @@ class OnlineLearner(private val context: Context) {
     fun applyPersonalization(basePrediction: Double, currentGlucose: Double, timeIndex: Int = 0): Double {
         val params = getPersonalParams()
 
+        // 数据质量加权: 完整数据(↑)→信模型, 纯血糖(↓)→信统计
+        val qualityFactor = 1.0 - params.dataCompleteness * 0.6  // 完整=0.4, 纯血糖=1.0
         val dataWeight = minOf(params.dataDays / 14.0, 1.0)
-        val adaptStrength = 0.7 * (1.0 - dataWeight * 0.5)
+        val adaptStrength = 0.7 * (1.0 - dataWeight * 0.5) * qualityFactor
         val fullAdjustment = (params.fastingBaseline - 5.2) * adaptStrength
 
         // ★ 断崖修复: 当前值不平移, 偏差随时间渐进
@@ -265,7 +271,16 @@ class OnlineLearner(private val context: Context) {
     fun getStageDescription(): String {
         val stage = getLearningStage()
         val params = getPersonalParams()
-        return "${stage.label}阶段 | ${String.format("%.1f", params.dataDays)}天数据 | ${params.updateCount}次更新"
+        val quality = if (params.dataCompleteness >= 0.8) "完整" else if (params.dataCompleteness >= 0.4) "部分" else "纯血糖"
+        return "${stage.label} | ${"%.1f".format(params.dataDays)}天 | ${params.updateCount}次 | $quality"
+    }
+
+    /** 更新数据完整度: 由外部检测到饮食/胰岛素记录后调用 */
+    fun updateDataCompleteness(hasMeals: Boolean, hasInsulin: Boolean) {
+        val old = getPersonalParams().dataCompleteness
+        val target = when { hasMeals && hasInsulin -> 1.0; hasMeals -> 0.5; else -> 0.0 }
+        val new = old * 0.7 + target * 0.3  // EWMA平滑
+        sharedPref.edit().putFloat("data_completeness", new.toFloat()).apply()
     }
 
     /**
