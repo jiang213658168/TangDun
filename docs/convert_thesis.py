@@ -141,6 +141,6 @@ while i < len(lines):
     add_body(stripped)
     i += 1
 
-output = '糖盾研究生论文_v3.docx'
+output = '糖盾研究生论文_去AI化.docx'
 doc.save(output)
 print(f'已生成: {os.path.abspath(output)} ({os.path.getsize(output)} bytes)')
