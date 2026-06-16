@@ -280,7 +280,8 @@ class OnlineLearner(private val context: Context) {
     /** 更新数据完整度: 由外部检测到饮食/胰岛素记录后调用 */
     fun updateDataCompleteness(hasMeals: Boolean, hasInsulin: Boolean) {
         val old = getPersonalParams().dataCompleteness
-        val target = when { hasMeals && hasInsulin -> 1.0; hasMeals -> 0.5; else -> 0.0 }
+        // 有血糖数据至少=0.3(OnlineLearner已学到基线/变异/时段)
+        val target = when { hasMeals && hasInsulin -> 1.0; hasMeals -> 0.6; else -> 0.3 }
         val new = old * 0.7 + target * 0.3  // EWMA平滑
         sharedPref.edit().putFloat("data_completeness", new.toFloat()).apply()
     }

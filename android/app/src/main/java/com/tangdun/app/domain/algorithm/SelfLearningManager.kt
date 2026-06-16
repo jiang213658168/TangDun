@@ -53,6 +53,7 @@ class SelfLearningManager(private val context: Context) {
                 try {
                     // Layer 1: 每条新血糖 → 统计学习
                     if (onlineLearner.learn(dao)) {
+                        onlineLearner.updateDataCompleteness(false, false)  // 标记: 有血糖数据
                         Log.d(TAG, "快速学习: ${onlineLearner.getStageDescription()}")
                     }
 
