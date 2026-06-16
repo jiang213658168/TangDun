@@ -192,13 +192,16 @@ class PredictionViewModel @Inject constructor(
                     } catch (e: Exception) { Log.w(TAG, "TCN异常: ${e.message}") }
                 }
 
+                // ★ 强制锚定: 预测起点=当前血糖 (消除任何累积误差导致的断崖)
+                val anchored = merged.toMutableList().apply { this[0] = g }
+
                 val riskLabel = when {
-                    merged.getOrNull(6)?.let { it < settings.getTargetLow().toDouble() } == true -> "低血糖风险"
-                    merged.getOrNull(6)?.let { it > settings.getTargetHigh().toDouble() } == true -> "高血糖风险"
+                    anchored.getOrNull(6)?.let { it < settings.getTargetLow().toDouble() } == true -> "低血糖风险"
+                    anchored.getOrNull(6)?.let { it > settings.getTargetHigh().toDouble() } == true -> "高血糖风险"
                     else -> "正常"
                 }
 
-                val peak = merged.max(); val pi = merged.indexOf(peak)
+                val peak = anchored.max(); val pi = anchored.indexOf(peak)
                 // 置信度: 综合数据量+模型类型+校准状态+噪声
                 val calConf = if (cgmCalibrator.getCount() >= 1) 10.0 else 0.0
                 val confidence = when {
@@ -211,8 +214,8 @@ class PredictionViewModel @Inject constructor(
 
                 _uiState.value = PredictionUiState(
                     isLoading = false, currentGlucose = g, riskLevel = riskLabel,
-                    predicted30min = merged.getOrNull(6), predicted60min = merged.getOrNull(12), predicted120min = merged.getOrNull(24),
-                    curve = merged, historyData = records.map { it.timestamp to it.value }, modelLabel = modelLabel, predictionTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
+                    predicted30min = anchored.getOrNull(6), predicted60min = anchored.getOrNull(12), predicted120min = anchored.getOrNull(24),
+                    curve = anchored, historyData = records.map { it.timestamp to it.value }, modelLabel = modelLabel, predictionTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
                     confidence = confidence,
                     totalRecords = records.size, fastingBaseline = olParams.fastingBaseline, variability = olParams.glucoseVariability,
                     activeInsulin = iob, todayCarbs = todayCarbs, tcnWeight = tcnW, physioWeight = 1 - tcnW,

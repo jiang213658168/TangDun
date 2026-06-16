@@ -37,13 +37,13 @@ class SelfLearningManager(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     val onlineLearner = OnlineLearner(context)
     val incrementalLearner = IncrementalLearner(context)
-    private var lastIncrementalTime = 0L
+    private var readingCount = 0
 
     private fun start() {
         Log.i(TAG, "自学习引擎启动")
 
         scope.launch {
-            delay(5000) // 等待数据库就绪
+            delay(5000)
             val db = com.tangdun.app.TangDunApp.getDatabase(context)
             val dao = db.glucoseDao()
 
@@ -56,12 +56,11 @@ class SelfLearningManager(private val context: Context) {
                         Log.d(TAG, "快速学习: ${onlineLearner.getStageDescription()}")
                     }
 
-                    // Layer 2: 每30分钟 → 增量SGD
-                    val now = System.currentTimeMillis()
-                    if (now - lastIncrementalTime > 30 * 60 * 1000L) {
-                        lastIncrementalTime = now
+                    // Layer 2: 每12条新数据(≈1h) → 增量SGD
+                    readingCount++
+                    if (readingCount % 12 == 0) {
                         incrementalLearner.periodicLearn(dao)
-                        Log.d(TAG, "增量学习: ${incrementalLearner.getStats()["updates"]}次")
+                        Log.d(TAG, "增量学习@${readingCount}条: ${incrementalLearner.getStats()["updates"]}次")
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "学习失败: ${e.message}")
