@@ -80,12 +80,12 @@ class FeatureExtractor {
         val bolusStart = maxOf(0, idx - 48)
         val f10 = bolus.sliceArray(bolusStart..idx).sum().toFloat()
 
-        // 特征11: 最近注射时间（分钟）
+        // 特征11: 最近注射时间（分钟, 上限120min, 归一化到[0,1]）
         val bolusRecent = bolus.sliceArray(maxOf(0, idx - 144)..idx)
         val lastBolusIdx = bolusRecent.indexOfLast { it > 0 }
         val f11 = if (lastBolusIdx >= 0) {
-            ((bolusRecent.size - lastBolusIdx) * 5).toFloat()
-        } else 999f
+            (((bolusRecent.size - lastBolusIdx) * 5).toFloat() / 120f).coerceIn(0f, 1f)
+        } else 1f  // 无数据=1(很久前/无), 非999
 
         // === 碳水特征 (12-13) ===
         val carbs = carbHistory ?: DoubleArray(288) { 0.0 }
@@ -94,12 +94,12 @@ class FeatureExtractor {
         val carbStart = maxOf(0, idx - 48)
         val f12 = carbs.sliceArray(carbStart..idx).sum().toFloat()
 
-        // 特征13: 最近进食时间（分钟）
+        // 特征13: 最近进食时间（分钟, 上限120min, 归一化到[0,1]）
         val carbRecent = carbs.sliceArray(maxOf(0, idx - 144)..idx)
         val lastCarbIdx = carbRecent.indexOfLast { it > 0 }
         val f13 = if (lastCarbIdx >= 0) {
-            ((carbRecent.size - lastCarbIdx) * 5).toFloat()
-        } else 999f
+            (((carbRecent.size - lastCarbIdx) * 5).toFloat() / 120f).coerceIn(0f, 1f)
+        } else 1f
 
         // === 心率特征 (14) ===
         val hr = heartRateHistory ?: DoubleArray(288) { 0.0 }

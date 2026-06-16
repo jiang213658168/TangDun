@@ -66,25 +66,34 @@ class IncrementalLearner(private val context: Context) {
         updateCount = prefs.getInt("updates", 0)
         totalLoss = prefs.getFloat("total_loss", 0f).toDouble()
         lastLoss = prefs.getFloat("last_loss", 0f).toDouble()
-        // 检测权重复原: 损失异常大→重置(之前除零bug的遗留)
-        if (lastLoss > 10000.0 || totalLoss > 100000.0) {
-            Log.w(TAG, "检测到异常损失, 重置权重: last=$lastLoss total=$totalLoss")
+        // 检测权重污染: 损失异常大→完全重置
+        val corrupted = lastLoss > 1000.0 || totalLoss > 100000.0
+        if (corrupted) {
+            Log.w(TAG, "检测到异常损失, 完全重置: last=$lastLoss total=$totalLoss")
             updateCount = 0; totalLoss = 0.0; lastLoss = 0.0
         }
 
         // 加载已训练的权重，或初始化（Xavier初始化）
         w1 = Array(INPUT_DIM) { i ->
             FloatArray(HIDDEN_DIM) { j ->
-                prefs.getFloat("w1_${i}_$j", xavierInit(INPUT_DIM, HIDDEN_DIM))
+                val saved = prefs.getFloat("w1_${i}_$j", Float.NaN)
+                if (corrupted || saved.isNaN()) xavierInit(INPUT_DIM, HIDDEN_DIM) else saved
             }
         }
-        b1 = FloatArray(HIDDEN_DIM) { prefs.getFloat("b1_$it", 0f) }
+        b1 = FloatArray(HIDDEN_DIM) {
+            val saved = prefs.getFloat("b1_$it", Float.NaN)
+            if (corrupted || saved.isNaN()) 0f else saved
+        }
         w2 = Array(HIDDEN_DIM) { i ->
             FloatArray(OUTPUT_DIM) { j ->
-                prefs.getFloat("w2_${i}_$j", xavierInit(HIDDEN_DIM, OUTPUT_DIM))
+                val saved = prefs.getFloat("w2_${i}_$j", Float.NaN)
+                if (corrupted || saved.isNaN()) xavierInit(HIDDEN_DIM, OUTPUT_DIM) else saved
             }
         }
-        b2 = FloatArray(OUTPUT_DIM) { prefs.getFloat("b2_$it", 0f) }
+        b2 = FloatArray(OUTPUT_DIM) {
+            val saved = prefs.getFloat("b2_$it", Float.NaN)
+            if (corrupted || saved.isNaN()) 0f else saved
+        }
 
         vW1 = Array(INPUT_DIM) { FloatArray(HIDDEN_DIM) }
         vB1 = FloatArray(HIDDEN_DIM)
