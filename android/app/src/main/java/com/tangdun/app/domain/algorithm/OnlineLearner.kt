@@ -246,10 +246,12 @@ class OnlineLearner(private val context: Context) {
     fun applyPersonalization(basePrediction: Double, currentGlucose: Double, timeIndex: Int = 0): Double {
         val params = getPersonalParams()
 
-        // 数据质量加权: 完整数据(↑)→信模型, 纯血糖(↓)→信统计
-        val qualityFactor = 1.0 - params.dataCompleteness * 0.6  // 完整=0.4, 纯血糖=1.0
+        // 数据质量加权: 完整数据→低修正(信模型), 纯血糖→高修正(信统计)
+        // 至少保留0.15基线 (纯血糖再久也要统计兜底)
+        val qualityFactor = 1.0 - params.dataCompleteness * 0.6
         val dataWeight = minOf(params.dataDays / 14.0, 1.0)
-        val adaptStrength = 0.7 * (1.0 - dataWeight * 0.5) * qualityFactor
+        val dayFactor = maxOf(1.0 - dataWeight, 0.15)
+        val adaptStrength = 0.7 * dayFactor * qualityFactor
         val fullAdjustment = (params.fastingBaseline - 5.2) * adaptStrength
 
         // ★ 断崖修复: 当前值不平移, 偏差随时间渐进
