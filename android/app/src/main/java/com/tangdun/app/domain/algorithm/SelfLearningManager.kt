@@ -37,8 +37,7 @@ class SelfLearningManager(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     val onlineLearner = OnlineLearner(context)
     val incrementalLearner = IncrementalLearner(context)
-    private var lastOnlineLearn = 0L
-    private var lastIncrementalLearn = 0L
+    private var readingCount = 0
 
     private fun start() {
         Log.i(TAG, "自学习引擎启动")
@@ -52,20 +51,16 @@ class SelfLearningManager(private val context: Context) {
                 if (latest == null) return@collect
 
                 try {
-                    // Layer 1: 统计学习 (最多5分钟一次, 防导入洪水)
-                    val now = System.currentTimeMillis()
-                    if (now - lastOnlineLearn > 5 * 60 * 1000L) {
-                        lastOnlineLearn = now
-                        if (onlineLearner.learn(dao)) {
-                            Log.d(TAG, "快速学习: ${onlineLearner.getStageDescription()}")
-                        }
+                    // Layer 1: 每条新血糖 → 统计学习
+                    if (onlineLearner.learn(dao)) {
+                        Log.d(TAG, "快速学习: ${onlineLearner.getStageDescription()}")
                     }
 
-                    // Layer 2: 增量SGD (最多1小时一次, 防过拟合)
-                    if (now - lastIncrementalLearn > 60 * 60 * 1000L) {
-                        lastIncrementalLearn = now
+                    // Layer 2: 每12条新数据(≈1h) → 增量SGD
+                    readingCount++
+                    if (readingCount % 12 == 0) {
                         incrementalLearner.periodicLearn(dao)
-                        Log.d(TAG, "增量学习: ${incrementalLearner.getStats()["updates"]}次")
+                        Log.d(TAG, "增量学习@${readingCount}条: ${incrementalLearner.getStats()["updates"]}次")
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "学习失败: ${e.message}")
