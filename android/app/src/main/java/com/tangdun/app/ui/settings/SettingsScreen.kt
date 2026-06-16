@@ -134,136 +134,108 @@ fun SettingsScreen() {
 @Composable
 fun SelfLearningCard() {
     val context = LocalContext.current
-    // ★ 使用SelfLearningManager共享实例 (唯一OnlineLearner)
     val onlineLearner = remember { com.tangdun.app.domain.algorithm.SelfLearningManager.getOnlineLearner() }
+    val incLearner = remember { com.tangdun.app.domain.algorithm.SelfLearningManager.getIncrementalLearner() }
     var refreshTick by remember { mutableStateOf(0) }
     val params = remember(refreshTick) { onlineLearner.getPersonalParams() }
     val stage = remember(refreshTick) { onlineLearner.getLearningStage() }
     val stageDesc = remember(refreshTick) { onlineLearner.getStageDescription() }
-    // 进入页面刷新 + 每10秒自动刷新
-    LaunchedEffect(Unit) { while (true) { refreshTick++; delay(10000) } }
+    val incStats = remember(refreshTick) { incLearner.getStats() }
+    // 每5秒刷新
+    LaunchedEffect(Unit) { while (true) { refreshTick++; delay(5000) } }
 
-    // 学习阶段颜色
     val stageColor = when (stage) {
         com.tangdun.app.domain.algorithm.OnlineLearner.LearningStage.INITIAL -> TextHint
         com.tangdun.app.domain.algorithm.OnlineLearner.LearningStage.COLD_START -> AlertWarning
         com.tangdun.app.domain.algorithm.OnlineLearner.LearningStage.STABLE -> AlertSuccess
     }
-
-    // 学习进度
     val progress = when (stage) {
-        com.tangdun.app.domain.algorithm.OnlineLearner.LearningStage.INITIAL -> 0.1f
-        com.tangdun.app.domain.algorithm.OnlineLearner.LearningStage.COLD_START -> 0.5f
+        com.tangdun.app.domain.algorithm.OnlineLearner.LearningStage.INITIAL -> 0.15f
+        com.tangdun.app.domain.algorithm.OnlineLearner.LearningStage.COLD_START -> 0.55f
         com.tangdun.app.domain.algorithm.OnlineLearner.LearningStage.STABLE -> 1.0f
     }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
+    var showDetail by remember { mutableStateOf(false) }
+
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // 标题
+            // 标题行
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+                Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("自学习状态", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text("${params.updateCount}次", fontSize = 11.sp, color = TextHint)
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ===== Layer 1: OnlineLearner =====
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("📊 统计学习", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                Text(stageDesc, fontSize = 12.sp, color = stageColor, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(4.dp))
+            LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth(), color = stageColor, trackColor = MaterialTheme.colorScheme.surfaceVariant)
+            Spacer(Modifier.height(10.dp))
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                StatItem2("数据", "${"%.1f".format(params.dataDays)}天")
+                StatItem2("基线", "${"%.1f".format(params.fastingBaseline)}")
+                StatItem2("变异", "${"%.1f".format(params.glucoseVariability)}%")
+            }
+
+            // ===== Layer 2: IncrementalLearner =====
+            Spacer(Modifier.height(12.dp))
+            val incActive = (incStats["updates"] as? Int ?: 0) > 20
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("🧠 增量学习", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                Text(if (incActive) "✅ 已激活" else "⏳ ${incStats["updates"] ?: 0}/20", fontSize = 12.sp,
+                    color = if (incActive) AlertSuccess else TextHint, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(4.dp))
+            val incProg = minOf(((incStats["updates"] as? Int ?: 0).toFloat() / 300f), 1f)
+            LinearProgressIndicator(progress = incProg, modifier = Modifier.fillMaxWidth(),
+                color = if (incActive) AlertSuccess else AlertWarning, trackColor = MaterialTheme.colorScheme.surfaceVariant)
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                StatItem2("更新", "${incStats["updates"] ?: 0}")
+                StatItem2("损失", "${incStats["last_loss"] ?: "-"}")
+                StatItem2("均损", "${incStats["avg_loss"] ?: "-"}")
+            }
+
+            // ===== 展开详情 =====
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = { showDetail = !showDetail }) {
+                Text(if (showDetail) "收起详情 ▲" else "展开详情 ▼", fontSize = 12.sp)
+            }
+
+            if (showDetail) {
+                Divider()
+                Spacer(Modifier.height(8.dp))
+
+                // 个性化参数
+                Text("个性化参数", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextSecondary)
+                Spacer(Modifier.height(4.dp))
+                ParamRow("空腹基线", "${"%.1f".format(params.fastingBaseline)} mmol/L")
+                ParamRow("餐后峰值", "${"%.1f".format(params.postMealPeak)} mmol/L")
+                ParamRow("恢复速率", "${"%.2f".format(params.recoveryRate)} mmol/L/h")
+                ParamRow("自适应低阈值", "${"%.1f".format(params.adaptiveLowThreshold)}")
+                ParamRow("自适应高阈值", "${"%.1f".format(params.adaptiveHighThreshold)}")
+                ParamRow("趋势敏感度", "${"%.2f".format(params.trendSensitivity)}")
+                ParamRow("餐后响应", "${"%.1f".format(params.mealResponse)} mmol/L")
+
+                Spacer(Modifier.height(8.dp))
+                Text("算法详情", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextSecondary)
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "自学习状态",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
+                    "• 统计层: EWMA(基线α=0.3→0.1)+卡尔曼平滑+贝叶斯后验\n" +
+                    "• 增量层: 15→16→4网络(304参数), SGD动量0.9, L2正则\n" +
+                    "• 时段层: 按小时学习${if (params.dataDays > 3) "✓" else "⏳"}\n" +
+                    "• 强度: ${if (params.dataDays < 3) "快速学习(α=0.3)" else "稳定学习(α=0.1)"}\n" +
+                    "• 每5分钟自动学习, 数据不离开设备",
+                    fontSize = 11.sp, color = TextHint, lineHeight = 16.sp
                 )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 学习阶段
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("学习阶段", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    text = stageDesc,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = stageColor
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 进度条
-            LinearProgressIndicator(
-                progress = progress,
-                modifier = Modifier.fillMaxWidth(),
-                color = stageColor,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 数据统计
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                StatItem2("数据天数", "${String.format("%.1f", params.dataDays)}天")
-                StatItem2("更新次数", "${params.updateCount}")
-                StatItem2("学习阶段", stage.label)
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 个性化参数
-            Text(
-                text = "个性化参数",
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.SemiBold,
-                color = TextSecondary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            ParamRow("空腹血糖基线", "${String.format("%.1f", params.fastingBaseline)} mmol/L")
-            ParamRow("餐后峰值", "${String.format("%.1f", params.postMealPeak)} mmol/L")
-            ParamRow("血糖变异性", "${String.format("%.1f", params.glucoseVariability)}%")
-            ParamRow("恢复速率", "${String.format("%.2f", params.recoveryRate)} mmol/L/h")
-            ParamRow("自适应低血糖阈值", "${String.format("%.1f", params.adaptiveLowThreshold)} mmol/L")
-            ParamRow("自适应高血糖阈值", "${String.format("%.1f", params.adaptiveHighThreshold)} mmol/L")
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 算法说明
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = "自学习算法",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "• 贝叶斯参数估计 - 根据用户数据更新预测参数\n" +
-                               "• EWMA平滑 - 指数加权移动平均处理血糖趋势\n" +
-                               "• 卡尔曼滤波 - 去除噪声，提取真实状态\n" +
-                               "• 自适应阈值 - 根据用户特征调整预警阈值\n" +
-                               "• 越用越准，预测越来越个性化",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-                }
             }
         }
     }
