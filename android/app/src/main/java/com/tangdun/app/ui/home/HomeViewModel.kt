@@ -93,8 +93,10 @@ class HomeViewModel @Inject constructor(
 
     fun refresh() { loadData(); checkXDripStatus() }
     fun goToToday() { _uiState.value = _uiState.value.copy(selectedDate = System.currentTimeMillis()); loadData() }
-    fun setDate(daysAgo: Int) {
-        val cal = Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, -daysAgo) }
+    fun shiftDate(delta: Int) {  // -1=前一天, +1=后一天
+        val cal = Calendar.getInstance().apply { timeInMillis = _uiState.value.selectedDate; add(Calendar.DAY_OF_MONTH, delta) }
+        // 不能超过今天
+        if (cal.timeInMillis > System.currentTimeMillis()) return
         _uiState.value = _uiState.value.copy(selectedDate = cal.timeInMillis)
         loadData()
     }

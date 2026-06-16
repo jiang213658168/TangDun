@@ -66,6 +66,11 @@ class IncrementalLearner(private val context: Context) {
         updateCount = prefs.getInt("updates", 0)
         totalLoss = prefs.getFloat("total_loss", 0f).toDouble()
         lastLoss = prefs.getFloat("last_loss", 0f).toDouble()
+        // 检测权重复原: 损失异常大→重置(之前除零bug的遗留)
+        if (lastLoss > 10000.0 || totalLoss > 100000.0) {
+            Log.w(TAG, "检测到异常损失, 重置权重: last=$lastLoss total=$totalLoss")
+            updateCount = 0; totalLoss = 0.0; lastLoss = 0.0
+        }
 
         // 加载已训练的权重，或初始化（Xavier初始化）
         w1 = Array(INPUT_DIM) { i ->
@@ -209,9 +214,11 @@ class IncrementalLearner(private val context: Context) {
         tcnParams: FloatArray,
         currentGlucose: Double,
         actualFutureGlucose: Double,
-        minutesAhead: Int  // 5, 15, 30, 60, 120
+        minutesAhead: Int
     ) {
         if (minutesAhead <= 0) return
+        // 防止除零: 血糖≤0或异常值→跳过
+        if (currentGlucose < 1.0 || actualFutureGlucose < 1.0) return
 
         // 反推"实际应有的参数"
         // G(t) = G0 × (1 + a·t³ + b·t² + c·t + d)
@@ -272,14 +279,16 @@ class IncrementalLearner(private val context: Context) {
             val actualIdx = glucoseHistory.size - 1
             val actualGlucose = glucoseHistory[actualIdx]
 
-            // 用默认的 [0,0,0,0] 作为 TCN 参数（简化为没有 TCN 预测时的基线）
-            learnFromActual(
-                features = features,
-                tcnParams = floatArrayOf(0f, 0f, 0f, 0f),
-                currentGlucose = currentGlucose,
-                actualFutureGlucose = actualGlucose,
-                minutesAhead = 30
-            )
+            // 验证数据有效性 (防止异常值致损失爆炸)
+            if (currentGlucose in 1.0..30.0 && actualGlucose in 1.0..30.0) {
+                learnFromActual(
+                    features = features,
+                    tcnParams = floatArrayOf(0f, 0f, 0f, 0f),
+                    currentGlucose = currentGlucose,
+                    actualFutureGlucose = actualGlucose,
+                    minutesAhead = 30
+                )
+            }
         } catch (e: Exception) {
             Log.e(TAG, "定期学习失败: ${e.message}")
         }
