@@ -91,14 +91,14 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun refresh() { loadData(); checkXDripStatus() }
-    fun goToToday() { _uiState.value = _uiState.value.copy(selectedDate = System.currentTimeMillis()); loadData() }
-    fun shiftDate(delta: Int) {  // -1=前一天, +1=后一天
+    fun refresh() { loadData(_uiState.value.selectedDate); checkXDripStatus() }
+    fun goToToday() { val d = System.currentTimeMillis(); _uiState.value = _uiState.value.copy(selectedDate = d); loadData(d) }
+    fun shiftDate(delta: Int) {
         val cal = Calendar.getInstance().apply { timeInMillis = _uiState.value.selectedDate; add(Calendar.DAY_OF_MONTH, delta) }
-        // 不能超过今天
         if (cal.timeInMillis > System.currentTimeMillis()) return
-        _uiState.value = _uiState.value.copy(selectedDate = cal.timeInMillis)
-        loadData()
+        val d = cal.timeInMillis
+        _uiState.value = _uiState.value.copy(selectedDate = d)
+        loadData(d)  // ★ 传参防竞态: 不读可变状态
     }
 
     /** 导入欧态CGM xlsx文件 */
@@ -213,14 +213,13 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private fun loadData() {
+    private fun loadData(dateMillis: Long = _uiState.value.selectedDate) {
+        val capturedDate = dateMillis  // ★ 捕获参数防竞态
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             try {
-                // 获取今日开始时间
-                // 选中日期的0点到次日0点
-                val cal = Calendar.getInstance().apply { timeInMillis = _uiState.value.selectedDate; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
+                val cal = Calendar.getInstance().apply { timeInMillis = capturedDate; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
                 val dayStart = cal.timeInMillis; cal.add(Calendar.DAY_OF_MONTH, 1); val dayEnd = cal.timeInMillis
 
                 // 获取选中日期的血糖记录
