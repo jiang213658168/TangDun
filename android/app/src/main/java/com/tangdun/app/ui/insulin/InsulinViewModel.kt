@@ -53,6 +53,10 @@ class InsulinViewModel @Inject constructor(
                     notes = notes
                 )
                 insulinDao.insert(record)
+
+                // ★ 通知自学习引擎: 已记录胰岛素
+                com.tangdun.app.domain.algorithm.SelfLearningManager.notifyInsulinRecorded()
+
                 loadRecords()
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = e.message)

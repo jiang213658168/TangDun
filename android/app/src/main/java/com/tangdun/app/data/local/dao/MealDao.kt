@@ -42,6 +42,10 @@ interface MealDao {
     @Query("SELECT SUM(totalCalories) FROM meal_record WHERE timestamp >= :todayStart")
     suspend fun getTodayTotalCalories(todayStart: Long): Double?
 
+    /** 时间范围内的记录数 */
+    @Query("SELECT COUNT(*) FROM meal_record WHERE timestamp BETWEEN :startTime AND :endTime")
+    suspend fun getCount(startTime: Long, endTime: Long): Int
+
     // ===== 饮食明细 =====
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

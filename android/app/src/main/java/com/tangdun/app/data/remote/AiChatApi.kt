@@ -290,6 +290,8 @@ class AiChatService(private val context: Context) {
                             mealId = mealId, foodName = food,
                             carbs = carbs, calories = calories, gi = gi
                         ))
+                        // ★ 通知自学习引擎: AI记录了饮食
+                        com.tangdun.app.domain.algorithm.SelfLearningManager.notifyMealRecorded()
                         displayText = displayText.replace(match.value, "")
                         executed++
                     }
@@ -300,6 +302,8 @@ class AiChatService(private val context: Context) {
                             timestamp = System.currentTimeMillis(),
                             insulinType = type, doseUnits = dose
                         ))
+                        // ★ 通知自学习引擎: AI记录了胰岛素
+                        com.tangdun.app.domain.algorithm.SelfLearningManager.notifyInsulinRecorded()
                         displayText = displayText.replace(match.value, "")
                         executed++
                     }

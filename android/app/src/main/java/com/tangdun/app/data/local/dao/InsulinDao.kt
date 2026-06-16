@@ -35,4 +35,8 @@ interface InsulinDao {
     /** 今日总剂量 */
     @Query("SELECT SUM(doseUnits) FROM insulin_record WHERE timestamp >= :todayStart")
     suspend fun getTodayTotalDose(todayStart: Long): Double?
+
+    /** 时间范围内的记录数 */
+    @Query("SELECT COUNT(*) FROM insulin_record WHERE timestamp BETWEEN :startTime AND :endTime")
+    suspend fun getCount(startTime: Long, endTime: Long): Int
 }

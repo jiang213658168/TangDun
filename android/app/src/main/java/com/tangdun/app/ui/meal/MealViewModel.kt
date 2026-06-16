@@ -68,6 +68,9 @@ class MealViewModel @Inject constructor(
                 )
                 mealDao.insertItem(item)
 
+                // ★ 通知自学习引擎: 已记录饮食
+                com.tangdun.app.domain.algorithm.SelfLearningManager.notifyMealRecorded()
+
                 // 刷新数据
                 loadMeals()
             } catch (e: Exception) {
