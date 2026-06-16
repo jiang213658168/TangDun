@@ -256,23 +256,20 @@ class IncrementalLearner(private val context: Context) {
             val records = glucoseDao.getRecent(1000)
             if (records.size < 20) return@withContext
 
-            // 取最近288点做特征，然后找后续的实际值
-            val recent = records.takeLast(288)
+            // ★ getRecent返回DESC(新→旧)→reversed()变时间序(旧→新)
+            val recent = records.takeLast(288).reversed()
             if (recent.size < 50) return@withContext
 
-            // 用 FeatureExtractor 算特征
             val extractor = FeatureExtractor()
             val glucoseHistory = recent.map { it.value }.toDoubleArray()
-            val idx = glucoseHistory.size - 6  // 取30分钟前的点做预测
-
+            val idx = glucoseHistory.size - 7  // 倒数第7点=30min前 (6×5=30)
             if (idx < 10) return@withContext
 
             val features = extractor.extract(glucoseHistory, idx)
             val currentGlucose = glucoseHistory[idx]
 
-            // 实际值：30分钟后（= idx + 6）
-            val actualIdx = idx + 6
-            if (actualIdx >= glucoseHistory.size) return@withContext
+            // 实际值: 30分钟后=最后一个点
+            val actualIdx = glucoseHistory.size - 1
             val actualGlucose = glucoseHistory[actualIdx]
 
             // 用默认的 [0,0,0,0] 作为 TCN 参数（简化为没有 TCN 预测时的基线）

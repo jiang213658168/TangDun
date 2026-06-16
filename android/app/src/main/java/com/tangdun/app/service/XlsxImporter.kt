@@ -404,27 +404,24 @@ object XlsxImporter {
             val roc = (sm[i - 6].second - sm[i].second) /
                 maxOf(1.0, (sm[i].first - sm[i - 6].first) / 60000.0)
 
-            // 严格条件: ROC>0.06(下降够快) + 持续(下一点也在降) + 降幅>1.2
+            // 条件: ROC>0.04 + 下降幅度>1.0 (放宽, 小剂量也应检测)
             val nextDrop = if (i + 1 < sm.size) sm[i].second - sm[i + 1].second else 0.0
-            if (roc > 0.06 && nextDrop > 0 && sm[i - 6].second - sm[i].second > 1.2
+            if (roc > 0.04 && sm[i - 6].second - sm[i].second > 1.0
                 && i - lastInsulinEnd >= 36) {
 
-                // 排除餐后: 前2h有>2.0升幅→大概率是餐后自然回落
+                // 排除纯餐后: 前2h摆动<3.5 (含预bolus的餐后回落仍可检测)
                 val priorMax = sm.subList(maxOf(0, i - 24), i).maxOf { it.second }
                 val priorMin = sm.subList(maxOf(0, i - 24), i).minOf { it.second }
                 val priorSwing = priorMax - priorMin
 
-                // 只有下降前无明显餐后摆动才推断胰岛素
-                if (priorSwing < 3.0) {
+                if (priorSwing < 3.5 || roc > 0.06) {  // 摆动大但降速快→仍推断
                     var trough = i
                     for (j in i until minOf(i + 30, sm.size)) {
                         if (sm[j].second < sm[trough].second) trough = j
-                        // 停止条件: 连续2点回升→已到底
                         if (j - trough >= 2 && sm[j].second > sm[j - 1].second) break
                     }
                     val drop = sm[i - 6].second - sm[trough].second
-                    // 排除运动(运动降糖通常<2.0, 胰岛素降糖通常>1.5)
-                    if (drop in 1.5..8.0) {
+                    if (drop > 1.2) {  // 降幅>1.2即推断
                         try {
                             insulinDao.insert(InsulinRecord(
                                 timestamp = sm[i - 6].first - 8 * 60_000L,

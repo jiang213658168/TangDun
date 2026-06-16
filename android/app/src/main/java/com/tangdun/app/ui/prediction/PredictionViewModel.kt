@@ -179,7 +179,11 @@ class PredictionViewModel @Inject constructor(
                         val r = predictor.predict(gh, g, bh, ch)
                         val nPoints = minOf(r.curve.size, personalizedCurve.size)
                         if (r != null && nPoints >= 25) {
-                            tcnW = r.tcnWeight; merged = (0 until nPoints).map { i -> tcnW * r.curve[i] + (1 - tcnW) * personalizedCurve[i] }
+                            // ★ TCN曲线配准: 对齐起点到当前血糖 (消除d参数偏移)
+                            val tcnOffset = r.curve[0] - g
+                            val alignedTcn = r.curve.map { it - tcnOffset }
+                            tcnW = r.tcnWeight
+                            merged = (0 until nPoints).map { i -> tcnW * alignedTcn[i] + (1 - tcnW) * personalizedCurve[i] }
                             modelLabel = "TCN+DallaMan(7室 ${"%.0f".format(weight)}kg ${mealInputs.size}餐 ${insulinInputs.size}针)"
                         }
                     } catch (e: Exception) { Log.w(TAG, "TCN异常: ${e.message}") }
