@@ -23,6 +23,7 @@ import com.tangdun.app.util.ActivationManager
 import com.tangdun.app.ui.settings.DataShareCard
 import com.tangdun.app.util.SettingsManager
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * 设置页面
@@ -1208,6 +1209,7 @@ fun MedicationReminderCard(settingsManager: SettingsManager) {
 @Composable
 fun DataBackupCard() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var backupStatus by remember { mutableStateOf("") }
     var isBackingUp by remember { mutableStateOf(false) }
     var backupFiles by remember { mutableStateOf(listOf<String>()) }
@@ -1278,6 +1280,21 @@ fun DataBackupCard() {
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(if (isBackingUp) "备份中..." else "备份数据")
             }
+
+            // 调试导出(全量数据)
+            var debugMsg by remember { mutableStateOf("") }
+            OutlinedButton(onClick = {
+                scope.launch {
+                    debugMsg = "导出中..."
+                    try {
+                        val file = com.tangdun.app.util.DebugExporter.exportAll(context)
+                        debugMsg = "导出: ${file.absolutePath}"
+                    } catch (e: Exception) { debugMsg = "失败: ${e.message}" }
+                }
+            }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
+                Text(if (debugMsg.startsWith("导出中")) "导出中..." else "📋 导出全部数据(调试)", fontSize = 12.sp)
+            }
+            if (debugMsg.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(debugMsg, fontSize = 10.sp, color = TextHint) }
 
             // 备份状态
             if (backupStatus.isNotEmpty()) {
