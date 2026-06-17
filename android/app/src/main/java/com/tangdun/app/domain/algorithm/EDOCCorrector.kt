@@ -509,19 +509,28 @@ class EDOCCorrector(private val context: Context) {
 
         // ── Sign-based参数更新 ──
         val paramDeltas = mutableMapOf<String, Double>()
-        val totalGrad = gradValues.map { abs(it) }.sum().coerceAtLeast(1e-6)
+        // ★ 等权归因: 简化模型梯度幅值不可靠(单位不一致), 用sign+等权
+        //   RLS协方差矩阵自适应学习哪个参数真正重要
+        val nActive = effectiveIndices.size.coerceAtLeast(1)
+        val equalAttr = 1.0 / nActive
 
         for (idx in effectiveIndices) {
             val grad = gradValues[idx]
             // ★ 每个参数用自己的RLS对角线
             val rlsDiag = P[idx][idx].coerceIn(0.1, 10.0)
-            val attribution = abs(grad) / totalGrad
+            // ★ 相对弹性归一化: (∂G/∂p) * (p/G) → 消除单位量级差异
+            val paramBase = getBaseParam(baseParams, idx)
+            val elasticity = abs(grad) * paramBase / abs(error.coerceIn(0.5, 10.0))
+            val attribution = if (elasticity > 1e-9) {
+                equalAttr * 0.5 + elasticity / (elasticity + 1.0) * 0.5  // 等权+弹性混合
+            } else {
+                equalAttr  // 弹性≈0 → 退化为等权
+            }
 
             // Sign-SGD: delta = η × error × sign(grad) × attribution / rlsDiag
             val delta = baseEta * error * sign(grad) * attribution / rlsDiag
 
-            // 参数限幅
-            val paramBase = getBaseParam(baseParams, idx)
+            // 参数限幅 (复用上面已声明的paramBase)
             val maxStepDelta = abs(paramBase) * MAX_STEP_RATIO
             val clampedDelta = delta.coerceIn(-maxStepDelta, maxStepDelta)
 
