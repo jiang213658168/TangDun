@@ -24,7 +24,9 @@ class PredictionChartView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     private var historyData: List<Pair<Long, Double>> = emptyList()
-    private var predictionCurve: List<Double> = emptyList()
+    private var predictionCurve: List<Double> = emptyList()    // 最终融合预测
+    private var physioCurve: List<Double> = emptyList()         // DallaMan生理模型
+    private var incrementalCurve: List<Double> = emptyList()    // 增量自学习残差
     private var currentGlucose: Double = 7.0
     private var targetLow: Double = 3.9
     private var targetHigh: Double = 10.0
@@ -54,15 +56,38 @@ class PredictionChartView @JvmOverloads constructor(
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#333333"); textSize = 30f; isFakeBoldText = true }
     private val smallText = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#999999"); textSize = 20f; textAlign = Paint.Align.CENTER }
 
+    // 三条预测曲线画笔
+    private val physioPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#5C6BC0"); strokeWidth = 2.5f; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; pathEffect = DashPathEffect(floatArrayOf(8f, 4f), 0f) }
+    private val incrementalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#66BB6A"); strokeWidth = 2f; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; pathEffect = DashPathEffect(floatArrayOf(4f, 8f), 0f) }
+    // predPaint (最终融合) 改为实线更突出
+    private val finalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FF7043"); strokeWidth = 3.5f; style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+
     fun setData(history: List<Pair<Long, Double>>, curve: List<Double>, current: Double) {
         historyData = history.sortedBy { it.first }
         predictionCurve = curve
+        physioCurve = emptyList()
+        incrementalCurve = emptyList()
         currentGlucose = current
+        updateBounds(curve)
+        invalidate()
+    }
+
+    fun setThreeCurves(history: List<Pair<Long, Double>>, physio: List<Double>, incremental: List<Double>, final: List<Double>, current: Double) {
+        historyData = history.sortedBy { it.first }
+        physioCurve = physio
+        incrementalCurve = incremental
+        predictionCurve = final
+        currentGlucose = current
+        updateBounds(final)
+        invalidate()
+    }
+
+    private fun updateBounds(curve: List<Double>) {
         if (historyData.isNotEmpty()) {
             startTime = historyData.first().first
             endTime = if (curve.size >= 25) historyData.last().first + 120 * 60000 else historyData.last().first
-            minY = max(1.0, minOf(historyData.minOf { it.second }, current) - 2.0).coerceAtMost(2.0)
-            maxY = min(30.0, maxOf(historyData.maxOf { it.second }, current) + 3.0).coerceAtLeast(12.0)
+            minY = max(1.0, minOf(historyData.minOf { it.second }, currentGlucose) - 2.0)
+            maxY = min(30.0, maxOf(historyData.maxOf { it.second }, currentGlucose) + 3.0)
             if (curve.isNotEmpty()) {
                 minY = min(minY, curve.min() - 1.0).coerceAtLeast(1.0)
                 maxY = max(maxY, curve.max() + 1.0).coerceAtMost(30.0)
@@ -130,18 +155,42 @@ class PredictionChartView @JvmOverloads constructor(
             canvas.drawCircle(toX(historyData[i].first), toY(historyData[i].second), r, if (i == selectedIdx) curDot else histPaint)
         }
 
-        // 预测曲线（虚线）
+        // ── 三条预测曲线 ──
         if (predictionCurve.size >= 25) {
             val predStart = historyData.last().first
-            val predPath = Path()
-            predPath.moveTo(toX(predStart), toY(predictionCurve[0]))
-            for (i in 1 until predictionCurve.size) {
-                val t = predStart + i * 5 * 60000L
-                predPath.lineTo(toX(t), toY(predictionCurve[i]))
-            }
-            canvas.drawPath(predPath, predPaint)
+            val n = predictionCurve.size
 
-            // 预测终点标记
+            // 画增量残差曲线 (最细, 最淡)
+            if (incrementalCurve.size >= 25) {
+                val incPath = Path()
+                incPath.moveTo(toX(predStart), toY(incrementalCurve[0]))
+                for (i in 1 until n) incPath.lineTo(toX(predStart + i * 5 * 60000L), toY(incrementalCurve[i]))
+                canvas.drawPath(incPath, incrementalPaint)
+            }
+
+            // 画DallaMan生理曲线 (中粗虚线)
+            if (physioCurve.size >= 25) {
+                val phyPath = Path()
+                phyPath.moveTo(toX(predStart), toY(physioCurve[0]))
+                for (i in 1 until n) phyPath.lineTo(toX(predStart + i * 5 * 60000L), toY(physioCurve[i]))
+                canvas.drawPath(phyPath, physioPaint)
+            }
+
+            // 画最终融合曲线 (最粗实线, 最突出)
+            val finalPath = Path()
+            finalPath.moveTo(toX(predStart), toY(predictionCurve[0]))
+            for (i in 1 until n) finalPath.lineTo(toX(predStart + i * 5 * 60000L), toY(predictionCurve[i]))
+            canvas.drawPath(finalPath, finalPaint)
+
+            // 图例
+            val legendX = width - pad - 120f; val legendY = pad + 10f
+            canvas.drawText("— 最终融合", legendX, legendY, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FF7043"); textSize = 22f })
+            if (physioCurve.size >= 25)
+                canvas.drawText("- - 生理模型", legendX, legendY + 24f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#5C6BC0"); textSize = 22f })
+            if (incrementalCurve.size >= 25)
+                canvas.drawText("·· 增量残差", legendX, legendY + 48f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#66BB6A"); textSize = 22f })
+
+            // 预测终点标记 (在最终曲线上)
             if (selectedPredIdx in predictionCurve.indices) {
                 val st = predStart + selectedPredIdx * 5 * 60000L
                 val sv = predictionCurve[selectedPredIdx]

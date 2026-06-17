@@ -112,6 +112,8 @@ fun PredictionScreen(
             PredictionCurveCard(
                 history = uiState.historyData,
                 curve = uiState.curve,
+                physio = uiState.physioCurve,
+                incremental = uiState.incrementalCurve,
                 current = uiState.currentGlucose ?: 0.0,
                 targetLow = uiState.targetLow,
                 targetHigh = uiState.targetHigh
@@ -245,7 +247,8 @@ fun StatItem2(label: String, value: String) {
 }
 
 @Composable
-fun PredictionCurveCard(history: List<Pair<Long, Double>>, curve: List<Double>, current: Double, targetLow: Double, targetHigh: Double) {
+fun PredictionCurveCard(history: List<Pair<Long, Double>>, curve: List<Double>, physio: List<Double>, incremental: List<Double>, current: Double, targetLow: Double, targetHigh: Double) {
+    val hasThree = physio.isNotEmpty() && incremental.isNotEmpty()
     Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
         Column(Modifier.padding(12.dp)) {
             Text("血糖预测曲线", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -254,9 +257,17 @@ fun PredictionCurveCard(history: List<Pair<Long, Double>>, curve: List<Double>, 
                 Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Text("暂无数据", color = TextHint) }
             } else {
                 AndroidView(
-                    factory = { ctx -> PredictionChartView(ctx).apply { setData(history, curve, current); setTargets(targetLow, targetHigh) } },
-                    update = { it.setData(history, curve, current); it.setTargets(targetLow, targetHigh) },
-                    modifier = Modifier.fillMaxWidth().height(240.dp)
+                    factory = { ctx -> PredictionChartView(ctx).apply {
+                        if (hasThree) setThreeCurves(history, physio, incremental, curve, current)
+                        else setData(history, curve, current)
+                        setTargets(targetLow, targetHigh)
+                    } },
+                    update = { it.apply {
+                        if (hasThree) setThreeCurves(history, physio, incremental, curve, current)
+                        else setData(history, curve, current)
+                        setTargets(targetLow, targetHigh)
+                    } },
+                    modifier = Modifier.fillMaxWidth().height(280.dp)
                 )
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {

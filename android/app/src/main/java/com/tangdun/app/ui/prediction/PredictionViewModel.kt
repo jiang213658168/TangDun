@@ -20,7 +20,10 @@ data class PredictionUiState(
     val isLoading: Boolean = true,
     val currentGlucose: Double? = null, val predicted30min: Double? = null,
     val predicted60min: Double? = null, val predicted120min: Double? = null,
-    val riskLevel: String = "正常", val curve: List<Double> = emptyList(),
+    val riskLevel: String = "正常",
+    val curve: List<Double> = emptyList(),          // 最终融合预测
+    val physioCurve: List<Double> = emptyList(),     // DallaMan生理模型
+    val incrementalCurve: List<Double> = emptyList(), // 增量自学习残差
     val historyData: List<Pair<Long, Double>> = emptyList(),
     val modelLabel: String = "", val predictionTime: String = "",
     val confidence: Double = 0.0, val totalRecords: Int = 0,
@@ -30,7 +33,7 @@ data class PredictionUiState(
     val tcnWeight: Double = 0.0, val physioWeight: Double = 0.0,
     val peakValue: Double = 0.0, val peakMinute: Int = 0,
     val isfEstimate: Double = 1.5, val crEstimate: Double = 12.0,
-    val historyHours: Int = 3,  // 历史窗口(小时)
+    val historyHours: Int = 3,
     val error: String? = null
 )
 
@@ -184,7 +187,7 @@ class PredictionViewModel @Inject constructor(
                 var tcnW = 0.0
                 var modelLabel = "DallaMan(ISF${"%.1f".format(isf)} ${mealInputs.size}餐 ${insulinInputs.size}针 ${"%.0f".format(weight)}kg)"
                 if (!tcnOk) modelLabel += " [TCN未加载]"
-                var merged = personalizedCurve
+                var merged: List<Double> = personalizedCurve
                 if (tcnOk && records.size >= 10) {
                     try {
                         val bh = DoubleArray(288) { 0.0 }; val ch = DoubleArray(288) { 0.0 }
@@ -203,8 +206,38 @@ class PredictionViewModel @Inject constructor(
                     } catch (e: Exception) { Log.w(TAG, "TCN异常: ${e.message}") }
                 }
 
-                // ★ 强制锚定: 预测起点=当前血糖 (消除任何累积误差导致的断崖)
+                // ★ 增量自学习残差曲线
+                var incCurve: List<Double> = emptyList()
+                try {
+                    val incLearner = SelfLearningManager.getIncrementalLearner()
+                    val incStats = incLearner.getStats()
+                    val incUpdates = incStats["updates"] as? Int ?: 0
+                    if (incUpdates > 20 && allRecords.size >= 50) {
+                        val fe = FeatureExtractor()
+                        val glucoseHistory = allRecords.map { it.value }.toDoubleArray()
+                        val idx = glucoseHistory.size - 1  // 当前点
+                        val features = fe.extract(glucoseHistory, idx)
+                        if (features.any { it != 0f }) {
+                            val residual4 = incLearner.forward(features)
+                            val residualWeight = minOf(incUpdates / 300.0, 0.4)
+                            incCurve = (0 until 36).map { i ->
+                                val t = i / 36.0
+                                residualWeight * (residual4[0] * t*t*t + residual4[1] * t*t + residual4[2] * t + residual4[3])
+                            }
+                            // 叠加到最终预测 (merged是List, 需重建)
+                            merged = merged.mapIndexed { i, v ->
+                                if (i < incCurve.size) (v + incCurve[i]).coerceIn(2.0, 30.0) else v
+                            }
+                        }
+                    }
+                } catch (e: Exception) { Log.w(TAG, "增量残差失败: ${e.message}") }
+
+                // ★ 强制锚定: 预测起点=当前血糖
                 val anchored = merged.toMutableList().apply { this[0] = g }
+
+                // ★ 三条曲线: physioCurve=生理模型, incrementalCurve=增量残差, curve=最终融合
+                // physioCurve也锚定对齐
+                val physioAnchored = personalizedCurve.toMutableList().apply { this[0] = g }
 
                 val riskLabel = when {
                     anchored.getOrNull(6)?.let { it < settings.getTargetLow().toDouble() } == true -> "低血糖风险"
@@ -213,8 +246,7 @@ class PredictionViewModel @Inject constructor(
                 }
 
                 val peak = anchored.max(); val pi = anchored.indexOf(peak)
-                // 置信度: 基于总数据量(非显示窗口)
-                val totalRecords = glucoseDao.getCount()  // DB全部记录数
+                val totalRecords = glucoseDao.getCount()
                 val calConf = if (cgmCalibrator.getCount() >= 1) 10.0 else 0.0
                 val qualityBonus = (onlineLearner.getPersonalParams().dataCompleteness * 10).toInt().toDouble()
                 val confidence = when {
@@ -229,7 +261,8 @@ class PredictionViewModel @Inject constructor(
                 _uiState.value = PredictionUiState(
                     isLoading = false, currentGlucose = g, riskLevel = riskLabel,
                     predicted30min = anchored.getOrNull(6), predicted60min = anchored.getOrNull(12), predicted120min = anchored.getOrNull(24),
-                    curve = anchored, historyData = records.map { it.timestamp to it.value }, modelLabel = modelLabel, predictionTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
+                    curve = anchored, physioCurve = physioAnchored, incrementalCurve = incCurve,
+                    historyData = records.map { it.timestamp to it.value }, modelLabel = modelLabel, predictionTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
                     confidence = confidence,
                     totalRecords = totalRecords, fastingBaseline = olParams.fastingBaseline, variability = olParams.glucoseVariability,
                     activeInsulin = iob, todayCarbs = todayCarbs, tcnWeight = tcnW, physioWeight = 1 - tcnW,
