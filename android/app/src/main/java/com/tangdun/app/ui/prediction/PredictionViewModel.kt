@@ -152,13 +152,18 @@ class PredictionViewModel @Inject constructor(
                 )
                 // GI调整胃排空
                 val adjKStomach = (dmParams.kStomach * giFactor).coerceIn(0.025, 0.080)
-                var finalParams = dmParams.copy(kStomach = adjKStomach)
+                val baseParams = dmParams.copy(kStomach = adjKStomach)
 
-                // ★ EDOC: 应用即时纠错累积的参数修正 (如已学习到偏移)
+                // ★ EDOC: 应用即时纠错累积的参数修正 → 预测用修正后参数
                 val edocCorrector = SelfLearningManager.getEDOCCorrector()
-                if (edocCorrector.getStatus().isActive) {
-                    finalParams = edocCorrector.applyDeltas(finalParams)
+                val finalParams = if (edocCorrector.getStatus().isActive) {
+                    edocCorrector.applyDeltas(baseParams)
+                } else {
+                    baseParams
                 }
+
+                // ★ 传给EDOC的是BASE参数(不含修正), EDOC在上面叠加deltas
+                SelfLearningManager.setBaseParams(baseParams)
 
                 // 速效/短效胰岛素: 皮下bolus建模
                 val insulinInputs = insulin.filter { it.insulinType == "rapid" || it.insulinType == "short" }.takeLast(10).map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }
@@ -232,9 +237,8 @@ class PredictionViewModel @Inject constructor(
                     peakValue = peak, peakMinute = pi * 5,
                     isfEstimate = est.insulinSensitivity, crEstimate = est.carbRatio, error = null
                 )
-                // ★ EDOC: 缓存预测结果 + 更新基础参数, 供之后误差反馈使用
+                // ★ EDOC: 缓存预测结果, 供之后误差反馈使用
                 SelfLearningManager.storePrediction(g.toFloat(), anchored.map { it.toFloat() }.toFloatArray())
-                SelfLearningManager.setBaseParams(finalParams)
 
                 Log.i(TAG, "预测: ${String.format("%.1f", g)} IOB${String.format("%.1f", iob)} 碳水${String.format("%.0f", todayCarbs)} 模型=$modelLabel ISF≈${String.format("%.1f", est.insulinSensitivity)} CR≈${String.format("%.1f", est.carbRatio)}")
             } catch (e: Exception) { Log.e(TAG, "预测失败: ${e.message}", e); _uiState.value = _uiState.value.copy(isLoading = false, error = "预测失败: ${e.message}") }
