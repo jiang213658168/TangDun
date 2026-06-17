@@ -152,7 +152,13 @@ class PredictionViewModel @Inject constructor(
                 )
                 // GI调整胃排空
                 val adjKStomach = (dmParams.kStomach * giFactor).coerceIn(0.025, 0.080)
-                val finalParams = dmParams.copy(kStomach = adjKStomach)
+                var finalParams = dmParams.copy(kStomach = adjKStomach)
+
+                // ★ EDOC: 应用即时纠错累积的参数修正 (如已学习到偏移)
+                val edocCorrector = SelfLearningManager.getEDOCCorrector()
+                if (edocCorrector.getStatus().isActive) {
+                    finalParams = edocCorrector.applyDeltas(finalParams)
+                }
 
                 // 速效/短效胰岛素: 皮下bolus建模
                 val insulinInputs = insulin.filter { it.insulinType == "rapid" || it.insulinType == "short" }.takeLast(10).map { DallaManModel.InsulinInput((now - it.timestamp) / 60000.0, it.doseUnits) }
