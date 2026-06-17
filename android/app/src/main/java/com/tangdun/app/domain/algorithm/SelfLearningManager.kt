@@ -126,8 +126,12 @@ class SelfLearningManager(private val context: Context) {
                     // ══════ L0: EDOC即时纠错 ══════
                     val baseParams = currentBaseParams
                     if (baseParams != null) {
-                        // 质量分数: 从记录的noise字段估算 (0-1, 0=高质量)
-                        val quality = (1.0 - (latest.noise ?: 0.2)).coerceIn(0.0, 1.0)
+                        // 质量分数: CGM已校准=0.9, 指尖血=0.95, 手动=0.7, 默认=0.7
+                        val quality = when (latest.source) {
+                            "finger" -> 0.95
+                            "cgm" -> if (latest.isCalibrated) 0.9 else 0.7
+                            else -> 0.7
+                        }
                         val action = edocCorrector.onNewReading(
                             latest.value, quality, baseParams
                         )

@@ -190,8 +190,8 @@ class EDOCCorrector(private val context: Context) {
     // private val tcnAdapter = FloatArray(4 * 128)
 
     init {
-        loadState()
-        initRLSMatrix()
+        initRLSMatrix()    // 先设默认值
+        loadState()        // 再覆盖为持久化值 (P对角线等)
         Log.i(TAG, "EDOC初始化: 总修正${totalCorrections}次, η5min=$eta5min")
     }
 
@@ -449,10 +449,11 @@ class EDOCCorrector(private val context: Context) {
             else    -> intArrayOf(IDX_KSTOMACH, IDX_VM0, IDX_VMX, IDX_HEPATIC, IDX_KP3)
         }
 
+        // 误差类型→参数选择: 系统偏差只调基线, 混合误差全调
+        // TODO: 接入meal事件数据后可区分"事件响应错误"→调kStomach/Vm/VmX
         val effectiveIndices = when (errorType) {
-            "系统偏差"   -> intArrayOf(IDX_HEPATIC)
-            "事件响应错误" -> intArrayOf(IDX_KSTOMACH, IDX_VM0, IDX_VMX)
-            else -> paramIndices
+            "系统偏差" -> intArrayOf(IDX_HEPATIC)
+            else -> paramIndices  // 混合误差→按原时域策略全调
         }
 
         // ── 学习率 ──
@@ -531,9 +532,9 @@ class EDOCCorrector(private val context: Context) {
     /**
      * 误差分类: 基于最近误差序列的自相关
      *
-     * ACF(1) > 0.7  → 系统偏差 (误差有强持续性, 模型有固定方向偏差)
+     * ACF(1) > 0.7  → 系统偏差 (误差有强持续性, 模型有固定方向偏差→调基线)
      * ACF(1) < 0.3  → 白噪声 (误差随机, 不修正)
-     * 否则          → 混合误差
+     * 否则          → 混合误差 (有模式但不明显, 正常修正)
      */
     private fun classifyError(errors: List<Double>): String {
         if (errors.size < 6) return "混合误差"
@@ -595,12 +596,20 @@ class EDOCCorrector(private val context: Context) {
      *
      * 简化版Dalla Man血糖ODE, 只用于灵敏度方向计算
      * params已包含EDOC修正(调用方先applyDeltas), 这里直接使用
+     *
+     * 注意: 用假定的胃内容物(30g碳水等效)使kStomach/VmaxGastric有非零灵敏度
+     *       灵敏度只关心符号方向, 不关心绝对幅度
      */
     private fun runOneStepRK4(params: DallaManModel.Parameters, glucose: Double): Double {
         val dt = 5.0
         val g = glucose.coerceIn(2.0, 35.0)
         val Vg = params.Vg
         val BW = params.bodyWeight
+
+        // Ra (葡萄糖吸收): 假设典型胃内容物≈30g碳水 → kStomach/VmaxGastric有非零灵敏度
+        val assumedStomach = 30_000.0  // mg (≈30g碳水)
+        val gastricEmptying = min(params.kStomach * assumedStomach, params.VmaxGastric * BW)
+        val ra = gastricEmptying * params.fCarbs / BW  // mg/kg/min
 
         // Uii (胰岛素非依赖利用)
         val uii = params.k1 * Vg * BW
@@ -613,7 +622,7 @@ class EDOCCorrector(private val context: Context) {
         val egp = params.hepaticBase * BW
 
         // Euler步 (dt短, 近似足够)
-        val dg_dt = (egp - uii - uid) / (Vg * BW)
+        val dg_dt = (ra + egp - uii - uid) / (Vg * BW)
         return (g + dg_dt * dt).coerceIn(2.0, 35.0)
     }
 
