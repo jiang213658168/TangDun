@@ -24,6 +24,7 @@ import com.tangdun.app.ui.settings.DataShareCard
 import com.tangdun.app.util.SettingsManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 /**
  * 设置页面
@@ -134,7 +135,6 @@ fun SettingsScreen() {
 
 @Composable
 fun SelfLearningCard() {
-    val context = LocalContext.current
     val onlineLearner = remember { com.tangdun.app.domain.algorithm.SelfLearningManager.getOnlineLearner() }
     val incLearner = remember { com.tangdun.app.domain.algorithm.SelfLearningManager.getIncrementalLearner() }
     val edocCorrector = remember { com.tangdun.app.domain.algorithm.SelfLearningManager.getEDOCCorrector() }

@@ -70,7 +70,7 @@ class SelfLearningManager(private val context: Context) {
         fun notifyMealRecorded() {
             instance?.scope?.launch {
                 try {
-                    val (hasMeals, hasInsulin) = instance!!.checkDataCompleteness()
+                    val (_, hasInsulin) = instance!!.checkDataCompleteness()
                     instance!!.onlineLearner.updateDataCompleteness(true, hasInsulin)
                 } catch (e: Exception) {
                     Log.w(TAG, "notifyMealRecorded失败: ${e.message}")
