@@ -94,8 +94,24 @@ class SelfLearningManager(private val context: Context) {
     val edocCorrector = EDOCCorrector(context)
     private var readingCount = 0
 
-    // 当前DallaMan基础参数缓存 (由PredictionViewModel传入)
+    // 当前DallaMan基础参数缓存 (由PredictionViewModel传入, 或自动创建)
     @Volatile var currentBaseParams: DallaManModel.Parameters? = null
+
+    /** 确保EDOC有参数可用: PredictionScreen未打开时自动从Settings创建默认参数 */
+    private fun ensureBaseParams(): DallaManModel.Parameters {
+        currentBaseParams?.let { return it }
+        val params = DallaManModel.Parameters.forUser(
+            bodyWeight = 65.0,
+            fastingGlucose = 6.5,
+            isf = 1.5,
+            basalInsulin = 10.0,
+            sigma = 3.0,
+            activityLevel = 0.5
+        )
+        currentBaseParams = params
+        Log.i(TAG, "EDOC: 创建默认DallaMan参数 (用户未打开预测页面)")
+        return params
+    }
 
     /**
      * 诚实检查: 真实查询数据库判断数据完整度
@@ -124,21 +140,19 @@ class SelfLearningManager(private val context: Context) {
                     readingCount++
 
                     // ══════ L0: EDOC即时纠错 ══════
-                    val baseParams = currentBaseParams
-                    if (baseParams != null) {
-                        // 质量分数: CGM已校准=0.9, 指尖血=0.95, 手动=0.7, 默认=0.7
-                        val quality = when (latest.source) {
-                            "finger" -> 0.95
-                            "cgm" -> if (latest.isCalibrated) 0.9 else 0.7
-                            else -> 0.7
-                        }
-                        val action = edocCorrector.onNewReading(
-                            latest.value, quality, baseParams
-                        )
-                        if (action != null && readingCount % 6 == 0) {  // 每30分钟打印一次
-                            Log.d(TAG, "EDOC: ${action.timeHorizon} e=${String.format("%.1f", action.error)} " +
-                                "${action.errorType} → ${action.paramDeltas.size}参数已修正")
-                        }
+                    // 确保有参数: PredictionScreen设的优先, 否则用默认值
+                    val baseParams = ensureBaseParams()
+                    val quality = when (latest.source) {
+                        "finger" -> 0.95
+                        "cgm" -> if (latest.isCalibrated) 0.9 else 0.7
+                        else -> 0.7
+                    }
+                    val action = edocCorrector.onNewReading(
+                        latest.value, quality, baseParams
+                    )
+                    if (action != null && readingCount % 6 == 0) {  // 每30分钟打印一次
+                        Log.d(TAG, "EDOC: ${action.timeHorizon} e=${String.format("%.1f", action.error)} " +
+                            "${action.errorType} → ${action.paramDeltas.size}参数已修正")
                     }
 
                     // ══════ L1: 统计学习 ══════

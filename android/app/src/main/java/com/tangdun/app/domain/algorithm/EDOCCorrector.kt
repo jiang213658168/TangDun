@@ -425,7 +425,6 @@ class EDOCCorrector(private val context: Context) {
      * 应用修正 (核心逻辑, 被实时模式和批量模式共用)
      *
      * @param error 预测误差 (实际 - 预测, mmol/L)
-     * @param actualGlucose 当前实测血糖值 (mmol/L)
      * @param actualGlucose 当前实测血糖值 (mmol/L, 用于噪声门槛计算)
      * @param quality 数据质量 (0-1)
      * @param baseParams 当前DallaMan基础参数
@@ -586,20 +585,20 @@ class EDOCCorrector(private val context: Context) {
         val g = 7.0     // 典型血糖值(mmol/L), 用于灵敏度计算
 
         for (i in 0 until PARAM_COUNT) {
-            val paramVal = getBaseParam(baseParams, i) + deltas.get(i)
-            val absEps = max(abs(paramVal) * eps, 1e-6)
+            val baseVal = getBaseParam(baseParams, i)
+            val absEps = max(abs(baseVal) * eps, 1e-6)  // 实际微扰大小
 
             // 正微扰: base参数×(1+eps) + 其他参数的deltas
-            val basePos = setBaseParamOnly(baseParams, i, getBaseParam(baseParams, i) * (1.0 + eps))
+            val basePos = setBaseParamOnly(baseParams, i, baseVal * (1.0 + eps))
             val effPos = applyDeltas(basePos)
             val predPos = runOneStepRK4(effPos, g)
 
             // 负微扰
-            val baseNeg = setBaseParamOnly(baseParams, i, getBaseParam(baseParams, i) * (1.0 - eps))
+            val baseNeg = setBaseParamOnly(baseParams, i, baseVal * (1.0 - eps))
             val effNeg = applyDeltas(baseNeg)
             val predNeg = runOneStepRK4(effNeg, g)
 
-            // 中心差分
+            // 中心差分: (f(x+h) - f(x-h)) / (2h)
             sensitivities[i] = (predPos - predNeg) / (2.0 * absEps)
         }
 
