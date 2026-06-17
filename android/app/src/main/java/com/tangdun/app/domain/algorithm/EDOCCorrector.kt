@@ -185,8 +185,9 @@ class EDOCCorrector(private val context: Context) {
     private var correctionsToday = 0
     private var lastAction: CorrectionAction? = null
 
-    // TCN adapter (128维特征→4维输出修正)
-    private val tcnAdapter = FloatArray(4 * 128)  // 4×128 修正矩阵
+    // TCN adapter (128维特征→4维输出修正, 预留)
+    // TODO: 接入TCN推理中间层的feature vector后启用LMS更新
+    // private val tcnAdapter = FloatArray(4 * 128)
 
     init {
         loadState()
@@ -266,7 +267,6 @@ class EDOCCorrector(private val context: Context) {
         if (historyRecords.size < 2) return 0
 
         var batchCorrections = 0
-        // 批量导入时使用更高的学习率 (少见数据, 信息量大)
         val saved5min = eta5min
         val saved30min = eta30min
         eta5min  *= 2.0
@@ -278,18 +278,20 @@ class EDOCCorrector(private val context: Context) {
                 val curr = historyRecords[i]
                 val dt = (curr.timestamp - prev.timestamp) / 60000.0  // 分钟
 
-                // 只在时间间隔合理时处理 (5-65分钟)
+                // 只在时间间隔合理时处理 (4-65分钟)
                 if (dt !in 4.0..65.0) continue
 
-                val step = (dt / 5.0).roundToInt().coerceIn(1, 13)
-                val quality = 0.7  // 导入数据默认质量 (无实时噪声信息)
+                // ★ 批量导入无缓存预测 → 用单步模型+当前参数生成"伪预测"
+                val effectiveParams = applyDeltas(baseParams)
+                val syntheticPred = runOneStepRK4(effectiveParams, prev.value)
+                val error = curr.value - syntheticPred
 
-                val result = checkAndCorrect(curr.timestamp, curr.value, quality, baseParams,
-                    when { step <= 2 -> "5min"; step <= 7 -> "30min"; else -> "60min" }, step)
+                val quality = 0.7
+                val label = when { dt <= 10.0 -> "5min"; dt <= 35.0 -> "30min"; else -> "60min" }
 
+                val result = applyCorrection(error, quality, baseParams, label)
                 if (result != null) batchCorrections++
 
-                // 进度回调 (每50条或最后一条)
                 if (i % 50 == 0 || i == historyRecords.size - 1) {
                     onProgress(i + 1, historyRecords.size, batchCorrections)
                 }
@@ -322,12 +324,19 @@ class EDOCCorrector(private val context: Context) {
             }
         }
 
-        // 调整速率
+        // 调整速率: 基于修正频率和方向稳定性
         val adjustmentRate = when {
-            totalCorrections < 10 -> "快速修正"
-            directionTracker.count { it > 0 } in 4..6 -> "正常"
-            directionTracker.count { it > 0 } >= 6 -> "谨慎"
-            else -> "待命中"
+            totalCorrections == 0 -> "待命中"
+            totalCorrections < 10 -> "快速修正"  // 新用户/刚启动
+            else -> {
+                val sameStreak = maxConsecutiveSameSign(directionTracker)
+                val flips = directionTracker.windowed(2).count { (a, b) -> a != b }
+                when {
+                    sameStreak >= 5 -> "快速修正"   // 持续同向→系统偏差→加速
+                    flips >= 5 -> "谨慎"            // 频繁翻转→噪声→减速
+                    else -> "正常"
+                }
+            }
         }
 
         // 参数漂移 (相对于典型值的百分比)
@@ -383,34 +392,38 @@ class EDOCCorrector(private val context: Context) {
     // ═══════════════════════════════════════════
 
     /**
-     * 对单个时域做误差检查和参数修正
+     * 对单个时域做误差检查和参数修正 (实时模式：查预测缓存)
+     */
+    private fun checkAndCorrect(
+        predictTime: Long, actualValue: Double, quality: Double,
+        baseParams: DallaManModel.Parameters, label: String, step: Int
+    ): CorrectionAction? {
+        // 查缓存
+        val cached = synchronized(predictionCache) { findNearestPrediction(predictTime) }
+            ?: return null
+        val predicted = cached.atStep(step)
+        val error = actualValue - predicted
+        return applyCorrection(error, quality, baseParams, label)
+    }
+
+    /**
+     * 应用修正 (核心逻辑, 被实时模式和批量模式共用)
      *
-     * @param predictTime 预测发生的时间戳
-     * @param actualValue 当前实际血糖值
+     * @param error 预测误差 (实际 - 预测, mmol/L)
      * @param quality 数据质量 (0-1)
      * @param baseParams 当前DallaMan基础参数
      * @param label 时域标签
-     * @param step 预测曲线上第几步 (1=5min, 6=30min, 12=60min)
      */
-    private fun checkAndCorrect(
-        predictTime: Long,
-        actualValue: Double,
-        quality: Double,
-        baseParams: DallaManModel.Parameters,
-        label: String,
-        step: Int
+    private fun applyCorrection(
+        error: Double, quality: Double,
+        baseParams: DallaManModel.Parameters, label: String
     ): CorrectionAction? {
-        // 查缓存: 在predictTime时刻有没有做过预测
-        val cached = synchronized(predictionCache) { findNearestPrediction(predictTime) }
-        if (cached == null) return null
-
-        val predicted = cached.atStep(step)
-        val error = actualValue - predicted  // 正=低估, 负=高估
+        val actualValue = abs(error)  // 用于噪声门槛计算 (近似)
 
         // ── 噪声过滤 ──
-        val noiseStd = max(SENSOR_MARD * actualValue / 100.0, NOISE_FLOOR)
+        val noiseStd = max(SENSOR_MARD * max(actualValue, 5.0) / 100.0, NOISE_FLOOR)
         val effectiveThreshold = noiseStd * (2.0 - quality)
-        if (abs(error) < effectiveThreshold) return null  // 在噪声范围内
+        if (abs(error) < effectiveThreshold) return null
 
         // 异常检测
         if (abs(error) > MAX_ERROR) {
@@ -423,66 +436,57 @@ class EDOCCorrector(private val context: Context) {
         while (errorHistory.size > ERROR_WINDOW) errorHistory.removeAt(0)
 
         val errorType = classifyError(errorHistory)
-        if (errorType == "白噪声") {
-            Log.d(TAG, "白噪声, 跳过修正")
-            return null
-        }
+        if (errorType == "白噪声") return null
 
-        // ── 状态感知梯度 ──
-        val gradValues = computeSensitivities(baseParams, actualValue, quality)
+        // ── 状态感知梯度 (用合理的当前血糖值) ──
+        val gradValues = computeSensitivities(baseParams)
 
-        // ── 确定这个时域修正哪些参数 ──
+        // ── 确定修正参数: 时域+误差类型联合决策 ──
         val paramIndices = when (label) {
-            "5min"  -> intArrayOf(IDX_KSTOMACH)                           // 即时: 胃排空
-            "30min" -> intArrayOf(IDX_KSTOMACH, IDX_VM0, IDX_VMX, IDX_KP3) // 短期: 动态参数
-            "60min" -> intArrayOf(IDX_HEPATIC)                             // 基线: 肝糖输出
+            "5min"  -> intArrayOf(IDX_KSTOMACH)
+            "30min" -> intArrayOf(IDX_KSTOMACH, IDX_VM0, IDX_VMX, IDX_KP3)
+            "60min" -> intArrayOf(IDX_HEPATIC)
             else    -> intArrayOf(IDX_KSTOMACH, IDX_VM0, IDX_VMX, IDX_HEPATIC, IDX_KP3)
         }
 
-        // ── 系统偏差→只调基线, 事件响应→只调事件参数 ──
         val effectiveIndices = when (errorType) {
             "系统偏差"   -> intArrayOf(IDX_HEPATIC)
             "事件响应错误" -> intArrayOf(IDX_KSTOMACH, IDX_VM0, IDX_VMX)
-            else -> paramIndices  // 混合误差→全调
+            else -> paramIndices
         }
 
-        // ── 自适应学习率 ──
+        // ── 学习率 ──
         val baseEta = when (label) {
-            "5min"  -> eta5min
-            "30min" -> eta30min
-            "60min" -> eta60min
-            else    -> eta30min
+            "5min"  -> eta5min; "30min" -> eta30min; "60min" -> eta60min; else -> eta30min
         }
-
-        // RLS协方差缩放 (P对角线大=不确定性高=步长小)
-        val rlsScale = 1.0 / (1.0 + P[0][0] * 0.001)
 
         // ── Sign-based参数更新 ──
         val paramDeltas = mutableMapOf<String, Double>()
+        val totalGrad = gradValues.map { abs(it) }.sum().coerceAtLeast(1e-6)
+
         for (idx in effectiveIndices) {
             val grad = gradValues[idx]
+            // ★ 每个参数用自己的RLS对角线
             val rlsDiag = P[idx][idx].coerceIn(0.1, 10.0)
-            val attribution = abs(grad) / (gradValues.map { abs(it) }.sum().coerceAtLeast(1e-6))
+            val attribution = abs(grad) / totalGrad
 
-            // Sign-SGD: delta = η × error × sign(gradient) × attribution × RLS_scale
-            val delta = baseEta * error * sign(grad) * attribution * rlsScale / (rlsDiag * 0.5)
+            // Sign-SGD: delta = η × error × sign(grad) × attribution / rlsDiag
+            val delta = baseEta * error * sign(grad) * attribution / rlsDiag
 
-            // ── 参数限幅 ──
+            // 参数限幅
             val paramBase = getBaseParam(baseParams, idx)
             val maxStepDelta = abs(paramBase) * MAX_STEP_RATIO
             val clampedDelta = delta.coerceIn(-maxStepDelta, maxStepDelta)
 
             // 每日上限
             val remainingDailyBudget = abs(paramBase) * MAX_DAILY_RATIO - dailyChanges[idx]
-            val finalDelta = if (abs(clampedDelta) > remainingDailyBudget && remainingDailyBudget > 0) {
-                sign(clampedDelta) * remainingDailyBudget
-            } else if (remainingDailyBudget <= 0) {
-                0.0
-            } else {
-                clampedDelta
+            val finalDelta = when {
+                abs(clampedDelta) > remainingDailyBudget && remainingDailyBudget > 0 ->
+                    sign(clampedDelta) * remainingDailyBudget
+                remainingDailyBudget <= 0 -> 0.0
+                else -> clampedDelta
             }
 
-            // 应用修正
             deltas.add(idx, finalDelta)
             dailyChanges[idx] += abs(finalDelta)
             paramDeltas[paramName(idx)] = finalDelta
@@ -501,11 +505,8 @@ class EDOCCorrector(private val context: Context) {
 
         val action = CorrectionAction(
             timestamp = System.currentTimeMillis(),
-            error = error,
-            quality = quality,
-            errorType = errorType,
-            paramDeltas = paramDeltas,
-            timeHorizon = label
+            error = error, quality = quality,
+            errorType = errorType, paramDeltas = paramDeltas, timeHorizon = label
         )
 
         Log.d(TAG, "[$label] e=${String.format("%.1f", error)} $errorType → " +
@@ -560,40 +561,29 @@ class EDOCCorrector(private val context: Context) {
     /**
      * 有限差分灵敏度分析
      *
-     * 对6个DallaMan参数各自微扰±1%, 看预测值变化多少
-     * 用一步RK4 (5min) 而非完整36步, 因为计算量是关键
+     * 对6个DallaMan参数各自微扰±1%, 用一步模型算预测值变化
+     * 只关心梯度方向(sign), 不关心精确幅度 → 一步Euler足够
      */
-    private fun computeSensitivities(
-        baseParams: DallaManModel.Parameters,
-        currentGlucose: Double,
-        quality: Double
-    ): DoubleArray {
+    private fun computeSensitivities(baseParams: DallaManModel.Parameters): DoubleArray {
         val sensitivities = DoubleArray(PARAM_COUNT)
         val eps = 0.01  // 1%微扰
-
-        // 构建当前状态 (简化: 用基准参数+EDOC修正)
-        val effectiveParams = applyDeltas(baseParams)
-
-        // 基线预测 (t=0→5min, 一步RK4)
-        val basePred = runOneStepRK4(effectiveParams, 0.0, currentGlucose)
+        val g = 7.0     // 典型血糖值(mmol/L), 用于灵敏度计算
 
         for (i in 0 until PARAM_COUNT) {
             val paramVal = getBaseParam(baseParams, i) + deltas.get(i)
             val absEps = max(abs(paramVal) * eps, 1e-6)
 
-            // 正微扰
-            val paramsPos = applyDeltas(baseParams).let { p ->
-                setParam(p, i, getParam(p, i) * (1.0 + eps))
-            }
-            val predPos = runOneStepRK4(paramsPos, 0.0, currentGlucose)
+            // 正微扰: base参数×(1+eps) + 其他参数的deltas
+            val basePos = setBaseParamOnly(baseParams, i, getBaseParam(baseParams, i) * (1.0 + eps))
+            val effPos = applyDeltas(basePos)
+            val predPos = runOneStepRK4(effPos, g)
 
             // 负微扰
-            val paramsNeg = applyDeltas(baseParams).let { p ->
-                setParam(p, i, getParam(p, i) * (1.0 - eps))
-            }
-            val predNeg = runOneStepRK4(paramsNeg, 0.0, currentGlucose)
+            val baseNeg = setBaseParamOnly(baseParams, i, getBaseParam(baseParams, i) * (1.0 - eps))
+            val effNeg = applyDeltas(baseNeg)
+            val predNeg = runOneStepRK4(effNeg, g)
 
-            // 中心差分梯度
+            // 中心差分
             sensitivities[i] = (predPos - predNeg) / (2.0 * absEps)
         }
 
@@ -601,41 +591,30 @@ class EDOCCorrector(private val context: Context) {
     }
 
     /**
-     * 一步RK4预测 (5分钟)
+     * 一步预测 (5分钟, Euler近似)
      *
-     * 简化版Dalla Man ODE, 只跑一个dt=5min的RK4步
-     * 返回5分钟后的血糖预测值
+     * 简化版Dalla Man血糖ODE, 只用于灵敏度方向计算
+     * params已包含EDOC修正(调用方先applyDeltas), 这里直接使用
      */
-    private fun runOneStepRK4(
-        params: DallaManModel.Parameters,
-        initialG: Double,
-        currentGlucose: Double
-    ): Double {
-        val dt = 5.0  // 分钟
-        var g = currentGlucose.coerceIn(2.0, 35.0)
-
-        // 简化ODE (只计算血糖相关项, 假设其他状态初始为0)
-        // dG/dt = (Ra + EGP - Uii - Uid) / (Vg × BW)
-        // 简化: 只保留主导项来近似灵敏度方向
+    private fun runOneStepRK4(params: DallaManModel.Parameters, glucose: Double): Double {
+        val dt = 5.0
+        val g = glucose.coerceIn(2.0, 35.0)
         val Vg = params.Vg
         val BW = params.bodyWeight
 
         // Uii (胰岛素非依赖利用)
         val uii = params.k1 * Vg * BW
 
-        // Uid (MM动力学) - 假设X≈0 (无额外胰岛素作用)
+        // Uid (MM动力学, X≈0)
         val G_mgdl = g * 18.0
-        val vm = params.Vm0 + deltas.vm0
-        val uid = vm * G_mgdl / (params.Km0 + G_mgdl) * BW / (Vg * 18.0)
+        val uid = params.Vm0 * G_mgdl / (params.Km0 + G_mgdl) * BW / (Vg * 18.0)
 
         // EGP (肝糖输出)
-        val egp = (params.hepaticBase + deltas.hepaticBase) * BW
+        val egp = params.hepaticBase * BW
 
-        // 简化RK4 (Euler, 因为步长很短)
+        // Euler步 (dt短, 近似足够)
         val dg_dt = (egp - uii - uid) / (Vg * BW)
-        g += dg_dt * dt
-
-        return g.coerceIn(2.0, 35.0)
+        return (g + dg_dt * dt).coerceIn(2.0, 35.0)
     }
 
     /** 自适应学习率: 同向加速, 翻转减速 */
@@ -715,10 +694,11 @@ class EDOCCorrector(private val context: Context) {
         else -> 0.0
     }
 
-    private fun getParam(params: DallaManModel.Parameters, idx: Int): Double =
-        getBaseParam(params, idx) + deltas.get(idx)
-
-    private fun setParam(params: DallaManModel.Parameters, idx: Int, value: Double): DallaManModel.Parameters =
+    /**
+     * 只修改base参数 (不改delta)
+     * 用于灵敏度分析: 微扰base后通过applyDeltas合成effective参数
+     */
+    private fun setBaseParamOnly(params: DallaManModel.Parameters, idx: Int, value: Double): DallaManModel.Parameters =
         when (idx) {
             IDX_KSTOMACH    -> params.copy(kStomach = value)
             IDX_VMAXGASTRIC -> params.copy(VmaxGastric = value)
