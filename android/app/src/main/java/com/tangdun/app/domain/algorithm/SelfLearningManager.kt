@@ -56,8 +56,13 @@ class SelfLearningManager(private val context: Context) {
             instance?.currentBaseParams = params
         }
 
-        /** 获取当前DallaMan基础参数 (供 HomeViewModel 导入时使用) */
-        fun getBaseParams(): DallaManModel.Parameters? = instance?.currentBaseParams
+        /** 获取当前DallaMan基础参数 (供 HomeViewModel 导入时使用, 无参数时自动创建) */
+        fun getBaseParams(): DallaManModel.Parameters = instance?.let { inst ->
+            inst.currentBaseParams ?: inst.ensureBaseParams()
+        } ?: DallaManModel.Parameters.forUser(
+            bodyWeight = 65.0, fastingGlucose = 6.5,
+            isf = 1.5, basalInsulin = 10.0, sigma = 3.0, activityLevel = 0.5
+        )
 
         /**
          * 外部通知: 已记录饮食 → 更新数据完整度

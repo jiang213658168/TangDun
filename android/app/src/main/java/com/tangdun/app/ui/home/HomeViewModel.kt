@@ -123,7 +123,7 @@ class HomeViewModel @Inject constructor(
                         val edoc = com.tangdun.app.domain.algorithm.SelfLearningManager.getEDOCCorrector()
                         val importedRecords = glucoseDao.getRecent(result.imported.toInt()).reversed()
                         val baseParams = com.tangdun.app.domain.algorithm.SelfLearningManager.getBaseParams()
-                        if (importedRecords.isNotEmpty() && baseParams != null) {
+                        if (importedRecords.isNotEmpty()) {
                             val batchCorrections = edoc.processBatchImport(
                                 importedRecords, baseParams
                             ) { processed, total, corrections ->
