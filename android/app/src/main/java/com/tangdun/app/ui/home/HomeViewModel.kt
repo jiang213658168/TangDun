@@ -107,18 +107,38 @@ class HomeViewModel @Inject constructor(
             try {
                 _uiState.value = _uiState.value.copy(error = "导入中...")
                 val result = com.tangdun.app.service.XlsxImporter.importFromUri(context, uri)
-                _uiState.value = _uiState.value.copy(
-                    error = "导入完成: ${result.imported}条新增, ${result.skipped}条重复"
-                )
+
                 if (result.imported > 0) {
                     loadData()
-                    // 触发自学习 → 统计层立即学习新数据
+                    // 触发统计学习
                     try {
                         val learner = com.tangdun.app.domain.algorithm.SelfLearningManager.getOnlineLearner()
                         learner.learn(glucoseDao)
-                        Log.i("HomeVM", "导入后学习: ${learner.getStageDescription()}")
+                        Log.i("HomeVM", "导入后统计学习: ${learner.getStageDescription()}")
                     } catch (e: Exception) { Log.w("HomeVM", "导入后学习失败: ${e.message}") }
+
+                    // ★ EDOC批量处理: 对导入数据逐条模拟即时纠错
+                    _uiState.value = _uiState.value.copy(error = "即时纠错中...")
+                    try {
+                        val edoc = com.tangdun.app.domain.algorithm.SelfLearningManager.getEDOCCorrector()
+                        val importedRecords = glucoseDao.getRecent(result.imported.toInt()).reversed()
+                        val baseParams = com.tangdun.app.domain.algorithm.SelfLearningManager.getBaseParams()
+                        if (importedRecords.isNotEmpty() && baseParams != null) {
+                            val batchCorrections = edoc.processBatchImport(
+                                importedRecords, baseParams
+                            ) { processed, total, corrections ->
+                                // 进度更新到UI
+                                _uiState.value = _uiState.value.copy(
+                                    error = "即时纠错: $processed/$total ($corrections 次修正)"
+                                )
+                            }
+                            Log.i("HomeVM", "EDOC批量处理完成: ${importedRecords.size}条 → $batchCorrections 次修正")
+                        }
+                    } catch (e: Exception) { Log.w("HomeVM", "EDOC批量处理失败: ${e.message}") }
                 }
+                _uiState.value = _uiState.value.copy(
+                    error = "导入完成: ${result.imported}条新增, ${result.skipped}条重复"
+                )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = "导入失败: ${e.message}")
             }

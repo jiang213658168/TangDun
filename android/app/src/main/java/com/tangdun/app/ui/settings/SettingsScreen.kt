@@ -137,11 +137,13 @@ fun SelfLearningCard() {
     val context = LocalContext.current
     val onlineLearner = remember { com.tangdun.app.domain.algorithm.SelfLearningManager.getOnlineLearner() }
     val incLearner = remember { com.tangdun.app.domain.algorithm.SelfLearningManager.getIncrementalLearner() }
+    val edocCorrector = remember { com.tangdun.app.domain.algorithm.SelfLearningManager.getEDOCCorrector() }
     var refreshTick by remember { mutableStateOf(0) }
     val params = remember(refreshTick) { onlineLearner.getPersonalParams() }
     val stage = remember(refreshTick) { onlineLearner.getLearningStage() }
     val stageDesc = remember(refreshTick) { onlineLearner.getStageDescription() }
     val incStats = remember(refreshTick) { incLearner.getStats() }
+    val edocStatus = remember(refreshTick) { edocCorrector.getStatus() }
     // 每5秒刷新
     LaunchedEffect(Unit) { while (true) { refreshTick++; delay(5000) } }
 
@@ -170,6 +172,67 @@ fun SelfLearningCard() {
             }
 
             Spacer(Modifier.height(12.dp))
+
+            // ===== Layer 0: EDOC 即时纠错 =====
+            val edocActive = edocStatus.totalCorrections > 0
+            val edocTrendColor = when {
+                edocStatus.errorTrend.contains("改善") -> AlertSuccess
+                edocStatus.errorTrend.contains("退化") -> AlertCritical
+                else -> AlertWarning
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("⚡ 即时纠错", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    if (edocActive) "${edocStatus.adjustmentRate} | ${edocStatus.correctionsToday}次/今日"
+                    else "⏳ 待命中",
+                    fontSize = 12.sp,
+                    color = if (edocActive) edocTrendColor else TextHint,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            if (edocActive) {
+                Spacer(Modifier.height(4.dp))
+                // 误差趋势 + 学习率
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    StatItem2("趋势", edocStatus.errorTrend)
+                    StatItem2("总数", "${edocStatus.totalCorrections}")
+                    StatItem2("MAE", "${"%.1f".format(edocStatus.recentMAE)}")
+                }
+                // 最近修正: 显示有变化的前3个参数
+                val driftedParams = edocStatus.paramDrifts.entries
+                    .filter { abs(it.value) > 0.05 }
+                    .sortedByDescending { abs(it.value) }
+                    .take(3)
+                if (driftedParams.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                        Text("累计漂移: ", fontSize = 10.sp, color = TextHint)
+                        driftedParams.forEachIndexed { i, (name, drift) ->
+                            val driftColor = if (abs(drift) > 5.0) AlertCritical else if (abs(drift) > 2.0) AlertWarning else TextSecondary
+                            Text(
+                                "${name} ${if (drift > 0) "+" else ""}${"%.1f".format(drift)}%",
+                                fontSize = 10.sp, color = driftColor
+                            )
+                            if (i < driftedParams.size - 1) Text(" · ", fontSize = 10.sp, color = TextHint)
+                        }
+                    }
+                }
+                // 最近一次修正
+                edocStatus.lastAction?.let { action ->
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                        val timeStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                            .format(java.util.Date(action.timestamp))
+                        Text(
+                            "最近: $timeStr ${action.timeHorizon} e=${"%.1f".format(action.error)} ${action.errorType}",
+                            fontSize = 10.sp, color = TextHint
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(2.dp))
+            Divider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 0.5.dp)
+            Spacer(Modifier.height(8.dp))
 
             // ===== Layer 1: OnlineLearner =====
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

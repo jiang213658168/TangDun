@@ -226,6 +226,10 @@ class PredictionViewModel @Inject constructor(
                     peakValue = peak, peakMinute = pi * 5,
                     isfEstimate = est.insulinSensitivity, crEstimate = est.carbRatio, error = null
                 )
+                // ★ EDOC: 缓存预测结果 + 更新基础参数, 供之后误差反馈使用
+                SelfLearningManager.storePrediction(g.toFloat(), anchored.map { it.toFloat() }.toFloatArray())
+                SelfLearningManager.setBaseParams(finalParams)
+
                 Log.i(TAG, "预测: ${String.format("%.1f", g)} IOB${String.format("%.1f", iob)} 碳水${String.format("%.0f", todayCarbs)} 模型=$modelLabel ISF≈${String.format("%.1f", est.insulinSensitivity)} CR≈${String.format("%.1f", est.carbRatio)}")
             } catch (e: Exception) { Log.e(TAG, "预测失败: ${e.message}", e); _uiState.value = _uiState.value.copy(isLoading = false, error = "预测失败: ${e.message}") }
         }
