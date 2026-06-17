@@ -168,6 +168,9 @@ class EDOCCorrector(private val context: Context) {
     // 方向追踪器 (记录最近8次修正的符号)
     private val directionTracker = mutableListOf<Int>()
 
+    // ★ 线程安全锁: errorHistory和directionTracker同时在IO(写)和UI(读)访问
+    private val trackerLock = Any()
+
     // RLS协方差矩阵 (6×6, 对角初始化)
     private val P = Array(PARAM_COUNT) { DoubleArray(PARAM_COUNT) }
 
@@ -328,12 +331,14 @@ class EDOCCorrector(private val context: Context) {
         }
 
         // 调整速率: 基于修正频率和方向稳定性
+        // ★ 线程安全: directionTracker快照, 避免UI读取时IO写入导致ConcurrentModification
+        val trackerSnapshot = synchronized(trackerLock) { directionTracker.toList() }
         val adjustmentRate = when {
             totalCorrections == 0 -> "待命中"
             totalCorrections < 10 -> "快速修正"  // 新用户/刚启动
             else -> {
-                val sameStreak = maxConsecutiveSameSign(directionTracker)
-                val flips = directionTracker.windowed(2).count { (a, b) -> a != b }
+                val sameStreak = maxConsecutiveSameSign(trackerSnapshot)
+                val flips = trackerSnapshot.windowed(2).count { (a, b) -> a != b }
                 when {
                     sameStreak >= 5 -> "快速修正"   // 持续同向→系统偏差→加速
                     flips >= 5 -> "谨慎"            // 频繁翻转→噪声→减速
@@ -374,8 +379,10 @@ class EDOCCorrector(private val context: Context) {
      */
     fun reset() {
         synchronized(predictionCache) { predictionCache.clear() }
-        errorHistory.clear()
-        directionTracker.clear()
+        synchronized(trackerLock) {
+            errorHistory.clear()
+            directionTracker.clear()
+        }
         initRLSMatrix()
         eta5min = ETA_5MIN_BASE
         eta30min = ETA_30MIN_BASE
@@ -446,9 +453,10 @@ class EDOCCorrector(private val context: Context) {
         }
 
         // ── 误差分类 ──
-        errorHistory.add(error)
-        while (errorHistory.size > ERROR_WINDOW) errorHistory.removeAt(0)
-
+        synchronized(trackerLock) {
+            errorHistory.add(error)
+            while (errorHistory.size > ERROR_WINDOW) errorHistory.removeAt(0)
+        }
         val errorType = classifyError(errorHistory)
         if (errorType == "白噪声") return null
 
@@ -508,8 +516,10 @@ class EDOCCorrector(private val context: Context) {
         }
 
         // ── 方向追踪 + 学习率自适应 ──
-        directionTracker.add(sign(error).toInt())
-        while (directionTracker.size > DIRECTION_WINDOW) directionTracker.removeAt(0)
+        synchronized(trackerLock) {
+            directionTracker.add(sign(error).toInt())
+            while (directionTracker.size > DIRECTION_WINDOW) directionTracker.removeAt(0)
+        }
         adjustLearningRates(label)
 
         // ── RLS协方差更新 ──
@@ -642,10 +652,11 @@ class EDOCCorrector(private val context: Context) {
 
     /** 自适应学习率: 同向加速, 翻转减速 */
     private fun adjustLearningRates(label: String) {
-        if (directionTracker.size < DIRECTION_WINDOW / 2) return
+        val trackerSnapshot = synchronized(trackerLock) { directionTracker.toList() }
+        if (trackerSnapshot.size < DIRECTION_WINDOW / 2) return
 
-        val sameStreak = maxConsecutiveSameSign(directionTracker)
-        val flips = directionTracker.windowed(2).count { (a, b) -> a != b }
+        val sameStreak = maxConsecutiveSameSign(trackerSnapshot)
+        val flips = trackerSnapshot.windowed(2).count { (a, b) -> a != b }
 
         val multiplier = when {
             sameStreak >= ACCELERATE_STREAK -> 1.02   // 缓慢加速
