@@ -105,8 +105,18 @@ class HomeViewModel @Inject constructor(
     fun importXlsx(uri: android.net.Uri) {
         viewModelScope.launch {
             try {
-                _uiState.value = _uiState.value.copy(error = "导入中...")
+                _uiState.value = _uiState.value.copy(error = "解析文件中...")
                 val result = com.tangdun.app.service.XlsxImporter.importFromUri(context, uri)
+
+                // 显示导入详情（含错误原因）
+                val detailMsg = buildString {
+                    append("解析${result.total}条, 新增${result.imported}条, 跳过${result.skipped}条")
+                    if (result.errors.isNotEmpty()) {
+                        append(" | ${result.errors.first()}")
+                    }
+                }
+                _uiState.value = _uiState.value.copy(error = detailMsg)
+                android.util.Log.i("HomeVM", "导入结果: $detailMsg")
 
                 if (result.imported > 0) {
                     loadData()
@@ -127,18 +137,16 @@ class HomeViewModel @Inject constructor(
                             val batchCorrections = edoc.processBatchImport(
                                 importedRecords, baseParams
                             ) { processed, total, corrections ->
-                                // 进度更新到UI
                                 _uiState.value = _uiState.value.copy(
                                     error = "即时纠错: $processed/$total ($corrections 次修正)"
                                 )
                             }
                             Log.i("HomeVM", "EDOC批量处理完成: ${importedRecords.size}条 → $batchCorrections 次修正")
                         }
+                        // 恢复显示最终结果
+                        _uiState.value = _uiState.value.copy(error = detailMsg)
                     } catch (e: Exception) { Log.w("HomeVM", "EDOC批量处理失败: ${e.message}") }
                 }
-                _uiState.value = _uiState.value.copy(
-                    error = "导入完成: ${result.imported}条新增, ${result.skipped}条重复"
-                )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = "导入失败: ${e.message}")
             }

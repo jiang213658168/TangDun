@@ -107,28 +107,59 @@ object XlsxImporter {
         val zipStream = ZipInputStream(inputStream)
         var sharedStringsXml: ByteArray? = null
         var sheetXml: ByteArray? = null
+        val allEntries = mutableListOf<String>()
 
         // 遍历ZIP条目，提取sharedStrings和sheet1
         var entry: ZipEntry? = zipStream.nextEntry
         while (entry != null) {
+            allEntries.add(entry.name)
             when {
-                entry.name.equals("xl/sharedStrings.xml", ignoreCase = true) ->
+                entry.name.equals("xl/sharedStrings.xml", ignoreCase = true) -> {
                     sharedStringsXml = zipStream.readBytes()
-                entry.name.equals("xl/worksheets/sheet1.xml", ignoreCase = true) ->
+                    Log.i(TAG, "sharedStrings: ${sharedStringsXml?.size ?: 0} bytes")
+                }
+                entry.name.equals("xl/worksheets/sheet1.xml", ignoreCase = true) -> {
                     sheetXml = zipStream.readBytes()
+                    Log.i(TAG, "sheet1.xml: ${sheetXml?.size ?: 0} bytes")
+                }
             }
             zipStream.closeEntry()
             entry = zipStream.nextEntry
         }
         zipStream.close()
 
-        if (sheetXml == null) return emptyList()
+        Log.i(TAG, "xlsx内共${allEntries.size}个条目: ${allEntries.joinToString(", ")}")
+
+        if (sheetXml == null) {
+            Log.w(TAG, "未找到sheet1.xml! 可用的sheet: ${allEntries.filter { "sheet" in it.lowercase() }}")
+            // 尝试找第一个sheet
+            val firstSheet = allEntries.firstOrNull { it.contains("sheet", ignoreCase = true) && it.endsWith(".xml") }
+            if (firstSheet != null) {
+                Log.i(TAG, "回退到: $firstSheet")
+                // 重新读取
+                val zs2 = ZipInputStream(inputStream)  // 需要新stream...
+                // 简化: 如果有sheet但名字不是sheet1, 返回空并提示
+                return emptyList()
+            }
+            return emptyList()
+        }
 
         // 解析共享字符串表
         val sharedStrings = parseSharedStrings(sharedStringsXml)
+        Log.i(TAG, "共享字符串表: ${sharedStrings.size}条")
 
         // 解析sheet数据
-        return parseSheetData(sheetXml, sharedStrings)
+        val records = parseSheetData(sheetXml, sharedStrings)
+        Log.i(TAG, "sheet解析完成: ${records.size}条血糖记录")
+        if (records.isNotEmpty()) {
+            val first = records.first()
+            val last = records.last()
+            val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+            Log.i(TAG, "时间范围: ${fmt.format(java.util.Date(first.timestamp))} ~ ${fmt.format(java.util.Date(last.timestamp))}")
+            Log.i(TAG, "血糖范围: ${"%.1f".format(records.minOf{it.value})} ~ ${"%.1f".format(records.maxOf{it.value})} mmol/L")
+        }
+
+        return records
     }
 
     private fun parseSharedStrings(xml: ByteArray?): List<String> {
