@@ -204,23 +204,70 @@ object XlsxImporter {
         return result
     }
 
+    /**
+     * 解析欧态时间字符串 → 毫秒时间戳
+     *
+     * 欧态实际格式: "2026.6.17 下午11:29" (中文AM/PM + yyyy.M.d)
+     * "下午"=PM, "上午"=AM. 12小时制需要转换为24小时制
+     */
+    private fun parseOttaiTime(timeStr: String): Long? {
+        // 尝试1: Excel序列号 (纯数字)
+        val excelSerial = timeStr.toDoubleOrNull()
+        if (excelSerial != null && excelSerial in 40000.0..80000.0) {
+            val excelEpoch = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse("1899-12-30")?.time ?: 0L
+            return excelEpoch + (excelSerial * 86400000L).toLong()
+        }
+
+        // 尝试2: 标准24小时格式 (yyyy.M.d HH:mm 等)
+        val formats24h = listOf(
+            "yyyy.M.d HH:mm", "yyyy.M.d H:mm", "yyyy.MM.dd HH:mm",
+            "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm",
+            "yyyy/MM/dd HH:mm", "yyyy/MM/dd HH:mm:ss"
+        )
+        for (fmt in formats24h) {
+            try {
+                return SimpleDateFormat(fmt, Locale.getDefault()).parse(timeStr)?.time
+            } catch (_: Exception) {}
+        }
+
+        // 尝试3: ★ 欧态中文格式: "2026.6.17 下午11:29" 或 "2026.6.17 上午07:09"
+        // 手动解析: 分离日期部分和时间部分, 处理上午/下午
+        val isPM = timeStr.contains("下午")
+        val isAM = timeStr.contains("上午")
+        if (isPM || isAM) {
+            try {
+                // 分割: "2026.6.17 下午11:29" → datePart="2026.6.17", timePart="11:29"
+                val cleaned = timeStr.replace("下午", " ").replace("上午", " ").trim()
+                val parts = cleaned.split(Regex("\\s+"))
+                if (parts.size >= 3) {
+                    // parts[0]="2026.6.17", parts[1]="11:29" (or "07:09")
+                    val datePart = parts[0]
+                    val timePart = parts[1]
+                    val timeBits = timePart.split(":")
+                    if (timeBits.size >= 2) {
+                        var hour = timeBits[0].toIntOrNull() ?: return null
+                        val minute = timeBits[1].toIntOrNull() ?: return null
+                        // 12→24小时转换
+                        if (isPM && hour != 12) hour += 12
+                        if (isAM && hour == 12) hour = 0
+                        val fixedTime = "${datePart} ${"%02d".format(hour)}:${"%02d".format(minute)}"
+                        return SimpleDateFormat("yyyy.M.d HH:mm", Locale.getDefault()).parse(fixedTime)?.time
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 尝试4: 标准12小时格式 (英文本地化)
+        try {
+            return SimpleDateFormat("yyyy.M.d ah:mm", Locale.ENGLISH).parse(timeStr)?.time
+        } catch (_: Exception) {}
+
+        return null
+    }
+
     private fun parseSheetData(xml: ByteArray, sharedStrings: List<String>): List<GlucoseRecord> {
         val records = mutableListOf<GlucoseRecord>()
         var parseErrors = 0
-
-        // 多种日期格式 (欧态导出常见: 2026.6.15 07:09 或 2026-06-15 07:09:00)
-        val dateFormats = listOf(
-            SimpleDateFormat("yyyy.M.d HH:mm", Locale.getDefault()),
-            SimpleDateFormat("yyyy.M.d H:mm", Locale.getDefault()),
-            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()),
-            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()),
-            SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()),
-            SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()),
-            SimpleDateFormat("yyyy.MM.dd HH:mm", Locale.getDefault())
-        )
-        // Excel日期基准: 1899-12-30 (序列号0=1899-12-30)
-        val excelEpoch = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse("1899-12-30")?.time ?: 0L
-        val msPerDay = 86400000L
 
         try {
             val factory = XmlPullParserFactory.newInstance()
@@ -268,23 +315,7 @@ object XlsxImporter {
                                     val valueStr = currentRow[1]
                                     val glucose = valueStr.toDoubleOrNull()
                                     if (glucose != null && glucose in 0.5..35.0) {
-                                        var timestamp: Long? = null
-
-                                        // 尝试1: Excel序列号 (纯数字, 如45350.5)
-                                        val excelSerial = timeStr.toDoubleOrNull()
-                                        if (excelSerial != null && excelSerial in 40000.0..80000.0) {
-                                            timestamp = excelEpoch + (excelSerial * msPerDay).toLong()
-                                        }
-
-                                        // 尝试2: 多种文本日期格式
-                                        if (timestamp == null) {
-                                            for (fmt in dateFormats) {
-                                                try {
-                                                    timestamp = fmt.parse(timeStr)?.time
-                                                    if (timestamp != null) break
-                                                } catch (_: Exception) {}
-                                            }
-                                        }
+                                        val timestamp = parseOttaiTime(timeStr)
 
                                         if (timestamp != null && timestamp > 0 && timestamp < System.currentTimeMillis() + 86400000L) {
                                             records.add(GlucoseRecord(
