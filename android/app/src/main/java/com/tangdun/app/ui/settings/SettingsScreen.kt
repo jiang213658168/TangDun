@@ -183,8 +183,8 @@ fun SelfLearningCard() {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("⚡ 即时纠错", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                 Text(
-                    if (edocActive) "${edocStatus.adjustmentRate} | ${edocStatus.correctionsToday}次/今日"
-                    else "⏳ 待命中",
+                    if (edocActive) "${edocStatus.adjustmentRate} | ${edocStatus.correctionsToday}次"
+                    else "⏳ 学习数据不足",
                     fontSize = 12.sp,
                     color = if (edocActive) edocTrendColor else TextHint,
                     fontWeight = FontWeight.SemiBold
@@ -192,43 +192,55 @@ fun SelfLearningCard() {
             }
             if (edocActive) {
                 Spacer(Modifier.height(4.dp))
-                // 误差趋势 + 学习率
+                // 关键指标: 趋势 / 总修正 / 学习率
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    StatItem2("趋势", edocStatus.errorTrend)
-                    StatItem2("总数", "${edocStatus.totalCorrections}")
-                    StatItem2("MAE", "${"%.1f".format(edocStatus.recentMAE)}")
+                    StatItem2("总修正", "${edocStatus.totalCorrections}次")
+                    StatItem2("误差趋势", edocStatus.errorTrend)
+                    StatItem2("MAE", "${"%.2f".format(edocStatus.recentMAE)}")
                 }
-                // 最近修正: 显示有变化的前3个参数
+                // 参数漂移: 显示所有有变化的参数
                 val driftedParams = edocStatus.paramDrifts.entries
                     .filter { abs(it.value) > 0.05 }
                     .sortedByDescending { abs(it.value) }
-                    .take(3)
                 if (driftedParams.isNotEmpty()) {
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(6.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-                        Text("累计漂移: ", fontSize = 10.sp, color = TextHint)
+                        Text("参数漂移: ", fontSize = 10.sp, color = TextHint)
                         driftedParams.forEachIndexed { i, (name, drift) ->
-                            val driftColor = if (abs(drift) > 5.0) AlertCritical else if (abs(drift) > 2.0) AlertWarning else TextSecondary
-                            Text(
-                                "${name} ${if (drift > 0) "+" else ""}${"%.1f".format(drift)}%",
-                                fontSize = 10.sp, color = driftColor
-                            )
+                            val driftColor = when { abs(drift) > 5.0 -> AlertCritical; abs(drift) > 2.0 -> AlertWarning; else -> TextSecondary }
+                            Text("${name} ${if(drift>0)"+" else ""}${"%.1f".format(drift)}%",
+                                fontSize = 10.sp, color = driftColor, fontWeight = FontWeight.SemiBold)
                             if (i < driftedParams.size - 1) Text(" · ", fontSize = 10.sp, color = TextHint)
                         }
                     }
                 }
-                // 最近一次修正
-                edocStatus.lastAction?.let { action ->
-                    Spacer(Modifier.height(4.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                // 最近修正历史 (最近5次)
+                val actions = edocStatus.recentActions
+                if (actions.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("修正历史:", fontSize = 10.sp, color = TextHint)
+                    actions.take(5).forEach { action ->
                         val timeStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
                             .format(java.util.Date(action.timestamp))
-                        Text(
-                            "最近: $timeStr ${action.timeHorizon} e=${"%.1f".format(action.error)} ${action.errorType}",
-                            fontSize = 10.sp, color = TextHint
-                        )
+                        val signStr = if (action.error > 0) "↑+" else "↓"
+                        val eColor = if (abs(action.error) > 3.0) AlertCritical
+                                     else if (abs(action.error) > 1.0) AlertWarning else TextSecondary
+                        Row(Modifier.fillMaxWidth().padding(start = 4.dp), horizontalArrangement = Arrangement.Start) {
+                            Text("$timeStr ", fontSize = 9.sp, color = TextHint)
+                            Text("${action.timeHorizon} ", fontSize = 9.sp, color = MaterialTheme.colorScheme.primary)
+                            Text("${signStr}${"%.1f".format(abs(action.error))} ", fontSize = 9.sp, color = eColor, fontWeight = FontWeight.SemiBold)
+                            Text(action.errorType, fontSize = 9.sp, color = TextHint)
+                        }
                     }
                 }
+            } else {
+                // 非活跃状态: 显示原因
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    if (params.dataDays > 0) "等待足够预测误差 (校准后可触发)"
+                    else "需要CGM数据积累 (约30分钟后自动启动)",
+                    fontSize = 10.sp, color = TextHint
+                )
             }
             Spacer(Modifier.height(2.dp))
             Divider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 0.5.dp)
@@ -244,10 +256,12 @@ fun SelfLearningCard() {
             Spacer(Modifier.height(10.dp))
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                val hasData = params.dataDays > 0
                 val qText = if (params.dataCompleteness >= 0.8) "完整" else if (params.dataCompleteness >= 0.4) "部分" else "血糖"
-                StatItem2("数据", "${"%.1f".format(params.dataDays)}天")
-                StatItem2("质量", qText)
-                StatItem2("变异", "${"%.1f".format(params.glucoseVariability)}%")
+                val varText = if (hasData) "${"%.1f".format(params.glucoseVariability)}%" else "无数据"
+                StatItem2("数据", if (hasData) "${"%.1f".format(params.dataDays)}天" else "无数据")
+                StatItem2("质量", if (hasData) qText else "—")
+                StatItem2("变异", varText)
             }
 
             // ===== Layer 2: IncrementalLearner =====

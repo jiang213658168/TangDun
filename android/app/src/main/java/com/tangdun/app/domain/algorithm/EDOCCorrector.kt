@@ -142,11 +142,12 @@ class EDOCCorrector(private val context: Context) {
         val totalCorrections: Int,
         val correctionsToday: Int,
         val lastAction: CorrectionAction?,
-        val errorTrend: String,       // "改善中 ↓" / "稳定 →" / "退化 ↑"
-        val adjustmentRate: String,   // "快速修正" / "正常" / "谨慎" / "待命中"
-        val recentMAE: Double,        // 最近1h预测MAE
-        val paramDrifts: Map<String, Double>,  // 参数名→累计变化%
-        val learningRates: Map<String, Double> // 三个时域当前学习率
+        val recentActions: List<CorrectionAction>,  // 最近5次修正
+        val errorTrend: String,
+        val adjustmentRate: String,
+        val recentMAE: Double,
+        val paramDrifts: Map<String, Double>,
+        val learningRates: Map<String, Double>
     )
 
     // ──── 状态变量 ────
@@ -187,6 +188,7 @@ class EDOCCorrector(private val context: Context) {
     private var totalCorrections = 0
     private var correctionsToday = 0
     private var lastAction: CorrectionAction? = null
+    private val recentActions = mutableListOf<CorrectionAction>()  // 最近5次修正
 
     // TCN adapter (128维特征→4维输出修正, 预留)
     // TODO: 接入TCN推理中间层的feature vector后启用LMS更新
@@ -362,6 +364,7 @@ class EDOCCorrector(private val context: Context) {
             totalCorrections = totalCorrections,
             correctionsToday = correctionsToday,
             lastAction = lastAction,
+            recentActions = synchronized(trackerLock) { recentActions.toList() },
             errorTrend = errorTrend,
             adjustmentRate = adjustmentRate,
             recentMAE = recentMAE,
@@ -391,6 +394,7 @@ class EDOCCorrector(private val context: Context) {
         totalCorrections = 0
         correctionsToday = 0
         lastAction = null
+        synchronized(trackerLock) { recentActions.clear() }
         deltas.kStomach = 0.0; deltas.vmaxGastric = 0.0; deltas.vm0 = 0.0
         deltas.vmX = 0.0; deltas.hepaticBase = 0.0; deltas.kp3 = 0.0
         persistState()
@@ -533,6 +537,11 @@ class EDOCCorrector(private val context: Context) {
             error = error, quality = quality,
             errorType = errorType, paramDeltas = paramDeltas, timeHorizon = label
         )
+        lastAction = action
+        synchronized(trackerLock) {
+            recentActions.add(0, action)  // 最新的在前面
+            while (recentActions.size > 5) recentActions.removeAt(recentActions.size - 1)
+        }
 
         Log.d(TAG, "[$label] e=${String.format("%.1f", error)} $errorType → " +
                 paramDeltas.entries.joinToString { "${it.key}=${String.format("%+.4f", it.value)}" })

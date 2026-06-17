@@ -49,7 +49,12 @@ object XlsxImporter {
             inputStream.close()
 
             if (records.isEmpty()) {
-                return@withContext ImportResult(0, 0, 0, listOf("未解析到血糖数据"))
+                return@withContext ImportResult(0, 0, 0, listOf(
+                    "未解析到血糖数据，请确认:",
+                    "1. 文件是欧态健康App导出的.xlsx",
+                    "2. 第1列是时间，第2列是血糖值",
+                    "3. 数据从第2行开始(第1行是表头则自动跳过)"
+                ))
             }
 
             // 单位自检: 若全部值>30→mg/dL需转换
@@ -170,8 +175,21 @@ object XlsxImporter {
 
     private fun parseSheetData(xml: ByteArray, sharedStrings: List<String>): List<GlucoseRecord> {
         val records = mutableListOf<GlucoseRecord>()
-        // 时间格式: 2026.6.15 07:09 (M.d可能是一位或两位)
-        val dateFormat = SimpleDateFormat("yyyy.M.d HH:mm", Locale.getDefault())
+        var parseErrors = 0
+
+        // 多种日期格式 (欧态导出常见: 2026.6.15 07:09 或 2026-06-15 07:09:00)
+        val dateFormats = listOf(
+            SimpleDateFormat("yyyy.M.d HH:mm", Locale.getDefault()),
+            SimpleDateFormat("yyyy.M.d H:mm", Locale.getDefault()),
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()),
+            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()),
+            SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()),
+            SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()),
+            SimpleDateFormat("yyyy.MM.dd HH:mm", Locale.getDefault())
+        )
+        // Excel日期基准: 1899-12-30 (序列号0=1899-12-30)
+        val excelEpoch = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse("1899-12-30")?.time ?: 0L
+        val msPerDay = 86400000L
 
         try {
             val factory = XmlPullParserFactory.newInstance()
@@ -218,18 +236,36 @@ object XlsxImporter {
                                     val timeStr = currentRow[0]
                                     val valueStr = currentRow[1]
                                     val glucose = valueStr.toDoubleOrNull()
-                                    if (glucose != null && glucose in 1.0..33.0) {
-                                        try {
-                                            val timestamp = dateFormat.parse(timeStr)?.time
-                                            if (timestamp != null) {
-                                                records.add(GlucoseRecord(
-                                                    timestamp = timestamp,
-                                                    value = glucose,
-                                                    source = "xlsx_import"
-                                                ))
+                                    if (glucose != null && glucose in 0.5..35.0) {
+                                        var timestamp: Long? = null
+
+                                        // 尝试1: Excel序列号 (纯数字, 如45350.5)
+                                        val excelSerial = timeStr.toDoubleOrNull()
+                                        if (excelSerial != null && excelSerial in 40000.0..80000.0) {
+                                            timestamp = excelEpoch + (excelSerial * msPerDay).toLong()
+                                        }
+
+                                        // 尝试2: 多种文本日期格式
+                                        if (timestamp == null) {
+                                            for (fmt in dateFormats) {
+                                                try {
+                                                    timestamp = fmt.parse(timeStr)?.time
+                                                    if (timestamp != null) break
+                                                } catch (_: Exception) {}
                                             }
-                                        } catch (e: Exception) {
-                                            // 跳过无法解析的时间
+                                        }
+
+                                        if (timestamp != null && timestamp > 0 && timestamp < System.currentTimeMillis() + 86400000L) {
+                                            records.add(GlucoseRecord(
+                                                timestamp = timestamp,
+                                                value = glucose,
+                                                source = "xlsx_import"
+                                            ))
+                                        } else {
+                                            parseErrors++
+                                            if (parseErrors <= 3) {
+                                                Log.w(TAG, "无法解析行: time='$timeStr' val='$valueStr'")
+                                            }
                                         }
                                     }
                                 }
@@ -243,6 +279,8 @@ object XlsxImporter {
             Log.e(TAG, "解析sheet失败: ${e.message}", e)
         }
 
+        if (parseErrors > 0) Log.w(TAG, "共${parseErrors}行解析失败")
+        Log.i(TAG, "解析到${records.size}条血糖记录")
         return records
     }
 
