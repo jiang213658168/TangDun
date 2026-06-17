@@ -194,6 +194,28 @@ class EDOCCorrector(private val context: Context) {
     // TODO: 接入TCN推理中间层的feature vector后启用LMS更新
     // private val tcnAdapter = FloatArray(4 * 128)
 
+    /**
+     * EDOC上下文特征 — 让灵敏度分析知道患者在什么生理状态
+     */
+    data class SnapContext(
+        val currentGlucose: Double,       // 当前血糖 (mmol/L)
+        val glucoseROC: Double,           // 血糖变化率 (mmol/L/min, 正=上升)
+        val recentCarbs: Double,          // 最近4h碳水总量 (g, 0=空腹)
+        val minutesSinceMeal: Double,     // 距上次进食分钟数 (MAX_VALUE=无记录)
+        val iob: Double,                  // 活性胰岛素 (U)
+        val minutesSinceBolus: Double,    // 距上次bolus分钟数 (MAX_VALUE=无记录)
+        val hourOfDay: Int                // 当前小时 (0-23, 用于昼夜节律)
+    ) {
+        val isFasting: Boolean get() = recentCarbs < 5.0 && minutesSinceMeal > 240.0
+        val hasActiveInsulin: Boolean get() = iob > 0.1
+        val isRising: Boolean get() = glucoseROC > 0.03
+        val isFalling: Boolean get() = glucoseROC < -0.03
+        val mealSize: String get() = when {
+            recentCarbs > 50 -> "large"; recentCarbs > 20 -> "moderate"
+            recentCarbs > 5 -> "small"; else -> "none"
+        }
+    }
+
     init {
         initRLSMatrix()    // 先设默认值
         loadState()        // 再覆盖为持久化值 (P对角线等)
@@ -227,7 +249,8 @@ class EDOCCorrector(private val context: Context) {
     fun onNewReading(
         currentGlucose: Double,
         qualityScore: Double,
-        baseParams: DallaManModel.Parameters
+        baseParams: DallaManModel.Parameters,
+        context: SnapContext = SnapContext(currentGlucose, 0.0, 0.0, Double.MAX_VALUE, 0.0, Double.MAX_VALUE, 0)
     ): CorrectionAction? {
         val now = System.currentTimeMillis()
 
@@ -241,9 +264,9 @@ class EDOCCorrector(private val context: Context) {
 
         // 检查三个时域的预测缓存
         val results = mutableListOf<CorrectionAction?>()
-        results.add(checkAndCorrect(now - 5 * 60_000,  currentGlucose, qualityScore, baseParams, "5min",  1))
-        results.add(checkAndCorrect(now - 30 * 60_000, currentGlucose, qualityScore, baseParams, "30min", 6))
-        results.add(checkAndCorrect(now - 60 * 60_000, currentGlucose, qualityScore, baseParams, "60min", 12))
+        results.add(checkAndCorrect(now - 5 * 60_000,  currentGlucose, qualityScore, baseParams, context, "5min",  1))
+        results.add(checkAndCorrect(now - 30 * 60_000, currentGlucose, qualityScore, baseParams, context, "30min", 6))
+        results.add(checkAndCorrect(now - 60 * 60_000, currentGlucose, qualityScore, baseParams, context, "60min", 12))
 
         // 返回最近一次有效修正
         val validResults = results.filterNotNull()
@@ -288,15 +311,16 @@ class EDOCCorrector(private val context: Context) {
                 // 只在时间间隔合理时处理 (4-65分钟)
                 if (dt !in 4.0..65.0) continue
 
-                // ★ 批量导入无缓存预测 → 用单步模型+当前参数生成"伪预测"
+                // ★ 批量导入: 用简单的上下文 (无meal/insulin信息)
+                val batchCtx = SnapContext(curr.value, 0.0, 0.0, Double.MAX_VALUE, 0.0, Double.MAX_VALUE, 0)
                 val effectiveParams = applyDeltas(baseParams)
-                val syntheticPred = runOneStepRK4(effectiveParams, prev.value)
+                val syntheticPred = runOneStepRK4(effectiveParams, prev.value, 0.0, 0.0)
                 val error = curr.value - syntheticPred
 
                 val quality = 0.7
                 val label = when { dt <= 10.0 -> "5min"; dt <= 35.0 -> "30min"; else -> "60min" }
 
-                val result = applyCorrection(error, curr.value, quality, baseParams, label)
+                val result = applyCorrection(error, curr.value, quality, baseParams, batchCtx, label)
                 if (result != null) batchCorrections++
 
                 if (i % 50 == 0 || i == historyRecords.size - 1) {
@@ -315,15 +339,17 @@ class EDOCCorrector(private val context: Context) {
     }
 
     /** 获取当前状态 (供UI展示) */
-    fun getStatus(recentErrors: List<Double> = emptyList()): Status {
-        val recentMAE = if (recentErrors.isNotEmpty()) recentErrors.map { abs(it) }.average() else 0.0
+    fun getStatus(): Status {
+        // ★ 用内部errorHistory算MAE, 而非外部传入(之前传入空list→永远0%)
+        val snapshot = synchronized(trackerLock) { errorHistory.toList() }
+        val recentMAE = if (snapshot.isNotEmpty()) snapshot.map { abs(it) }.average() else 0.0
 
-        // 误差趋势
+        // 误差趋势 (用内部errorHistory快照)
         val errorTrend = when {
-            recentErrors.size < 6 -> "收集数据中…"
+            snapshot.size < 6 -> "收集数据中…"
             else -> {
-                val firstHalf = recentErrors.take(recentErrors.size / 2).map { abs(it) }.average()
-                val secondHalf = recentErrors.drop(recentErrors.size / 2).map { abs(it) }.average()
+                val firstHalf = snapshot.take(snapshot.size / 2).map { abs(it) }.average()
+                val secondHalf = snapshot.drop(snapshot.size / 2).map { abs(it) }.average()
                 when {
                     secondHalf < firstHalf * 0.8 -> "改善中 ↓"
                     secondHalf > firstHalf * 1.2 -> "退化 ↑"
@@ -413,7 +439,7 @@ class EDOCCorrector(private val context: Context) {
      */
     private fun checkAndCorrect(
         predictTime: Long, actualValue: Double, quality: Double,
-        baseParams: DallaManModel.Parameters, label: String, step: Int
+        baseParams: DallaManModel.Parameters, context: SnapContext, label: String, step: Int
     ): CorrectionAction? {
         // 查缓存
         val cached = synchronized(predictionCache) { findNearestPrediction(predictTime) }
@@ -421,29 +447,23 @@ class EDOCCorrector(private val context: Context) {
         val error = if (cached != null) {
             actualValue - cached.atStep(step)
         } else {
-            // ★ 回退: 用单步Euler模型生成伪预测 (即使没有PredictionScreen的缓存)
-            // 精度不如完整TCN+DallaMan+BMA, 但方向是对的, 足够驱动EDOC
-            if (step > 6) return null  // 超过30min的回退不可靠, 跳过
+            // ★ 回退: 用单步模型生成伪预测
+            if (step > 6) return null
+            val stomach = if (context.recentCarbs > 5) 10_000.0 else 0.0
             val effectiveParams = applyDeltas(baseParams)
-            val syntheticPred = runOneStepRK4(effectiveParams, actualValue)
+            val syntheticPred = runOneStepRK4(effectiveParams, actualValue, stomach, context.iob)
             actualValue - syntheticPred
         }
 
-        return applyCorrection(error, actualValue, quality, baseParams, label)
+        return applyCorrection(error, actualValue, quality, baseParams, context, label)
     }
 
     /**
      * 应用修正 (核心逻辑, 被实时模式和批量模式共用)
-     *
-     * @param error 预测误差 (实际 - 预测, mmol/L)
-     * @param actualGlucose 当前实测血糖值 (mmol/L, 用于噪声门槛计算)
-     * @param quality 数据质量 (0-1)
-     * @param baseParams 当前DallaMan基础参数
-     * @param label 时域标签
      */
     private fun applyCorrection(
         error: Double, actualGlucose: Double, quality: Double,
-        baseParams: DallaManModel.Parameters, label: String
+        baseParams: DallaManModel.Parameters, context: SnapContext, label: String
     ): CorrectionAction? {
         // ── 噪声过滤 ──
         val noiseStd = max(SENSOR_MARD * actualGlucose / 100.0, NOISE_FLOOR)
@@ -464,8 +484,8 @@ class EDOCCorrector(private val context: Context) {
         val errorType = classifyError(errorHistory)
         if (errorType == "白噪声") return null
 
-        // ── 状态感知梯度 (用合理的当前血糖值) ──
-        val gradValues = computeSensitivities(baseParams)
+        // ── 状态感知梯度 ──
+        val gradValues = computeSensitivities(baseParams, context)
 
         // ── 确定修正参数: 时域+误差类型联合决策 ──
         val paramIndices = when (label) {
@@ -593,31 +613,52 @@ class EDOCCorrector(private val context: Context) {
     }
 
     /**
-     * 有限差分灵敏度分析
+     * 上下文感知的灵敏度分析
      *
-     * 对6个DallaMan参数各自微扰±1%, 用一步模型算预测值变化
-     * 只关心梯度方向(sign), 不关心精确幅度 → 一步Euler足够
+     * 根据患者生理状态决定每个参数是否参与修正:
+     *   - 空腹: kStomach/VmaxGastric灵敏度归零 (没食物→胃排空参数无关)
+     *   - 无胰岛素: VmX/kp3灵敏度归零 (没胰岛素→胰岛素效应参数无关)
+     *   - 用实际血糖而非固定7.0 (MM动力学的血糖依赖性)
+     *   - 用实际胃内容而非固定30g (反映真实消化状态)
      */
-    private fun computeSensitivities(baseParams: DallaManModel.Parameters): DoubleArray {
+    private fun computeSensitivities(
+        baseParams: DallaManModel.Parameters, context: SnapContext
+    ): DoubleArray {
         val sensitivities = DoubleArray(PARAM_COUNT)
-        val eps = 0.01  // 1%微扰
-        val g = 7.0     // 典型血糖值(mmol/L), 用于灵敏度计算
+        val eps = 0.01
+        val g = context.currentGlucose.coerceIn(3.0, 20.0)
+
+        // 胃内容物: 根据近期碳水量估算
+        val assumedStomach = when {
+            context.recentCarbs > 50 -> 50_000.0   // 大餐
+            context.recentCarbs > 20 -> 25_000.0   // 中餐
+            context.recentCarbs > 5  -> 10_000.0   // 小餐/零食
+            else -> 0.0                            // 空腹→kStomach/VmaxGastric不参与
+        }
+
+        // 胰岛素效应: IOB>0.1U时启用VmX/kp3灵敏度
+        val iob = context.iob
 
         for (i in 0 until PARAM_COUNT) {
-            val baseVal = getBaseParam(baseParams, i)
-            val absEps = max(abs(baseVal) * eps, 1e-6)  // 实际微扰大小
+            // ★ 状态过滤: 不相关的参数直接跳过
+            if (i == IDX_KSTOMACH || i == IDX_VMAXGASTRIC) {
+                if (assumedStomach == 0.0) continue  // 空腹→灵敏度=0
+            }
+            if (i == IDX_VMX || i == IDX_KP3) {
+                if (iob < 0.1) continue  // 无胰岛素→灵敏度=0
+            }
 
-            // 正微扰: base参数×(1+eps) + 其他参数的deltas
+            val baseVal = getBaseParam(baseParams, i)
+            val absEps = max(abs(baseVal) * eps, 1e-6)
+
             val basePos = setBaseParamOnly(baseParams, i, baseVal * (1.0 + eps))
             val effPos = applyDeltas(basePos)
-            val predPos = runOneStepRK4(effPos, g)
+            val predPos = runOneStepRK4(effPos, g, assumedStomach, iob)
 
-            // 负微扰
             val baseNeg = setBaseParamOnly(baseParams, i, baseVal * (1.0 - eps))
             val effNeg = applyDeltas(baseNeg)
-            val predNeg = runOneStepRK4(effNeg, g)
+            val predNeg = runOneStepRK4(effNeg, g, assumedStomach, iob)
 
-            // 中心差分: (f(x+h) - f(x-h)) / (2h)
             sensitivities[i] = (predPos - predNeg) / (2.0 * absEps)
         }
 
@@ -625,36 +666,35 @@ class EDOCCorrector(private val context: Context) {
     }
 
     /**
-     * 一步预测 (5分钟, Euler近似)
-     *
-     * 简化版Dalla Man血糖ODE, 只用于灵敏度方向计算
-     * params已包含EDOC修正(调用方先applyDeltas), 这里直接使用
-     *
-     * 注意: 用假定的胃内容物(30g碳水等效)使kStomach/VmaxGastric有非零灵敏度
-     *       灵敏度只关心符号方向, 不关心绝对幅度
+     * 一步预测 (上下文感知)
      */
-    private fun runOneStepRK4(params: DallaManModel.Parameters, glucose: Double): Double {
+    private fun runOneStepRK4(
+        params: DallaManModel.Parameters, glucose: Double,
+        assumedStomach: Double, iob: Double
+    ): Double {
         val dt = 5.0
         val g = glucose.coerceIn(2.0, 35.0)
         val Vg = params.Vg
         val BW = params.bodyWeight
 
-        // Ra (葡萄糖吸收): 假设典型胃内容物≈30g碳水 → kStomach/VmaxGastric有非零灵敏度
-        val assumedStomach = 30_000.0  // mg (≈30g碳水)
-        val gastricEmptying = min(params.kStomach * assumedStomach, params.VmaxGastric * BW)
-        val ra = gastricEmptying * params.fCarbs / BW  // mg/kg/min
+        // Ra: 只有非空腹时计算
+        val ra = if (assumedStomach > 0) {
+            val emptying = min(params.kStomach * assumedStomach, params.VmaxGastric * BW)
+            emptying * params.fCarbs / BW
+        } else 0.0
 
-        // Uii (胰岛素非依赖利用)
+        // Uii
         val uii = params.k1 * Vg * BW
 
-        // Uid (MM动力学, X≈0)
+        // Uid (MM + 胰岛素效应)
         val G_mgdl = g * 18.0
-        val uid = params.Vm0 * G_mgdl / (params.Km0 + G_mgdl) * BW / (Vg * 18.0)
+        val vm = if (iob > 0.1) params.Vm0 + params.VmX * (iob / 10.0).coerceIn(0.0, 1.0)
+                 else params.Vm0
+        val uid = vm * G_mgdl / (params.Km0 + G_mgdl) * BW / (Vg * 18.0)
 
-        // EGP (肝糖输出)
+        // EGP
         val egp = params.hepaticBase * BW
 
-        // Euler步 (dt短, 近似足够)
         val dg_dt = (ra + egp - uii - uid) / (Vg * BW)
         return (g + dg_dt * dt).coerceIn(2.0, 35.0)
     }

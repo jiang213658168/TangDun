@@ -3,6 +3,7 @@ package com.tangdun.app.domain.algorithm
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.*
+import kotlin.math.pow
 
 /**
  * 自学习管理器 — 唯一入口，统一管理所有学习逻辑
@@ -145,15 +146,41 @@ class SelfLearningManager(private val context: Context) {
                     readingCount++
 
                     // ══════ L0: EDOC即时纠错 ══════
-                    // 确保有参数: PredictionScreen设的优先, 否则用默认值
                     val baseParams = ensureBaseParams()
                     val quality = when (latest.source) {
                         "finger" -> 0.95
                         "cgm" -> if (latest.isCalibrated) 0.9 else 0.7
                         else -> 0.7
                     }
+                    // ★ 收集上下文特征: 饮食/胰岛素/趋势
+                    val now = System.currentTimeMillis()
+                    val recentMeals = db.mealDao().getByTimeRange(now - 4 * 3600_000, now)
+                    val recentInsulin = db.insulinDao().getSince(now - 4 * 3600_000)
+                    val recentCarbs = recentMeals.sumOf { it.totalCarbs }
+                    val lastMealMin = recentMeals.firstOrNull()?.let {
+                        (now - it.timestamp) / 60000.0
+                    } ?: Double.MAX_VALUE
+                    val iob = recentInsulin.filter { it.insulinType == "rapid" || it.insulinType == "short" }
+                        .fold(0.0) { a, r ->
+                            val m = (now - r.timestamp) / 60000.0
+                            if (m in 0.0..240.0) a + r.doseUnits * 0.5.pow(m / 55.0) else a
+                        }
+                    val lastBolusMin = recentInsulin.filter { it.insulinType == "rapid" || it.insulinType == "short" }
+                        .firstOrNull()?.let { (now - it.timestamp) / 60000.0 } ?: Double.MAX_VALUE
+                    // 近似ROC: 从latest.trend推算
+                    val roc = when (latest.trend) {
+                        "rising_fast" -> 0.12; "rising" -> 0.06
+                        "falling_fast" -> -0.12; "falling" -> -0.06
+                        else -> 0.0
+                    }
+                    val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+                    val edocCtx = EDOCCorrector.SnapContext(
+                        currentGlucose = latest.value, glucoseROC = roc,
+                        recentCarbs = recentCarbs, minutesSinceMeal = lastMealMin,
+                        iob = iob, minutesSinceBolus = lastBolusMin, hourOfDay = hour
+                    )
                     val action = edocCorrector.onNewReading(
-                        latest.value, quality, baseParams
+                        latest.value, quality, baseParams, edocCtx
                     )
                     if (action != null && readingCount % 6 == 0) {  // 每30分钟打印一次
                         Log.d(TAG, "EDOC: ${action.timeHorizon} e=${String.format("%.1f", action.error)} " +

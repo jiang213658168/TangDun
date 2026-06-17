@@ -239,7 +239,6 @@ fun SelfLearningCard() {
             } else {
                 // 非活跃状态: 解释数据驱动机制
                 Spacer(Modifier.height(4.dp))
-                val readingsNeeded = maxOf(0, 2 - params.updateCount)
                 Text(
                     if (params.dataDays > 0)
                         "✓ 数据充足 | 等待首次有效误差触发 (每次CGM读数自动检查)"
