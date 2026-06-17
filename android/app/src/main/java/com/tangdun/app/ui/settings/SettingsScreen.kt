@@ -182,13 +182,16 @@ fun SelfLearningCard() {
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("⚡ 即时纠错", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-                Text(
-                    if (edocActive) "${edocStatus.adjustmentRate} | ${edocStatus.correctionsToday}次"
-                    else "⏳ 学习数据不足",
-                    fontSize = 12.sp,
+                val statusText = if (edocActive) {
+                    "${edocStatus.adjustmentRate} | ${edocStatus.correctionsToday}次/今日"
+                } else if (params.dataDays > 0) {
+                    "等待有效误差 (校准后可触发)"
+                } else {
+                    "数据驱动 (随CGM读数自动触发)"
+                }
+                Text(statusText, fontSize = 12.sp,
                     color = if (edocActive) edocTrendColor else TextHint,
-                    fontWeight = FontWeight.SemiBold
-                )
+                    fontWeight = FontWeight.SemiBold)
             }
             if (edocActive) {
                 Spacer(Modifier.height(4.dp))
@@ -234,12 +237,17 @@ fun SelfLearningCard() {
                     }
                 }
             } else {
-                // 非活跃状态: 显示原因
-                Spacer(Modifier.height(2.dp))
+                // 非活跃状态: 解释数据驱动机制
+                Spacer(Modifier.height(4.dp))
+                val readingsNeeded = maxOf(0, 2 - params.updateCount)
                 Text(
-                    if (params.dataDays > 0) "等待足够预测误差 (校准后可触发)"
-                    else "需要CGM数据积累 (约30分钟后自动启动)",
-                    fontSize = 10.sp, color = TextHint
+                    if (params.dataDays > 0)
+                        "✓ 数据充足 | 等待首次有效误差触发 (每次CGM读数自动检查)"
+                    else if (params.updateCount > 0)
+                        "✓ ${params.updateCount}条读数 | 积累中 (每次读数→即时对比→发现偏差→修正)"
+                    else
+                        "未触发: 每条CGM读数到达时自动对比预测与实际，发现偏差立即修正，无需手动操作",
+                    fontSize = 10.sp, color = TextHint, lineHeight = 14.sp
                 )
             }
             Spacer(Modifier.height(2.dp))

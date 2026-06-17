@@ -239,8 +239,8 @@ object XlsxImporter {
                 // 分割: "2026.6.17 下午11:29" → datePart="2026.6.17", timePart="11:29"
                 val cleaned = timeStr.replace("下午", " ").replace("上午", " ").trim()
                 val parts = cleaned.split(Regex("\\s+"))
-                if (parts.size >= 3) {
-                    // parts[0]="2026.6.17", parts[1]="11:29" (or "07:09")
+                if (parts.size >= 2) {
+                    // cleaned="2026.6.17  11:29" → split → ["2026.6.17","11:29"]
                     val datePart = parts[0]
                     val timePart = parts[1]
                     val timeBits = timePart.split(":")
