@@ -269,8 +269,10 @@ class EDOCCorrector(private val context: Context) {
         var batchCorrections = 0
         val saved5min = eta5min
         val saved30min = eta30min
+        val saved60min = eta60min
         eta5min  *= 2.0
         eta30min *= 2.0
+        eta60min *= 2.0
 
         try {
             for (i in 1 until historyRecords.size) {
@@ -289,7 +291,7 @@ class EDOCCorrector(private val context: Context) {
                 val quality = 0.7
                 val label = when { dt <= 10.0 -> "5min"; dt <= 35.0 -> "30min"; else -> "60min" }
 
-                val result = applyCorrection(error, quality, baseParams, label)
+                val result = applyCorrection(error, curr.value, quality, baseParams, label)
                 if (result != null) batchCorrections++
 
                 if (i % 50 == 0 || i == historyRecords.size - 1) {
@@ -299,6 +301,7 @@ class EDOCCorrector(private val context: Context) {
         } finally {
             eta5min = saved5min
             eta30min = saved30min
+            eta60min = saved60min
         }
 
         persistState()
@@ -393,6 +396,9 @@ class EDOCCorrector(private val context: Context) {
 
     /**
      * 对单个时域做误差检查和参数修正 (实时模式：查预测缓存)
+     *
+     * 如果缓存为空(PredictionScreen从未打开过)→用单步模型生成伪预测作为回退
+     * 确保EDOC即使用户只使用HomeScreen也能工作
      */
     private fun checkAndCorrect(
         predictTime: Long, actualValue: Double, quality: Double,
@@ -400,28 +406,37 @@ class EDOCCorrector(private val context: Context) {
     ): CorrectionAction? {
         // 查缓存
         val cached = synchronized(predictionCache) { findNearestPrediction(predictTime) }
-            ?: return null
-        val predicted = cached.atStep(step)
-        val error = actualValue - predicted
-        return applyCorrection(error, quality, baseParams, label)
+
+        val error = if (cached != null) {
+            actualValue - cached.atStep(step)
+        } else {
+            // ★ 回退: 用单步Euler模型生成伪预测 (即使没有PredictionScreen的缓存)
+            // 精度不如完整TCN+DallaMan+BMA, 但方向是对的, 足够驱动EDOC
+            if (step > 6) return null  // 超过30min的回退不可靠, 跳过
+            val effectiveParams = applyDeltas(baseParams)
+            val syntheticPred = runOneStepRK4(effectiveParams, actualValue)
+            actualValue - syntheticPred
+        }
+
+        return applyCorrection(error, actualValue, quality, baseParams, label)
     }
 
     /**
      * 应用修正 (核心逻辑, 被实时模式和批量模式共用)
      *
      * @param error 预测误差 (实际 - 预测, mmol/L)
+     * @param actualGlucose 当前实测血糖值 (mmol/L)
+     * @param actualGlucose 当前实测血糖值 (mmol/L, 用于噪声门槛计算)
      * @param quality 数据质量 (0-1)
      * @param baseParams 当前DallaMan基础参数
      * @param label 时域标签
      */
     private fun applyCorrection(
-        error: Double, quality: Double,
+        error: Double, actualGlucose: Double, quality: Double,
         baseParams: DallaManModel.Parameters, label: String
     ): CorrectionAction? {
-        val actualValue = abs(error)  // 用于噪声门槛计算 (近似)
-
         // ── 噪声过滤 ──
-        val noiseStd = max(SENSOR_MARD * max(actualValue, 5.0) / 100.0, NOISE_FLOOR)
+        val noiseStd = max(SENSOR_MARD * actualGlucose / 100.0, NOISE_FLOOR)
         val effectiveThreshold = noiseStd * (2.0 - quality)
         if (abs(error) < effectiveThreshold) return null
 
@@ -662,10 +677,14 @@ class EDOCCorrector(private val context: Context) {
 
     /** 自适应遗忘因子: 新用户λ低(快学), 老用户λ高(稳学) */
     private fun computeLambda(): Double {
-        val onlineParams = SelfLearningManager.getOnlineLearner().getPersonalParams()
-        val dataDays = onlineParams.dataDays
-        val progress = (dataDays / LAMBDA_DAYS).coerceIn(0.0, 1.0)
-        return LAMBDA_INITIAL + (LAMBDA_FINAL - LAMBDA_INITIAL) * progress
+        return try {
+            val onlineParams = SelfLearningManager.getOnlineLearner().getPersonalParams()
+            val dataDays = onlineParams.dataDays
+            val progress = (dataDays / LAMBDA_DAYS).coerceIn(0.0, 1.0)
+            LAMBDA_INITIAL + (LAMBDA_FINAL - LAMBDA_INITIAL) * progress
+        } catch (e: Exception) {
+            LAMBDA_INITIAL  // 降级: SelfLearningManager未就绪时用初始值
+        }
     }
 
     /** 连续同号的最大长度 */
