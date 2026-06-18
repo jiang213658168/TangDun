@@ -206,13 +206,13 @@ class PredictionViewModel @Inject constructor(
                     } catch (e: Exception) { Log.w(TAG, "TCN异常: ${e.message}") }
                 }
 
-                // ★ 增量自学习残差曲线
+                // ★ 增量自学习残差曲线 (始终显示, 训练不足时权重自动为0)
                 var incCurve: List<Double> = emptyList()
                 try {
                     val incLearner = SelfLearningManager.getIncrementalLearner()
                     val incStats = incLearner.getStats()
                     val incUpdates = incStats["updates"] as? Int ?: 0
-                    if (incUpdates > 20 && allRecords.size >= 50) {
+                    if (allRecords.size >= 50) {
                         val fe = FeatureExtractor()
                         val glucoseHistory = allRecords.map { it.value }.toDoubleArray()
                         val idx = glucoseHistory.size - 1  // 当前点
