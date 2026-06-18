@@ -248,7 +248,8 @@ fun StatItem2(label: String, value: String) {
 
 @Composable
 fun PredictionCurveCard(history: List<Pair<Long, Double>>, curve: List<Double>, physio: List<Double>, incremental: List<Double>, current: Double, targetLow: Double, targetHigh: Double) {
-    val hasThree = physio.isNotEmpty() && incremental.isNotEmpty()
+    // ★ physio曲线(DallaMan)始终存在 → 至少2条线; 增量>20次更新时3条线
+    val showMulti = physio.isNotEmpty()
     Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
         Column(Modifier.padding(12.dp)) {
             Text("血糖预测曲线", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -258,12 +259,12 @@ fun PredictionCurveCard(history: List<Pair<Long, Double>>, curve: List<Double>, 
             } else {
                 AndroidView(
                     factory = { ctx -> PredictionChartView(ctx).apply {
-                        if (hasThree) setThreeCurves(history, physio, incremental, curve, current)
+                        if (showMulti) setThreeCurves(history, physio, incremental, curve, current)
                         else setData(history, curve, current)
                         setTargets(targetLow, targetHigh)
                     } },
                     update = { it.apply {
-                        if (hasThree) setThreeCurves(history, physio, incremental, curve, current)
+                        if (showMulti) setThreeCurves(history, physio, incremental, curve, current)
                         else setData(history, curve, current)
                         setTargets(targetLow, targetHigh)
                     } },
