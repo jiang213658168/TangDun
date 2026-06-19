@@ -398,20 +398,24 @@ fun InsightStatCard(
 
             Spacer(Modifier.height(12.dp))
 
-            // 数值 (大)
+            // 数值 (修复: 用 headlineSmall 而非 TangDunNumberStyle (48sp), 避免窄卡片断行)
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     text = value,
-                    style = TangDunNumberStyle,
-                    color = MaterialTheme.colorScheme.onSurface
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
                 )
                 if (unit != null) {
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(2.dp))
                     Text(
                         text = unit,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 6.dp)
+                        modifier = Modifier.padding(bottom = 4.dp),
+                        maxLines = 1,
                     )
                 }
             }
@@ -422,7 +426,8 @@ fun InsightStatCard(
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
             )
         }
     }

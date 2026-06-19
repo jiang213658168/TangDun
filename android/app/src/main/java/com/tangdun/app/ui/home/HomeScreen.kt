@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,6 +49,8 @@ fun CalibrationCard(currentGlucose: Double?, offset: Double, calCount: Int, conf
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        // ★ 修复黑框: 显式去掉 M3 Card 的默认 1dp 边框 (light mode 下 outline 近黑色)
+        border = androidx.compose.foundation.BorderStroke(0.dp, androidx.compose.ui.graphics.Color.Transparent),
         colors = CardDefaults.cardColors(containerColor = if (calCount == 0) AlertWarning.copy(alpha = 0.06f) else AlertSuccess.copy(alpha = 0.06f))
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
@@ -617,29 +621,58 @@ fun GlucoseRecordsList(
     onDelete: (com.tangdun.app.data.local.entity.GlucoseRecord) -> Unit,
     onEdit: (com.tangdun.app.data.local.entity.GlucoseRecord, Double) -> Unit
 ) {
+    // ★ 修复: 去掉 takeLast(10) 限制, 用 LazyColumn 支持滑动删除
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
         shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = androidx.compose.foundation.BorderStroke(0.dp, androidx.compose.ui.graphics.Color.Transparent),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "今日血糖记录",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-
-            records.takeLast(10).reversed().forEach { record ->
-                GlucoseRecordItem(
-                    record = record,
-                    onDelete = { onDelete(record) },
-                    onEdit = { newValue -> onEdit(record, newValue) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "今日血糖记录",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
                 )
-                if (record != records.first()) {
-                    Divider(modifier = Modifier.padding(vertical = 4.dp))
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "${records.size} 条",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (records.size > 10) {
+                Text(
+                    text = "← 左右滑动删除",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // LazyColumn: 支持长列表性能 + 显示所有记录 (去掉 takeLast 10 限制)
+            androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp),  // 限制最大高度, 避免撑爆整个页面
+                verticalArrangement = Arrangement.spacedBy(0.dp)
+            ) {
+                items(
+                    items = records.reversed(),  // 最新在上
+                    key = { record: com.tangdun.app.data.local.entity.GlucoseRecord -> record.id }
+                ) { record ->
+                    GlucoseRecordItem(
+                        record = record,
+                        onDelete = { onDelete(record) },
+                        onEdit = { newValue -> onEdit(record, newValue) }
+                    )
+                    Divider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                        thickness = 0.5.dp
+                    )
                 }
             }
         }
@@ -863,14 +896,57 @@ fun AddGlucoseDialog(
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.height(8.dp))
+
+                // ★ 修复跨日选择: 加昨天/今天/明天 快捷切换
+                // 23:59 打的胰岛素编辑时, 可以选"昨天"
+                val now = System.currentTimeMillis()
+                val today = Calendar.getInstance().apply {
+                    timeInMillis = now
+                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                }
+                fun shiftDate(deltaDays: Int) {
+                    val cal = Calendar.getInstance().apply { timeInMillis = selectedDate }
+                    cal.add(Calendar.DAY_OF_MONTH, deltaDays)
+                    selectedDate = cal.timeInMillis
+                }
+                val dayLabels = listOf("昨天" to -1, "今天" to 0, "明天" to 1)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    dayLabels.forEach { (label, delta) ->
+                        val targetCal = Calendar.getInstance().apply {
+                            timeInMillis = today.timeInMillis
+                            add(Calendar.DAY_OF_MONTH, delta)
+                        }
+                        val isSelected = run {
+                            val sc = Calendar.getInstance().apply { timeInMillis = selectedDate }
+                            sc.get(Calendar.YEAR) == targetCal.get(Calendar.YEAR) &&
+                            sc.get(Calendar.DAY_OF_YEAR) == targetCal.get(Calendar.DAY_OF_YEAR)
+                        }
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { shiftDate(delta) },
+                            label = {
+                                Text(label, style = MaterialTheme.typography.bodySmall)
+                            }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+
                 OutlinedButton(
                     onClick = { showTimePicker = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.AccessTime, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
+                    // ★ 显示完整日期+时间, 用户能看清选了哪一天
+                    val dateCal = Calendar.getInstance().apply { timeInMillis = selectedDate }
+                    val monthDay = String.format("%02d-%02d", dateCal.get(Calendar.MONTH) + 1, dateCal.get(Calendar.DAY_OF_MONTH))
                     Text(
-                        text = String.format("%02d:%02d", hour, minute),
+                        text = "$monthDay ${String.format("%02d:%02d", hour, minute)}",
                         style = MaterialTheme.typography.bodyLarge
                     )
                 }

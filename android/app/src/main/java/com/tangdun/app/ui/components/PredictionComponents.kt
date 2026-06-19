@@ -309,14 +309,15 @@ fun PredictionStatCard(
         ?: MaterialTheme.colorScheme.outline
     val animatedColor by animateColorAsState(valueColor, label = "valueColor")
 
+    // ★ 修复黑框: 用更细更淡的边框 + 仅在 primary 时才加
     val border = if (isPrimary) {
-        BorderStroke(2.dp, animatedColor.copy(alpha = 0.5f))
+        BorderStroke(1.dp, animatedColor.copy(alpha = 0.35f))
     } else null
 
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .then(if (isPrimary) Modifier.shadow(4.dp, RoundedCornerShape(20.dp), clip = false) else Modifier),
+            .then(if (isPrimary) Modifier.shadow(2.dp, RoundedCornerShape(20.dp), clip = false) else Modifier),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isPrimary) animatedColor.copy(alpha = 0.08f)
@@ -327,26 +328,32 @@ fun PredictionStatCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 16.dp),
+                .padding(horizontal = 10.dp, vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
+            // ★ 修复数字换行: 用 headlineSmall 而非 TangDunNumberStyle (28sp)
+            //   3 个卡片 weight(1f) 时宽度有限, 大字体易断行
             Text(
                 text = value?.let { String.format("%.1f", it) } ?: "--",
-                style = TangDunNumberStyle.copy(fontSize = 28.sp, lineHeight = 32.sp),
+                style = MaterialTheme.typography.headlineSmall,
                 color = animatedColor,
                 fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
             )
             Spacer(Modifier.height(2.dp))
             Text(
                 text = "mmol/L",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
             )
         }
     }

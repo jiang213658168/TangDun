@@ -3,6 +3,8 @@ package com.tangdun.app.ui.chat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -314,7 +316,10 @@ fun ChatInputBar(
     var text by remember { mutableStateOf("") }
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .imePadding()           // ★ 键盘弹出时自动上移
+            .navigationBarsPadding(), // ★ 同时处理底部导航栏
         shadowElevation = 8.dp
     ) {
         Row(

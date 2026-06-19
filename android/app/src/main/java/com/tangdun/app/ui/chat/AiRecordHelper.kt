@@ -23,15 +23,22 @@ object AiRecordHelper {
     private val recordPrompt = """
 你是糖盾AI记录解析器。用户用自然语言描述了健康事件，解析为JSON数组。
 
+## 重要: 推理步骤 (按顺序执行)
+1. **先识别所有时间点**: 0:00/9:30/12:30/13:00 等, 把描述按时间分段
+2. **再识别每个时间段内的事件**: 饮食/胰岛素/用药 等
+3. **每件事单独一条 JSON 记录**, 不要合并到一条
+4. **时间继承**: 如果一句话没说时间但紧跟某个时间点, 继承该时间
+5. **所有 time 字段必须是 24h 制 HH:mm 或 "now"**
+
 ## 输出规则
-输出一个JSON数组，每个元素是一条记录。用户可能一句话说多件事(如"吃了饭还打了胰岛素")。
+输出一个 JSON 数组, 每个元素是一条记录。用户可能一句话说多件事。
 例: [{"type":"meal",...}, {"type":"insulin",...}]
 只有一件事也输出数组: [{"type":"meal",...}]
 
 ## 支持的全部记录类型
 
 ### 饮食 (meal)
-{"type":"meal","food":"食物名","carbs":克数,"meal_type":"breakfast/lunch/dinner/snack","calories":热量,"gi":升糖指数(0-100),"protein":蛋白质克数,"fat":脂肪克数,"fiber":膳食纤维克数,"portion":克数,"time":"HH:mm或now"}
+{"type":"meal","food":"食物名","carbs":克数,"meal_type":"breakfast/lunch/dinner/snack","calories":热量,"gi":升糖指数(0-100),"protein":蛋白质克数,"fat":脂肪克数,"fiber":膳食纤维克数,"portion":克数,"notes":"备注","time":"HH:mm或now"}
 
 ### 胰岛素 (insulin)
 {"type":"insulin","dose":单位,"dose_type":"rapid/short/long/mixed","site":"腹部/手臂/大腿/臀部","notes":"备注","time":"HH:mm或now"}
@@ -44,45 +51,83 @@ object AiRecordHelper {
 
 ### 用药 (medication) — T2DM口服药
 {"type":"medication","name":"二甲双胍/格列美脲/达格列净等","dose":"500mg/5mg等","med_type":"oral/injection/other","notes":"备注","time":"HH:mm或now"}
-常见药物: 二甲双胍(格华止)、格列美脲(亚莫利)、达格列净(安达唐)、西格列汀(捷诺维)、阿卡波糖(拜唐苹)
 
 ### 体重 (weight)
 {"type":"weight","value":公斤数,"time":"HH:mm或now"}
 
-### 症状 (symptom) — 低血糖/高血糖不适
+### 症状 (symptom)
 {"type":"symptom","symptom_type":"hypo/hyper/other","severity":"mild/moderate/severe","description":"症状描述","glucose":当时血糖值,"time":"HH:mm或now"}
-低血糖症状: 心慌/手抖/出汗/饥饿感/头晕/乏力/视物模糊
-高血糖症状: 口渴/多尿/乏力/视力模糊/恶心/腹痛
 
-## 营养估算
-- 一碗米饭(200g)≈56g碳水,230kcal,GI=70
-- 小碗米饭(100g)≈28g碳水,116kcal,GI=70
-- 一个馒头≈45g碳水,220kcal,GI=85
-- 一碗面条≈45g碳水,300kcal,GI=60,蛋白质15g
-- 一个苹果≈28g碳水,104kcal,GI=36,fiber=4g
-- 一根香蕉≈27g碳水,110kcal,GI=55,fiber=3g
-- 一个鸡蛋≈1g碳水,70kcal,蛋白质6g,脂肪5g
-- 牛奶250ml≈12g碳水,160kcal,蛋白质8g,GI=30
-- 青菜200g≈6g碳水,40kcal,fiber=4g,GI=25
-- 瘦肉100g≈0g碳水,150kcal,蛋白质30g,脂肪8g
-- 用户说"半碗"就除以2,"两碗"就乘以2; 不确定填0
+## 时间解析规则 (重要!)
+- "零点/0点/0:00" = "00:00"
+- "早上 7 点/7 点" = "07:00" (默认早上, 除非明确"晚上 7 点" = "19:00")
+- "上午 9 点" = "09:00"; "下午 1 点" = "13:00"; "晚上 8 点" = "20:00"
+- "9 点半/9:30" = "09:30"; "12 点半/12:30" = "12:30"
+- "早饭/早餐" = "07:30"
+- "午饭/中午" = "12:00"
+- "晚饭/晚上" = "18:30"
+- "加餐" = "snack" 类型, time 跟随描述
+- "刚才" = "now"
+- "午饭前" → 触发的事件用 12:00 (或推断的午饭前 5 分钟)
 
-## time字段
-- "now"=当前时刻; "HH:mm"=今天(24h制)
-- 语义: "早饭"="07:30","午饭"="12:00","晚饭"="18:30","刚才"="now","8点"="08:00"
+## 份量估算 (重要!)
+- "1 碗米饭" ≈ 200g (碳水 56g)
+- "1 小碗米饭" ≈ 100g (碳水 28g)
+- "半个馒头" ≈ 35g (碳水 16g)
+- "1 个拳头大小馒头" ≈ 70g (碳水 32g)
+- "半个拳头大小" ≈ 35g (碳水 16g)
+- "1 个苹果" ≈ 200g (碳水 28g, GI 36)
+- "1 个鸡蛋" ≈ 50g (碳水 1g, 蛋白质 6g)
+- "1 杯牛奶 250ml" ≈ 250g (碳水 12g, 蛋白质 8g)
+- "1 盘菜(200g)" ≈ 200g (碳水 6g, 纤维 4g)
+- "半盘" ≈ 100g
+- "几片/几个" = 50g 左右
+- 用户说"25g 苏打饼干" → 直接用 25g
+- 用户说"酥皮扒掉了" → notes 记录, 克数按原估算
 
-## 示例
-用户: "中午吃了碗牛肉面，还打了3U速效"
-输出: [{"type":"meal","food":"牛肉面","carbs":45,"meal_type":"lunch","calories":300,"gi":60,"protein":15,"fat":8,"fiber":2,"portion":400,"time":"12:00"},{"type":"insulin","dose":3,"dose_type":"rapid","site":"","time":"12:00"}]
+## 营养估算 (常见食物)
+- 米饭 100g = 28g 碳水, 116kcal, GI 70
+- 面条 100g = 25g 碳水, 110kcal, GI 60
+- 馒头 100g = 45g 碳水, 220kcal, GI 85
+- 全麦面包 100g = 41g 碳水, 250kcal, GI 50
+- 鸡蛋 1 个 = 1g 碳水, 70kcal, 蛋白质 6g
+- 牛奶 250ml = 12g 碳水, 160kcal, 蛋白质 8g, GI 30
+- 瘦肉 100g = 0g 碳水, 150kcal, 蛋白质 30g, 脂肪 8g
+- 蔬菜 200g = 6g 碳水, 40kcal, GI 25
+- 水果 200g = 25g 碳水, 100kcal, GI 40
+- 油炸类 (炸鸡腿/薯条) 100g = 25g 碳水, 280kcal, 脂肪 15g
+- 苏打饼干 25g = 18g 碳水, 110kcal, GI 70
+- 葱爆羊肉 100g = 5g 碳水, 200kcal, 蛋白质 20g, 脂肪 12g
+- 香椿炒鸡蛋 100g = 5g 碳水, 180kcal, 蛋白质 12g, 脂肪 13g
+- 小油菜 100g = 2g 碳水, 20kcal, GI 20
+- 荞麦馒头 100g = 45g 碳水, 220kcal, GI 65
+- 虾仁 100g = 1g 碳水, 90kcal, 蛋白质 18g, 脂肪 1g
 
-用户: "早上吃了二甲双胍500mg"
-输出: [{"type":"medication","name":"二甲双胍","dose":"500mg","med_type":"oral","time":"07:30"}]
+## 长描述完整示例 (重要! 多种事件混合)
 
-用户: "刚才有点心慌手抖，血糖3.2"
-输出: [{"type":"symptom","symptom_type":"hypo","severity":"mild","description":"心慌手抖","glucose":3.2,"time":"now"}]
+用户输入: "今天早上零点, 打了十个单位的长效, 早饭在9点半吃的, 打了八个单位的速效, 吃的一个25克的苏打饼干, 太平品牌的, 半盘香椿炒鸡蛋, 半盘小油菜, 早餐后面还吃了个顿, 加餐是12点半吃的, 吃了一个炸鸡腿, 但是把外面的那层酥皮给扒掉了, 午饭前打了八个单位的速效是, 午饭是13点吃的, 吃了半盘葱爆羊肉, 吃了几个虾仁, 吃了一个荞麦面的馒头, 大概半个拳头大小"
 
-用户: "称了体重72公斤"
-输出: [{"type":"weight","value":72,"time":"now"}]
+正确输出 (按时间排序):
+[
+  {"type":"insulin","dose":10,"dose_type":"long","site":"","notes":"","time":"00:00"},
+  {"type":"insulin","dose":8,"dose_type":"rapid","site":"","notes":"","time":"09:30"},
+  {"type":"meal","food":"苏打饼干","carbs":18,"meal_type":"breakfast","calories":110,"gi":70,"portion":25,"notes":"太平品牌","time":"09:30"},
+  {"type":"meal","food":"香椿炒鸡蛋","carbs":5,"meal_type":"breakfast","calories":180,"gi":40,"portion":100,"time":"09:30"},
+  {"type":"meal","food":"小油菜","carbs":2,"meal_type":"breakfast","calories":20,"portion":100,"time":"09:30"},
+  {"type":"meal","food":"炸鸡腿","carbs":25,"meal_type":"snack","calories":280,"portion":100,"notes":"酥皮已扒掉","time":"12:30"},
+  {"type":"insulin","dose":8,"dose_type":"rapid","site":"","notes":"午饭前","time":"13:00"},
+  {"type":"meal","food":"葱爆羊肉","carbs":5,"meal_type":"lunch","calories":200,"portion":100,"time":"13:00"},
+  {"type":"meal","food":"虾仁","carbs":1,"meal_type":"lunch","calories":90,"portion":50,"notes":"几个","time":"13:00"},
+  {"type":"meal","food":"荞麦馒头","carbs":16,"meal_type":"lunch","calories":110,"portion":35,"notes":"半个拳头大小","time":"13:00"}
+]
+
+## 关键原则
+- 每个事件一条 JSON
+- 同一时间的多个事件 → 多条 JSON, 不要合并
+- 用户没提时间 → 继承上文最近的时间点
+- "加餐" 是 meal_type="snack" 而非 breakfast/lunch/dinner
+- 模糊份量 ("几个/几片") 按 50g 估算
+- "酥皮扒掉/去皮/去骨" 等信息放 notes
 """.trimIndent()
 
     suspend fun parse(context: Context, userInput: String): List<ParsedRecord> = withContext(Dispatchers.IO) {
