@@ -1,5 +1,6 @@
 package com.tangdun.app.domain.algorithm
 
+import android.util.Log
 import kotlin.math.*
 
 /**
@@ -21,6 +22,10 @@ import kotlin.math.*
  *       IEEE Trans Biomed Eng, 54(10):1740-1749, 2007
  */
 class DallaManModel {
+
+    companion object { private const val TAG = "DallaMan" }
+
+
 
     data class Parameters(
         // ── 体重个性化 ──
@@ -217,9 +222,14 @@ class DallaManModel {
         }
 
         // ★ 从皮下储库推算初始血浆胰岛素（避免与IOB重复计算）
-        // 伪稳态: dI/dt ≈ 0 ⇒ I_ss ≈ ka2*subQ2 / (ke*Vi) + Ib
+        // 修复前: 伪稳态 dI/dt ≈ 0 忽略了 endogenous 项 (sigma), T2DM 餐后 IOB 低估
+        // 修复后: 包含 endogenous 项 (G > Gb 时胰腺分泌), T1DM sigma=0 自然回退到原公式
+        // 完整稳态: 0 = ka2*subQ2/Vi - ke*I + sigma*(G-Gb)
+        //          → I_ss = (ka2*subQ2/Vi + sigma*(G-Gb)) / ke
+        val Gexcess = max(0.0, currentGlucose - params.Gb)
         val insFromDepot = params.ka2 * subQ2 / (params.ke * Vi)
-        var I = (Ib + insFromDepot).coerceIn(Ib * 0.5, Ib * 8.0)  // 限制在生理范围
+        val endogenousSteady = params.sigma * Gexcess / params.ke  // T1DM=0
+        var I = (Ib + insFromDepot + endogenousSteady).coerceIn(Ib * 0.5, Ib * 8.0)  // 限制在生理范围
         // 若调用者提供了显著高于储库推算的currentInsulin（例如刚注射完），取其高值
         if (currentInsulin > I * 1.5) I = currentInsulin.coerceAtMost(Ib * 8.0)
 
@@ -288,13 +298,23 @@ class DallaManModel {
 
             // 更新状态
             G  = (s[0] + dt / 6.0 * (k1[0] + 2*k2[0] + 2*k3[0] + k4[0])).coerceIn(1.5, 28.0)
-            I  = max(0.5, s[1] + dt / 6.0 * (k1[1] + 2*k2[1] + 2*k3[1] + k4[1]))
+            I  = max(0.5, s[1] + dt / 6.0 * (k1[1] + 2*k2[1] + 2*k3[1] + k4[1])).coerceAtMost(Ib * 8.0)  // 加上 I 上限防爆
             X  = (s[2] + dt / 6.0 * (k1[2] + 2*k2[2] + 2*k3[2] + k4[2])).coerceIn(0.0, 5.0)
-            X_L = (s[3] + dt / 6.0 * (k1[3] + 2*k2[3] + 2*k3[3] + k4[3])).coerceIn(0.0, 5.0)
+            X_L = (s[3] + dt / 6.0 * (k1[3] + 2*k3[3] + 2*k3[3] + k4[3])).coerceIn(0.0, 5.0)
             stomach = max(0.0, s[4] + dt / 6.0 * (k1[4] + 2*k2[4] + 2*k3[4] + k4[4]))
             gut   = max(0.0, s[5] + dt / 6.0 * (k1[5] + 2*k2[5] + 2*k3[5] + k4[5]))
             subQ1 = max(0.0, s[6] + dt / 6.0 * (k1[6] + 2*k2[6] + 2*k3[6] + k4[6]))
             subQ2 = max(0.0, s[7] + dt / 6.0 * (k1[7] + 2*k2[7] + 2*k3[7] + k4[7]))
+
+            // ★ 修复 NaN 防御: 如果 ODE 数值发散 (除零/超界), 停止仿真, 复用上一步结果
+            if (G.isNaN() || G.isInfinite()) {
+                Log.w(TAG, "RK4 G 发散 ($G), 停止仿真, 返回当前曲线")
+                break
+            }
+            if (I.isNaN() || I.isInfinite()) {
+                Log.w(TAG, "RK4 I 发散 ($I), 重置为 Ib")
+                I = Ib
+            }
         }
 
         return result

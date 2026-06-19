@@ -280,8 +280,14 @@ class OnlineLearner(private val context: Context) {
     /** 更新数据完整度: 由外部检测到饮食/胰岛素记录后调用 */
     fun updateDataCompleteness(hasMeals: Boolean, hasInsulin: Boolean) {
         val old = getPersonalParams().dataCompleteness
-        // 有血糖数据至少=0.3(OnlineLearner已学到基线/变异/时段)
-        val target = when { hasMeals && hasInsulin -> 1.0; hasMeals -> 0.6; else -> 0.3 }
+        // ★ 修复 OnlineLearner bug: 之前 hasInsulin=true hasMeals=false 会被 else 吞掉给 0.3
+        //   实际上有胰岛素数据意味着知道 IOB, 仍能学到敏感性, 应给 0.5
+        val target = when {
+            hasMeals && hasInsulin -> 1.0
+            hasMeals -> 0.6
+            hasInsulin -> 0.5
+            else -> 0.3
+        }
         val new = old * 0.7 + target * 0.3  // EWMA平滑
         sharedPref.edit().putFloat("data_completeness", new.toFloat()).apply()
     }
@@ -353,11 +359,28 @@ class OnlineLearner(private val context: Context) {
 
     /**
      * 卡尔曼滤波平滑
+     *
+     * 修复前: P=1 固定, q 完全没用, 这不是卡尔曼滤波, 是带固定增益的 EWMA
+     * 修复后: 真正的 1D 卡尔曼滤波, q (过程噪声) 和 r (观测噪声) 都生效, P 动态更新
+     *
+     * @param prevEstimate 上一步估计值
+     * @param measurement 当前观测值
+     * @param q 过程噪声 (模型不确定性, 越大越信任观测)
+     * @param r 观测噪声 (传感器不确定性, 越大越信任模型预测)
      */
+    private var kalmanP: Double = 1.0  // 估计协方差, 在调用间保持
     private fun kalmanSmooth(prevEstimate: Double, measurement: Double, q: Double, r: Double): Double {
-        val p = 1.0  // 简化
-        val k = p / (p + r)  // 卡尔曼增益
-        return prevEstimate + k * (measurement - prevEstimate)
+        // 预测步: P_pred = P + q
+        val pPred = kalmanP + q
+        // 更新步: 卡尔曼增益 K = P_pred / (P_pred + r)
+        val k = pPred / (pPred + r)
+        // 状态更新: x_new = x_prev + K * (z - x_prev)
+        val newEstimate = prevEstimate + k * (measurement - prevEstimate)
+        // 协方差更新: P_new = (1 - K) * P_pred
+        kalmanP = (1.0 - k) * pPred
+        // 防退化: 协方差不能太小 (学不动) 或太大 (不稳定)
+        kalmanP = kalmanP.coerceIn(1e-6, 1.0)
+        return newEstimate
     }
 
     /**

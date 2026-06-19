@@ -134,6 +134,28 @@ class FusionPredictor(private val context: Context) {
     }
 
     /**
+     * 仅跑 TCN, 不做 DallaMan/BMA, 用于 PredictionViewModel 主路径 (Path A)
+     * 返回 null 表示 TCN 不可用
+     */
+    fun predictTCNDirect(
+        features: FloatArray, currentGlucose: Double
+    ): List<Double>? {
+        return try {
+            val result = tcnPredictor.fullPredict(features, currentGlucose)
+            if (result != null) {
+                Log.d(TAG, "TCN直跑成功, 曲线长度=${result.curve.size}")
+                result.curve
+            } else {
+                Log.w(TAG, "TCN预测失败, 返回null")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "TCN直跑异常: ${e.message}")
+            null
+        }
+    }
+
+    /**
      * TCN模型预测（使用全部15维特征）
      */
     private fun predictWithTCN(

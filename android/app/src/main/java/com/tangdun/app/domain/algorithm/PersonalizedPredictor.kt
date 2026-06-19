@@ -31,53 +31,74 @@ class PersonalizedPredictor(private val context: Context) {
         return ok
     }
 
-    fun predict(
+    /**
+     * TCN 单独预测 (只返回 TCN 曲线, 不叠加任何修正)
+     * 供 PredictionViewModel 在主路径之外单独拿 TCN 输出用于 BMA 融合
+     */
+    fun predictTCNOnly(
         glucoseHistory: DoubleArray, currentGlucose: Double,
         bolusHistory: DoubleArray? = null, carbHistory: DoubleArray? = null,
         heartRateHistory: DoubleArray? = null, stepHistory: DoubleArray? = null
-    ): FusionPredictor.FusionResult {
-        // 1. TCN + DallaMan 基础预测
-        val base = fusionPredictor.predict(
-            glucoseHistory, currentGlucose,
-            bolusHistory, carbHistory, heartRateHistory, stepHistory
-        )
+    ): List<Double>? {
+        return try {
+            val features = featureExtractor.extract(
+                glucoseHistory, glucoseHistory.size - 1,
+                bolusHistory, carbHistory, heartRateHistory, stepHistory
+            )
+            fusionPredictor.predictTCNDirect(features, currentGlucose)
+        } catch (e: Exception) {
+            Log.w(TAG, "predictTCNOnly 失败: ${e.message}")
+            null
+        }
+    }
 
-        // 2. 15维特征（供增量学习器使用）
+    /**
+     * 对给定基础曲线叠加个性化 + 增量残差修正
+     *
+     * @param baseCurve 基础曲线 (通常是 Path A 的 DallaMan 生理曲线, 已带 EDOC 修正)
+     * @param currentGlucose 当前血糖, 用于残差相对幅度计算
+     * @param glucoseHistory 血糖历史 (供特征提取)
+     * @param bolusHistory 胰岛素历史
+     * @param carbHistory 碳水历史
+     * @return 叠加了 OnlineLearner 个性化 + 增量网络残差的曲线
+     */
+    fun applyPersonalization(
+        baseCurve: List<Double>, currentGlucose: Double,
+        glucoseHistory: DoubleArray,
+        bolusHistory: DoubleArray? = null, carbHistory: DoubleArray? = null,
+        heartRateHistory: DoubleArray? = null, stepHistory: DoubleArray? = null
+    ): List<Double> {
+        if (baseCurve.isEmpty()) return baseCurve
+
+        // 1. 15维特征 (供增量学习器使用)
         val features = featureExtractor.extract(
             glucoseHistory, glucoseHistory.size - 1,
             bolusHistory, carbHistory, heartRateHistory, stepHistory
         )
 
-        // 3. 增量残差修正 (自适应: 更新数越多→权重越大)
+        // 2. 增量残差修正 (自适应: 更新数越多→权重越大)
         val residual = incrementalLearner.forward(features)
         val incUpdates = incrementalLearner.getStats()["updates"] as Int
-        val hasInc = incUpdates > 20  // 降门槛: 50→20 (约10h数据即可)
-        val incWeight = minOf(incUpdates.toDouble() / 300.0, 0.4)  // 300次→满权重0.4
+        val hasInc = incUpdates > 20
+        val incWeight = minOf(incUpdates.toDouble() / 300.0, 0.4)
 
-        // 4. 时段模式
+        // 3. 时段模式
         val hourlyDev = onlineLearner.getHourlyDeviation(
             java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
         )
 
-        // 5. 合成曲线
-        val curve = base.curve.mapIndexed { i, v ->
+        // 4. 合成: 基础曲线 + 个性化偏移 + 时段模式 + 残差
+        //   残差按 currentGlucose × polynomial × incWeight 计算 (相对 TCN 输出格式)
+        val n = baseCurve.size
+        return baseCurve.mapIndexed { i, v ->
             var a = onlineLearner.applyPersonalization(v, currentGlucose, i)
-            if (hourlyDev != 0.0) a += hourlyDev * kotlin.math.exp(-i * 5.0 / 60.0)
+            if (hourlyDev != 0.0 && i < n) a += hourlyDev * kotlin.math.exp(-i * 5.0 / 60.0)
             if (hasInc) {
                 val t = i / 24.0
                 a += currentGlucose * (residual[0]*t*t*t + residual[1]*t*t + residual[2]*t + residual[3]) * incWeight
             }
             a.coerceIn(1.0, 30.0)
         }
-
-        val label = buildString { append("BMA+个性"); if (hasInc) append("+Inc") }
-        return FusionPredictor.FusionResult(
-            curve = curve, tcnCurve = base.tcnCurve, physioCurve = base.physioCurve,
-            tcnWeight = base.tcnWeight, physioWeight = base.physioWeight,
-            predicted5min = curve.getOrNull(1), predicted15min = curve.getOrNull(3),
-            predicted30min = curve.getOrNull(6), predicted60min = curve.getOrNull(12),
-            predicted120min = curve.getOrNull(24), modelType = label
-        )
     }
 
     suspend fun learn(glucoseDao: GlucoseDao): Boolean {
@@ -93,4 +114,7 @@ class PersonalizedPredictor(private val context: Context) {
         "incremental" to incrementalLearner.getStats()
     )
     fun close() { fusionPredictor.close() }
+
+    /** 仅供 PersonalizedPredictor 内部使用, 暴露 fusionPredictor 引用 */
+    internal val fusionPredictorInternal get() = fusionPredictor
 }

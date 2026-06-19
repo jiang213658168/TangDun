@@ -241,6 +241,17 @@ class SettingsManager(private val context: Context) {
         sharedPref.edit().putFloat("carb_ratio", ratio).apply()
     }
 
+    // ===== AutoParamEstimator 自动参数估计开关 =====
+    // 修复 Smell 2: 之前 PredictionViewModel 每次预测都自动覆盖用户的 ISF/CR 设置
+    // 临床医生和谨慎用药的用户会失去控制, 现在默认关闭, 需要时手动开启
+    fun isAutoParamEstimateEnabled(): Boolean {
+        return sharedPref.getBoolean("auto_param_estimate", false)
+    }
+
+    fun setAutoParamEstimateEnabled(enabled: Boolean) {
+        sharedPref.edit().putBoolean("auto_param_estimate", enabled).apply()
+    }
+
     // ===== AI对话配置 =====
 
     /** AI服务商: openai / ernie */

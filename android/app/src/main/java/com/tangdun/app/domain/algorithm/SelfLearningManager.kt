@@ -28,11 +28,17 @@ class SelfLearningManager(private val context: Context) {
     companion object {
         private const val TAG = "SelfLearn"
         @Volatile private var instance: SelfLearningManager? = null
+        // ★ 修复 Smell 3: 单例初始化锁, 防止并发 init 导致 start() 被调用 2 次
+        private val initLock = Any()
 
         fun init(appContext: Context) {
             if (instance == null) {
-                instance = SelfLearningManager(appContext)
-                instance?.start()
+                synchronized(initLock) {
+                    if (instance == null) {
+                        instance = SelfLearningManager(appContext)
+                        instance?.start()
+                    }
+                }
             }
         }
 
@@ -117,6 +123,9 @@ class SelfLearningManager(private val context: Context) {
     val onlineLearner = OnlineLearner(context)
     val incrementalLearner = IncrementalLearner(context)
     val edocCorrector = EDOCCorrector(context)
+    // ★ 修复 Bug 4: IncrementalLearner 需要真实 TCN 推理结果做训练样本
+    private val tcnPredictor = TCNPredictor(context)
+    private var tcnLoaded = false
     private var readingCount = 0
 
     // 当前DallaMan基础参数缓存 (由PredictionViewModel传入, 或自动创建)
@@ -155,6 +164,15 @@ class SelfLearningManager(private val context: Context) {
 
         scope.launch {
             delay(5000)
+            // ★ 加载 TCN 模型, 供 IncrementalLearner.periodicLearn 训练样本用真实 tcnParams
+            tcnLoaded = try {
+                tcnPredictor.loadModel()
+            } catch (e: Exception) {
+                Log.w(TAG, "TCN加载失败, IncrementalLearner 将使用零参降级: ${e.message}")
+                false
+            }
+            Log.i(TAG, "TCN ${if (tcnLoaded) "已加载" else "未加载"}")
+
             val db = com.tangdun.app.TangDunApp.getDatabase(context)
             val dao = db.glucoseDao()
 
@@ -218,7 +236,10 @@ class SelfLearningManager(private val context: Context) {
                     if (readingCount % 12 == 0) {
                         val (hasMeals, hasInsulin) = checkDataCompleteness()
                         onlineLearner.updateDataCompleteness(hasMeals, hasInsulin)
-                        incrementalLearner.periodicLearn(dao)
+                        // ★ 修复 Bug 4: 传入真实 TCN 推理回调, 让 IncrementalLearner 拿到真的 tcnParams
+                        incrementalLearner.periodicLearn(dao) { features, currentGlucose ->
+                            if (tcnLoaded) tcnPredictor.predict(features) else null
+                        }
                         Log.d(TAG, "增量学习@${readingCount}条 | " +
                             "EDOC:${edocCorrector.getStatus().totalCorrections}次 | " +
                             "C:${String.format("%.1f", onlineLearner.getPersonalParams().dataCompleteness)}")

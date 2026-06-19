@@ -3,6 +3,8 @@ package com.tangdun.app.domain.algorithm
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.*
 
 /**
@@ -283,16 +285,20 @@ class EDOCCorrector(private val context: Context) {
      * 对导入的历史数据, 按时间顺序逐条处理:
      *   用当前模型+前一条数据的状态做预测, 和下一条实际值对比, 累计修正
      *
+     * 修复前: 这是同步阻塞函数, 1000 条历史 → 27000 次 RK4 → UI 卡 30-60 秒
+     * 修复后: 改为 suspend, 内部 withContext(Dispatchers.Default) 跑 CPU 密集循环,
+     *         调用方在协程里 await, UI 不阻塞
+     *
      * @param historyRecords 按时间升序排列的血糖记录
      * @param baseParams 当前DallaMan基础参数
      * @param onProgress 进度回调 (已处理条数, 总条数, 修正次数)
      */
-    fun processBatchImport(
+    suspend fun processBatchImport(
         historyRecords: List<com.tangdun.app.data.local.entity.GlucoseRecord>,
         baseParams: DallaManModel.Parameters,
         onProgress: (Int, Int, Int) -> Unit
-    ): Int {
-        if (historyRecords.size < 2) return 0
+    ): Int = withContext(Dispatchers.Default) {
+        if (historyRecords.size < 2) return@withContext 0
 
         var batchCorrections = 0
         val saved5min = eta5min
@@ -333,9 +339,17 @@ class EDOCCorrector(private val context: Context) {
             eta60min = saved60min
         }
 
+        // ★ 修复 Bug 6: import 完成后 dailyChanges 衰减, 避免当天剩余真实 CGM 触发被全部 clamp 到 0
+        //   用户导入历史 → 当天剩余时间自学习"被吃掉"是隐性问题, 这里衰减 50% 给真实数据留余地
+        synchronized(dailyChanges) {
+            for (idx in dailyChanges.indices) {
+                dailyChanges[idx] *= 0.5
+            }
+        }
+
         persistState()
-        Log.i(TAG, "批量导入完成: ${historyRecords.size}条 → $batchCorrections 次修正")
-        return batchCorrections
+        Log.i(TAG, "批量导入完成: ${historyRecords.size}条 → $batchCorrections 次修正 (dailyChanges已衰减50%)")
+        batchCorrections
     }
 
     /** 获取当前状态 (供UI展示) */
@@ -503,8 +517,18 @@ class EDOCCorrector(private val context: Context) {
         }
 
         // ── 学习率 ──
-        val baseEta = when (label) {
+        var baseEta = when (label) {
             "5min"  -> eta5min; "30min" -> eta30min; "60min" -> eta60min; else -> eta30min
+        }
+        // ★ 修复 Smell 4: hourOfDay 实际生效 — 黎明现象 (4-7点) 5min 时域学习率 ×1.3
+        //   此时肝糖输出脉冲 (生长激素) 致血糖上升, 模型系统性偏低, 加速学习追赶
+        //   深夜 (0-4点) 略减学习率防过度反应 (Somogyi 反弹等事件)
+        if (label == "5min") {
+            baseEta *= when (context.hourOfDay) {
+                in 4..6 -> 1.3   // 黎明现象高发期
+                in 0..3 -> 0.85  // 深夜, 减少对偶发事件的过度反应
+                else -> 1.0
+            }
         }
 
         // ── Sign-based参数更新 ──

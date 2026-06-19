@@ -256,7 +256,7 @@ class IncrementalLearner(private val context: Context) {
         // 每100次更新保存一次权重
         if (updateCount % 100 == 0) saveWeights()
 
-        Log.d(TAG, "增量学习: 预测${String.format("%.1f", tcnValue)} vs " +
+        Log.d(TAG, "增量学习: TCN预测${String.format("%.1f", tcnValue)} vs " +
             "实际${String.format("%.1f", actualFutureGlucose)}, " +
             "误差${String.format("%.1f", error)}, loss=${String.format("%.4f", loss)}")
     }
@@ -266,8 +266,15 @@ class IncrementalLearner(private val context: Context) {
      *
      * 策略：找出 "TCN预测时" → "实际值到达" 的配对
      * 我们用简化方案：找任意两个相隔5-120分钟的血糖点，作为训练对
+     *
+     * @param tcnPredictFn TCN 推断回调: 接收 (features, currentGlucose) → FloatArray(4) 的 [a,b,c,d]
+     *                     修复前: tcnParams 永远传 0, 增量学习器错把"血糖变化"当 TCN 误差学习
+     *                     修复后: 调用方传入真实 TCN 推理结果
      */
-    suspend fun periodicLearn(glucoseDao: GlucoseDao) = withContext(Dispatchers.IO) {
+    suspend fun periodicLearn(
+        glucoseDao: GlucoseDao,
+        tcnPredictFn: ((features: FloatArray, currentGlucose: Double) -> FloatArray?)? = null
+    ) = withContext(Dispatchers.IO) {
         try {
             val records = glucoseDao.getRecent(1000)
             if (records.size < 20) return@withContext
@@ -290,9 +297,16 @@ class IncrementalLearner(private val context: Context) {
 
             // 验证数据有效性 (防止异常值致损失爆炸)
             if (currentGlucose in 1.0..30.0 && actualGlucose in 1.0..30.0) {
+                // ★ 修复: 用真实 TCN 推理拿 tcnParams, 而不是写死 [0,0,0,0]
+                val tcnParams: FloatArray = if (tcnPredictFn != null) {
+                    tcnPredictFn(features, currentGlucose) ?: floatArrayOf(0f, 0f, 0f, 0f)
+                } else {
+                    // 降级: 无 TCN 时用 [0,0,0,0], 即"假设 TCN 预测直线", 仍能学到残差但准确度低
+                    floatArrayOf(0f, 0f, 0f, 0f)
+                }
                 learnFromActual(
                     features = features,
-                    tcnParams = floatArrayOf(0f, 0f, 0f, 0f),
+                    tcnParams = tcnParams,
                     currentGlucose = currentGlucose,
                     actualFutureGlucose = actualGlucose,
                     minutesAhead = 30

@@ -116,8 +116,11 @@ class PredictionViewModel @Inject constructor(
                 } else 0.0
 
                 // 自动测算 + 自动更新用户设置 (样本≥15时可信)
+                // ★ 修复 Smell 2: 默认不自动覆盖用户 ISF/CR, 用户在 Settings 主动开启才覆盖
+                //   避免医生/谨慎用户被悄悄改设置
                 val est = AutoParamEstimator.estimate(glucoseDao.getRecent(500), insulinDao.getRecent(300), mealDao.getRecent(100))
-                if (est.confidence == "高" || est.confidence == "中") {
+                if (settings.isAutoParamEstimateEnabled() &&
+                    (est.confidence == "高" || est.confidence == "中")) {
                     settings.setInsulinSensitivity(est.insulinSensitivity.toFloat())
                     settings.setCarbRatio(est.carbRatio.toFloat())
                 }
@@ -140,7 +143,14 @@ class PredictionViewModel @Inject constructor(
 
                 // ★ 全部个性化: 空腹基线/ISF/活动量/体重全部从用户数据读取
                 val isf = settings.getInsulinSensitivity().toDouble()
-                val dynSigma = (3.0 * 2.0 / isf.coerceIn(0.5, 6.0)).coerceIn(0.5, 6.0)
+                // ★ 修复 Smell 5: sigma 应该反映 β 细胞残余功能 (与糖尿病类型/病程相关),
+                //   之前用 ISF 反推是把两件正交的事绑一起, 临床不合理
+                //   T1DM=0, T2DM 早期=4-6, T2DM 中晚期=2-4 (Dalla Man 2007 文献默认值)
+                val diabetesType = settings.getDiabetesType()  // 1=T1DM, 2=T2DM
+                val dynSigma = when (diabetesType) {
+                    1 -> 0.0  // T1DM: 无内源胰岛素分泌
+                    else -> 3.0  // T2DM 默认 (中晚期; 早期可让用户在 Settings 调高 sigma)
+                }
                 val fastingGlucose = onlineLearner.getPersonalParams().fastingBaseline
                 val basalI = (8.0 + longBasalBoost).coerceIn(4.0, 30.0)
                 // 活动量: 7天滚动平均运动时长 (30min/天→0.7, 久坐→0.3)
@@ -187,27 +197,51 @@ class PredictionViewModel @Inject constructor(
                 var tcnW = 0.0
                 var modelLabel = "DallaMan(ISF${"%.1f".format(isf)} ${mealInputs.size}餐 ${insulinInputs.size}针 ${"%.0f".format(weight)}kg)"
                 if (!tcnOk) modelLabel += " [TCN未加载]"
-                var merged: List<Double> = personalizedCurve
+
+                // ★ Path A 主线: 生理曲线 (含 EDOC 实时修正 + 用户实际饮食/胰岛素)
+                val physioCurve = personalizedCurve.toMutableList().apply { this[0] = g }
+
+                var merged: List<Double> = physioCurve
                 if (tcnOk && records.size >= 10) {
                     try {
                         val bh = DoubleArray(288) { 0.0 }; val ch = DoubleArray(288) { 0.0 }
                         for (r in insulin) { val i = (287 - ((now - r.timestamp) / 300000).toInt()); if (i in 0..287) bh[i] += r.doseUnits }
                         for (m in meals24h) { val i = (287 - ((now - m.timestamp) / 300000).toInt()); if (i in 0..287) ch[i] += m.totalCarbs }
-                        val r = predictor.predict(gh, g, bh, ch)
-                        val nPoints = minOf(r.curve.size, personalizedCurve.size)
-                        if (r != null && nPoints >= 25) {
+
+                        // ★ 只跑 TCN, 不让 PersonalizedPredictor 重算 DallaMan (避免 Path B 重复)
+                        val tcnRawCurve = predictor.predictTCNOnly(gh, g, bh, ch)
+                        val nPoints = minOf(tcnRawCurve?.size ?: 0, physioCurve.size)
+                        if (tcnRawCurve != null && nPoints >= 25) {
                             // ★ TCN曲线配准: 对齐起点到当前血糖 (消除d参数偏移)
-                            val tcnOffset = r.curve[0] - g
-                            val alignedTcn = r.curve.map { it - tcnOffset }
-                            tcnW = r.tcnWeight
-                            merged = (0 until nPoints).map { i -> tcnW * alignedTcn[i] + (1 - tcnW) * personalizedCurve[i] }
+                            val tcnOffset = tcnRawCurve[0] - g
+                            val alignedTcn = tcnRawCurve.map { it - tcnOffset }
+
+                            // ★ BMA 权重: 数据越多→TCN权重越高, 上限 0.7 (DallaMan 保留 30% 兜底)
+                            val totalRecords = glucoseDao.getCount()
+                            tcnW = (0.3 + 0.4 * totalRecords / 288.0).coerceIn(0.3, 0.7)
+
+                            merged = (0 until nPoints).map { i ->
+                                (tcnW * alignedTcn[i] + (1 - tcnW) * physioCurve[i]).coerceIn(1.0, 30.0)
+                            }
                             modelLabel = "TCN+DallaMan(7室 ${"%.0f".format(weight)}kg ${mealInputs.size}餐 ${insulinInputs.size}针)"
                         }
                     } catch (e: Exception) { Log.w(TAG, "TCN异常: ${e.message}") }
                 }
 
-                // ★ 增量自学习残差曲线 (始终显示, 训练不足时权重自动为0)
+                // ★ 增量自学习残差曲线 (单独计算, 仅用于显示, 不叠加到 merged)
+                // 修复前: 残差在 PersonalizedPredictor 内部叠加一次, 又在 Path A 叠加一次, 实际权重翻倍
+                // 修复后: 残差只在 PersonalizedPredictor.applyPersonalization 里叠加到 personalizedCurve,
+                //        这里只计算一份独立的增量曲线供 UI 三线显示用
                 var incCurve: List<Double> = emptyList()
+                val finalCurve = try {
+                    // 应用个性化 + 增量残差叠加到 BMA 融合后的曲线
+                    predictor.applyPersonalization(merged, g, gh).toMutableList().apply { this[0] = g }
+                } catch (e: Exception) {
+                    Log.w(TAG, "个性化叠加失败, 使用纯 merged: ${e.message}")
+                    merged.toMutableList().apply { this[0] = g }
+                }
+
+                // 单独的增量残差曲线 (供 UI 三线显示)
                 try {
                     val incLearner = SelfLearningManager.getIncrementalLearner()
                     val incStats = incLearner.getStats()
@@ -222,22 +256,13 @@ class PredictionViewModel @Inject constructor(
                             val residualWeight = minOf(incUpdates / 300.0, 0.4)
                             incCurve = (0 until 36).map { i ->
                                 val t = i / 36.0
-                                residualWeight * (residual4[0] * t*t*t + residual4[1] * t*t + residual4[2] * t + residual4[3])
-                            }
-                            // 叠加到最终预测 (merged是List, 需重建)
-                            merged = merged.mapIndexed { i, v ->
-                                if (i < incCurve.size) (v + incCurve[i]).coerceIn(2.0, 30.0) else v
+                                g * (residual4[0] * t*t*t + residual4[1] * t*t + residual4[2] * t + residual4[3]) * residualWeight
                             }
                         }
                     }
-                } catch (e: Exception) { Log.w(TAG, "增量残差失败: ${e.message}") }
+                } catch (e: Exception) { Log.w(TAG, "增量残差曲线计算失败: ${e.message}") }
 
-                // ★ 强制锚定: 预测起点=当前血糖
-                val anchored = merged.toMutableList().apply { this[0] = g }
-
-                // ★ 三条曲线: physioCurve=生理模型, incrementalCurve=增量残差, curve=最终融合
-                // physioCurve也锚定对齐
-                val physioAnchored = personalizedCurve.toMutableList().apply { this[0] = g }
+                val anchored = finalCurve
 
                 val riskLabel = when {
                     anchored.getOrNull(6)?.let { it < settings.getTargetLow().toDouble() } == true -> "低血糖风险"
@@ -261,7 +286,7 @@ class PredictionViewModel @Inject constructor(
                 _uiState.value = PredictionUiState(
                     isLoading = false, currentGlucose = g, riskLevel = riskLabel,
                     predicted30min = anchored.getOrNull(6), predicted60min = anchored.getOrNull(12), predicted120min = anchored.getOrNull(24),
-                    curve = anchored, physioCurve = physioAnchored, incrementalCurve = incCurve,
+                    curve = anchored, physioCurve = physioCurve, incrementalCurve = incCurve,
                     historyData = records.map { it.timestamp to it.value }, modelLabel = modelLabel, predictionTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
                     confidence = confidence,
                     totalRecords = totalRecords, fastingBaseline = olParams.fastingBaseline, variability = olParams.glucoseVariability,
@@ -270,8 +295,10 @@ class PredictionViewModel @Inject constructor(
                     peakValue = peak, peakMinute = pi * 5,
                     isfEstimate = est.insulinSensitivity, crEstimate = est.carbRatio, error = null
                 )
-                // ★ EDOC: 缓存预测结果, 供之后误差反馈使用
-                SelfLearningManager.storePrediction(g.toFloat(), anchored.map { it.toFloat() }.toFloatArray())
+                // ★ EDOC: 缓存"纯 DallaMan + EDOC 修正"的曲线 (不含 TCN/在线个性化/增量残差)
+                // 修复前: 缓存的是 merged (含 TCN + 增量残差), EDOC 会把这些误差错误归因到 DallaMan 参数
+                // 修复后: EDOC 只看 DallaMan 自己预测的偏差, 修正更精准
+                SelfLearningManager.storePrediction(g.toFloat(), physioCurve.map { it.toFloat() }.toFloatArray())
 
                 Log.i(TAG, "预测: ${String.format("%.1f", g)} IOB${String.format("%.1f", iob)} 碳水${String.format("%.0f", todayCarbs)} 模型=$modelLabel ISF≈${String.format("%.1f", est.insulinSensitivity)} CR≈${String.format("%.1f", est.carbRatio)}")
             } catch (e: Exception) { Log.e(TAG, "预测失败: ${e.message}", e); _uiState.value = _uiState.value.copy(isLoading = false, error = "预测失败: ${e.message}") }
