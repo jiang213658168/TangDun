@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -25,15 +26,38 @@ import com.tangdun.app.data.local.entity.ChatMessage
 import com.tangdun.app.ui.theme.*
 import kotlinx.coroutines.launch
 
+/** ★ AI 助手权限: ParsedRecord → UI 显示辅助 */
+private fun ParsedRecord.icon(): ImageVector = when (this) {
+    is ParsedRecord.Meal -> Icons.Default.Restaurant
+    is ParsedRecord.Insulin -> Icons.Default.MedicalServices
+    is ParsedRecord.Exercise -> Icons.Default.DirectionsRun
+    is ParsedRecord.Glucose -> Icons.Default.MonitorHeart
+    is ParsedRecord.Medication -> Icons.Default.Medication
+    is ParsedRecord.Weight -> Icons.Default.Scale
+    is ParsedRecord.Symptom -> Icons.Default.Healing
+}
+
+private fun ParsedRecord.summary(): String = when (this) {
+    is ParsedRecord.Meal -> "$food ${carbs.toInt()}g碳水"
+    is ParsedRecord.Insulin -> "${dose}U $doseType"
+    is ParsedRecord.Exercise -> "$exType ${minutes}min"
+    is ParsedRecord.Glucose -> "${value}mmol/L $scene"
+    is ParsedRecord.Medication -> "$name $dose"
+    is ParsedRecord.Weight -> "${value}kg"
+    is ParsedRecord.Symptom -> description
+}
+
 @Composable
 fun ChatScreen(
     viewModel: ChatViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val foodHelper = remember(context) { FoodAssistantHelper(context) }
+
+    // ★ AI 助手权限: 应用记录弹窗状态
+    var showApplyDialog by remember { mutableStateOf(false) }
 
     // 自动创建新会话
     LaunchedEffect(Unit) {
@@ -165,6 +189,15 @@ fun ChatScreen(
             }
         }
 
+        // ★ AI 助手权限: 解析到可应用记录 → 显示应用按钮
+        if (uiState.pendingRecords.isNotEmpty() && !uiState.isLoading) {
+            ApplyRecordsBar(
+                count = uiState.pendingRecords.size,
+                onApply = { showApplyDialog = true },
+                onDismiss = { viewModel.dismissPendingRecords() }
+            )
+        }
+
         // 输入框
         ChatInputBar(
             onSendMessage = { message ->
@@ -172,6 +205,215 @@ fun ChatScreen(
             },
             isLoading = uiState.isLoading
         )
+    }
+
+    // ★ AI 助手权限: 应用建议确认弹窗
+    if (showApplyDialog && uiState.pendingRecords.isNotEmpty()) {
+        ApplyRecordsDialog(
+            records = uiState.pendingRecords,
+            onDismiss = { showApplyDialog = false },
+            onConfirm = { selected ->
+                showApplyDialog = false
+                viewModel.applyPendingRecords(selected) { success, total ->
+                    // 用 Toast 提示结果 (简化: 也可加 SnackBar)
+                    android.widget.Toast.makeText(
+                        context,
+                        "✅ 已保存 $success/$total 条记录",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun ApplyRecordsBar(
+    count: Int,
+    onApply: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        tonalElevation = 4.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.AutoAwesome, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "🤖 AI 解析了 $count 条可应用记录",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Text(
+                    text = "点击查看并选择要保存到数据库的记录",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                )
+            }
+            TextButton(onClick = onDismiss) { Text("忽略") }
+            Spacer(Modifier.width(4.dp))
+            Button(
+                onClick = onApply,
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("查看") }
+        }
+    }
+}
+
+@Composable
+private fun ApplyRecordsDialog(
+    records: List<ParsedRecord>,
+    onDismiss: () -> Unit,
+    onConfirm: (List<ParsedRecord>) -> Unit
+) {
+    // 用户可勾选要保存哪些记录 (默认全选)
+    val selected = remember { mutableStateListOf<ParsedRecord>().apply { addAll(records) } }
+    var selectAll by remember { mutableStateOf(true) }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.AutoAwesome, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "AI 解析的记录",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // 全选/取消全选
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.Checkbox(
+                        checked = selectAll,
+                        onCheckedChange = {
+                            selectAll = it
+                            selected.clear()
+                            if (it) selected.addAll(records)
+                        }
+                    )
+                    Text(
+                        "全选 (${selected.size}/${records.size})",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                ) {
+                    items(
+                        items = records,
+                        key = { it.timestamp.toString() + it.typeLabel }
+                    ) { record ->
+                        RecordCheckItem(
+                            record = record,
+                            checked = record in selected,
+                            onCheckedChange = { checked ->
+                                if (checked) selected.add(record) else selected.remove(record)
+                                selectAll = selected.size == records.size
+                            }
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) { Text("取消") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { onConfirm(selected.toList()) },
+                        enabled = selected.isNotEmpty(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("保存 ${selected.size} 条")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecordCheckItem(
+    record: ParsedRecord,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        androidx.compose.material3.Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange
+        )
+        Spacer(Modifier.width(4.dp))
+        Icon(
+            record.icon(),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = record.summary(),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = "${record.timeDisplay} · ${record.typeLabel}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

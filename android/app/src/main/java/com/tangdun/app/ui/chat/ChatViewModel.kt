@@ -1,6 +1,7 @@
 package com.tangdun.app.ui.chat
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tangdun.app.data.local.dao.ChatDao
@@ -21,7 +22,11 @@ data class ChatUiState(
     val isLoading: Boolean = false,
     val conversationId: String? = null,
     val messages: List<ChatMessage> = emptyList(),
-    val error: String? = null
+    val error: String? = null,
+    // ★ AI 助手权限: 解析出的待应用记录 (用户输入触发)
+    val pendingRecords: List<ParsedRecord> = emptyList(),
+    // ★ 上一条用户消息原文 (用于解析记录关联到具体消息)
+    val lastUserInput: String = "",
 )
 
 @HiltViewModel
@@ -34,6 +39,28 @@ class ChatViewModel @Inject constructor(
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
     private val aiChatService = AiChatService(context)
+
+    /**
+     * ★ AI 助手权限: 应用用户确认后的 ParsedRecord 列表
+     * 返回成功保存的数量 (用于 UI 提示)
+     */
+    fun applyPendingRecords(records: List<ParsedRecord>, onComplete: (successCount: Int, totalCount: Int) -> Unit) {
+        viewModelScope.launch {
+            var success = 0
+            records.forEach { record ->
+                val (msg, ok) = AiRecordHelper.saveRecord(context, record)
+                if (ok) success++
+                else Log.w("ChatVM", "saveRecord failed: $msg")
+            }
+            _uiState.value = _uiState.value.copy(pendingRecords = emptyList())
+            onComplete(success, records.size)
+        }
+    }
+
+    /** 取消待应用的记录 */
+    fun dismissPendingRecords() {
+        _uiState.value = _uiState.value.copy(pendingRecords = emptyList())
+    }
 
     /**
      * 创建新会话
@@ -66,6 +93,12 @@ class ChatViewModel @Inject constructor(
 
     /**
      * 发送消息
+     *
+     * AI 助手权限集成:
+     *  - 用户输入 → 调 AiRecordHelper.parse 提取可执行记录 (meal/insulin/glucose/...)
+     *  - 解析到的 records 存到 uiState.pendingRecords
+     *  - ChatScreen 检测到 pendingRecords > 0 → 显示"应用建议"按钮
+     *  - 用户点击 → 弹确认对话框 → applyPendingRecords() 保存到 DB
      */
     fun sendMessage(content: String) {
         if (_uiState.value.isLoading) return  // 防止并发发送
@@ -95,7 +128,8 @@ class ChatViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(
                 messages = currentMessages,
                 isLoading = true,
-                error = null
+                error = null,
+                lastUserInput = content
             )
 
             // 更新会话标题（使用第一条消息）
@@ -104,6 +138,19 @@ class ChatViewModel @Inject constructor(
                 if (conversation != null) {
                     val title = if (content.length > 20) content.substring(0, 20) + "..." else content
                     chatDao.updateConversation(conversation.copy(title = title))
+                }
+            }
+
+            // ★ AI 助手权限 - Step 1: 解析用户输入 (与 AI 调用并行, 不阻塞 UI)
+            val parseJob = launch {
+                try {
+                    val records = AiRecordHelper.parse(context, content)
+                    if (records.isNotEmpty()) {
+                        Log.i("ChatVM", "解析到 ${records.size} 条可应用记录")
+                        _uiState.value = _uiState.value.copy(pendingRecords = records)
+                    }
+                } catch (e: Exception) {
+                    Log.w("ChatVM", "解析失败: ${e.message}")
                 }
             }
 
@@ -122,7 +169,7 @@ class ChatViewModel @Inject constructor(
 
             result.fold(
                 onSuccess = { aiResponse ->
-                    // ★ 处理AI回复中的自然语言记录指令 (如"我吃了米饭200g")
+                    // ★ 处理AI回复中的自然语言记录指令 (旧版逻辑, 保留兼容)
                     val (displayText, executed) = aiChatService.processRecordingCommands(context, aiResponse)
 
                     // 添加AI回复 (已清理JSON指令块)
@@ -157,6 +204,9 @@ class ChatViewModel @Inject constructor(
                     )
                 }
             )
+
+            // 等待解析完成 (但不等 AI)
+            parseJob.join()
         }
     }
 
