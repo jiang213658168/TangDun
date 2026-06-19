@@ -131,16 +131,38 @@ object AiRecordHelper {
 """.trimIndent()
 
     suspend fun parse(context: Context, userInput: String): List<ParsedRecord> = withContext(Dispatchers.IO) {
+        // ★ 修复: AI 解析失败时回退到本地规则解析, 不依赖网络 AI
         try {
             val service = AiChatService(context)
             val reply = service.sendMessage(listOf(
                 ChatMessageDto("system", recordPrompt),
                 ChatMessageDto("user", userInput)
             ))
-            if (reply.isFailure) return@withContext emptyList()
-            val text = reply.getOrNull()?.trim() ?: return@withContext emptyList()
+            if (reply.isSuccess) {
+                val text = reply.getOrNull()?.trim() ?: ""
+                if (text.isNotBlank()) {
+                    val aiResult = tryParseJson(text)
+                    if (aiResult.isNotEmpty()) {
+                        Log.i("AiRecord", "AI 解析成功: ${aiResult.size} 条")
+                        return@withContext aiResult
+                    }
+                    Log.w("AiRecord", "AI 返回非 JSON, 尝试本地规则: ${text.take(100)}")
+                } else {
+                    Log.w("AiRecord", "AI 返回空, 尝试本地规则")
+                }
+            } else {
+                Log.w("AiRecord", "AI 调用失败: ${reply.exceptionOrNull()?.message}, 尝试本地规则")
+            }
+        } catch (e: Exception) {
+            Log.w("AiRecord", "AI 异常: ${e.message}, 尝试本地规则")
+        }
+        // ★ 本地规则回退 (不依赖 AI 服务)
+        localParse(userInput)
+    }
 
-            // 提取JSON数组 (支持裸JSON或```json```包裹)
+    /** 从 AI 返回文本中提取 JSON 数组 */
+    private fun tryParseJson(text: String): List<ParsedRecord> {
+        return try {
             val jsonStr = Regex("```json\\s*([\\s\\S]*?)```").find(text)?.groupValues?.get(1)?.trim() ?: text.trim()
             val jsonArray = if (jsonStr.startsWith("[")) org.json.JSONArray(jsonStr)
                            else org.json.JSONArray().put(org.json.JSONObject(jsonStr))
@@ -154,9 +176,276 @@ object AiRecordHelper {
                 parseOne(type, json, timeDisplay, timestamp)
             }
         } catch (e: Exception) {
-            Log.w("AiRecord", "解析失败: ${e.message}")
+            Log.w("AiRecord", "JSON 解析失败: ${e.message}")
             emptyList()
         }
+    }
+
+    /**
+     * ★ 本地规则解析 - 不依赖 AI 服务
+     *
+     * 提取规则:
+     *  - 时间: "零点/0:00" → "00:00", "早上7点" → "07:00", "9点半" → "09:30", "午饭" → "12:00"
+     *  - 胰岛素: "打了X个单位[的][长效|速效|短效|预混]"
+     *  - 食物: "吃了[数量][单位][食物名]"
+     *  - 份量: "半盘" → 100g, "一个" → 200g(根据食物类型)
+     *  - 营养: 查内置食物营养表 (米饭/面条/馒头/鸡蛋/蔬菜/肉/水果/油炸)
+     */
+    private fun localParse(input: String): List<ParsedRecord> {
+        val records = mutableListOf<ParsedRecord>()
+
+        // 1. 提取时间锚点
+        val timeAnchors = extractTimeAnchors(input)
+        Log.i("AiRecord", "本地解析: 找到 ${timeAnchors.size} 个时间锚点")
+
+        // 2. 提取胰岛素记录
+        val insulinRecords = extractInsulinRecords(input, timeAnchors)
+        records.addAll(insulinRecords)
+        Log.i("AiRecord", "本地解析: 提取 ${insulinRecords.size} 条胰岛素")
+
+        // 3. 提取饮食记录
+        val mealRecords = extractMealRecords(input, timeAnchors)
+        records.addAll(mealRecords)
+        Log.i("AiRecord", "本地解析: 提取 ${mealRecords.size} 条饮食")
+
+        return records
+    }
+
+    /**
+     * 从输入中提取时间锚点 (返回 List<Pair<position, timestamp>>)
+     * 例: "今早零点" → (position=0, ts=今天00:00)
+     *     "9点半" → (position=10, ts=今天09:30)
+     */
+    private fun extractTimeAnchors(input: String): List<Pair<Int, Long>> {
+        val anchors = mutableListOf<Pair<Int, Long>>()
+        val cal = Calendar.getInstance()
+        val todayStart = (cal.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        // 时间正则: 支持 "零点", "0:00", "早上7点", "9点半", "12点", "13:00", "午饭", "早饭" 等
+        val timeRegex = Regex("(?<![\\d])(零点|0点|(\\d{1,2})[点时:](\\d{1,2})?[分半]?|早饭|午饭|晚饭|早餐|午餐|晚餐|加餐)(?![\\d])")
+
+        timeRegex.findAll(input).forEach { match ->
+            val text = match.value
+            val pos = match.range.first
+            var hour = -1
+            var minute = 0
+            when {
+                text == "零点" || text == "0点" -> { hour = 0; minute = 0 }
+                text == "早饭" || text == "早餐" -> { hour = 7; minute = 30 }
+                text == "午饭" || text == "午餐" || text == "中饭" -> { hour = 12; minute = 0 }
+                text == "晚饭" || text == "晚餐" || text == "晚上" -> { hour = 18; minute = 30 }
+                text == "加餐" -> { hour = 15; minute = 30 }
+                text.contains("半") -> {
+                    // "9点半" → 9:30
+                    val numMatch = Regex("(\\d{1,2})").find(text)
+                    if (numMatch != null) {
+                        hour = numMatch.groupValues[1].toInt()
+                        minute = 30
+                    }
+                }
+                else -> {
+                    val hm = Regex("(\\d{1,2})[点时:](\\d{1,2})?").find(text)
+                    if (hm != null) {
+                        hour = hm.groupValues[1].toInt()
+                        minute = hm.groupValues[2].ifEmpty { "0" }.toInt()
+                    }
+                }
+            }
+            if (hour in 0..23) {
+                val ts = todayStart + hour * 3600_000L + minute * 60_000L
+                anchors.add(pos to ts)
+            }
+        }
+        // ★ 修复: 同位置(±5字符)只保留一个时间锚点, 优先保留更具体的 (HH:MM > 半点 > 整点 > 模糊词)
+        //   防止 "早饭在9点半" 时"早饭"=7:30 覆盖了"9点半"
+        return anchors.sortedBy { it.first }.let { list ->
+            val result = mutableListOf<Pair<Int, Long>>()
+            val cal = java.util.Calendar.getInstance()
+            for (a in list) {
+                // 判断是否已有邻近锚点 (位置 ±5 字符内)
+                val existingIdx = result.indexOfFirst { kotlin.math.abs(it.first - a.first) <= 5 }
+                if (existingIdx < 0) {
+                    result.add(a)
+                } else {
+                    // 已有邻近锚点: 比较精度 (用 minute 是否为 0 判断精度: 整点 < 半点 < HH:MM)
+                    val (exPos, exTs) = result[existingIdx]
+                    cal.timeInMillis = exTs
+                    val exHasMin = cal.get(java.util.Calendar.MINUTE) != 0 && cal.get(java.util.Calendar.MINUTE) != 30
+                    val exMin = cal.get(java.util.Calendar.MINUTE)
+
+                    cal.timeInMillis = a.second
+                    val aHasMin = cal.get(java.util.Calendar.MINUTE) != 0 && cal.get(java.util.Calendar.MINUTE) != 30
+                    val aMin = cal.get(java.util.Calendar.MINUTE)
+
+                    // 优先级: HH:MM > X点半 > X点 > 模糊词
+                    val exPriority = when {
+                        exMin % 5 != 0 -> 3  // HH:MM 形式
+                        exMin == 30 -> 2     // X点半
+                        exHasMin -> 1        // X点X分
+                        else -> 0            // 模糊词
+                    }
+                    val aPriority = when {
+                        aMin % 5 != 0 -> 3
+                        aMin == 30 -> 2
+                        aHasMin -> 1
+                        else -> 0
+                    }
+                    // 新锚点优先级更高 → 替换
+                    if (aPriority > exPriority) {
+                        result[existingIdx] = a
+                    }
+                }
+            }
+            result.sortedBy { it.first }
+        }
+    }
+
+    /** 根据文本位置找最近的时间锚点 (用于推断事件时间) */
+    private fun nearestTime(pos: Int, anchors: List<Pair<Int, Long>>): Long {
+        if (anchors.isEmpty()) return System.currentTimeMillis()
+        return anchors.minByOrNull { kotlin.math.abs(it.first - pos) }!!.second
+    }
+
+    /** 提取胰岛素记录 */
+    private fun extractInsulinRecords(input: String, anchors: List<Pair<Int, Long>>): List<ParsedRecord> {
+        val records = mutableListOf<ParsedRecord>()
+        // 匹配 "打了X个单位[的][长效|速效|短效|预混]" 或 "打了X单位..."
+        val insulinRegex = Regex("打了?\\s*(\\d+(?:\\.\\d+)?)\\s*个?\\s*单位\\s*[的]?\\s*(长效|速效|短效|预混|基础|基础胰岛素|胰岛素)?")
+
+        insulinRegex.findAll(input).forEach { match ->
+            val dose = match.groupValues[1].toDoubleOrNull() ?: return@forEach
+            val typeText = match.groupValues[2]
+            val doseType = when (typeText) {
+                "长效", "基础", "基础胰岛素" -> "long"
+                "速效" -> "rapid"
+                "短效" -> "short"
+                "预混" -> "mixed"
+                else -> "rapid"
+            }
+            val timestamp = nearestTime(match.range.first, anchors)
+            val display = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(timestamp))
+            records.add(ParsedRecord.Insulin(
+                dose = dose, doseType = doseType, site = "", notes = "",
+                timeDisplay = display, timestamp = timestamp
+            ))
+        }
+        return records
+    }
+
+    /** 提取饮食记录 */
+    private fun extractMealRecords(input: String, anchors: List<Pair<Int, Long>>): List<ParsedRecord> {
+        val records = mutableListOf<ParsedRecord>()
+
+        // 匹配模式:
+        // 1. "吃了/吃的 [数量] [单位] [食物]" - "吃了25克的苏打饼干"
+        // 2. "吃了/吃的 [食物名]" - "吃了炸鸡腿"
+        // 3. "[数量+单位] [食物]" - "半盘香椿炒鸡蛋"
+        // 4. "[食物] [数量+单位]" - "苏打饼干25克"
+
+        // 简化版: 用 "吃了" 或 "的" 分隔句子, 每句识别一个食物
+        val sentences = input.split(Regex("[,，。.;；\\n]")).map { it.trim() }.filter { it.isNotBlank() }
+
+        // 内置食物营养 (每 100g)
+        val foodNutrition = mapOf(
+            "米饭" to Triple(28.0, 116.0, 70.0),
+            "面条" to Triple(25.0, 110.0, 60.0),
+            "馒头" to Triple(45.0, 220.0, 85.0),
+            "荞麦馒头" to Triple(45.0, 220.0, 65.0),
+            "苏打饼干" to Triple(72.0, 440.0, 70.0),
+            "饼干" to Triple(60.0, 400.0, 70.0),
+            "鸡蛋" to Triple(1.0, 70.0, 30.0),
+            "香椿炒鸡蛋" to Triple(5.0, 180.0, 40.0),
+            "小油菜" to Triple(2.0, 20.0, 20.0),
+            "油菜" to Triple(2.0, 20.0, 20.0),
+            "炸鸡腿" to Triple(25.0, 280.0, 60.0),
+            "炸鸡" to Triple(25.0, 280.0, 60.0),
+            "葱爆羊肉" to Triple(5.0, 200.0, 30.0),
+            "羊肉" to Triple(0.0, 200.0, 30.0),
+            "虾仁" to Triple(1.0, 90.0, 40.0),
+            "虾" to Triple(1.0, 90.0, 40.0),
+            "全麦面包" to Triple(41.0, 250.0, 50.0),
+            "面包" to Triple(50.0, 280.0, 70.0),
+            "牛奶" to Triple(5.0, 65.0, 30.0),
+            "水果" to Triple(13.0, 50.0, 40.0),
+            "苹果" to Triple(14.0, 52.0, 36.0)
+        )
+
+        sentences.forEach { sent ->
+            // 在句子里找时间锚点位置
+            val sentTime = nearestTime(input.indexOf(sent), anchors)
+
+            // ★ 修复: 食物名按长度降序匹配, 避免"鸡蛋"和"香椿炒鸡蛋"重复匹配
+            val matchedFoods = foodNutrition.keys
+                .filter { sent.contains(it) }
+                .sortedByDescending { it.length }
+
+            matchedFoods.forEach { foodName ->
+                val portion = extractPortion(sent, foodName)
+                val (carbsPer100, calsPer100, gi) = foodNutrition[foodName]!!
+                val carbs = portion * carbsPer100 / 100.0
+                val calories = portion * calsPer100 / 100.0
+                val mealType = when {
+                    sentTime.hourOfDay() in 5..9 -> "breakfast"
+                    sentTime.hourOfDay() in 11..13 -> "lunch"
+                    sentTime.hourOfDay() in 17..19 -> "dinner"
+                    else -> "snack"
+                }
+                val notes = if (sent.contains("扒掉") || sent.contains("去皮")) "酥皮已扒掉" else ""
+                val display = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(sentTime))
+                records.add(ParsedRecord.Meal(
+                    food = foodName,
+                    carbs = carbs, calories = calories, gi = gi,
+                    mealType = mealType,
+                    protein = 0.0, fat = 0.0, fiber = 0.0,
+                    portion = portion,
+                    timeDisplay = display, timestamp = sentTime
+                ))
+            }
+        }
+        return records
+    }
+
+    /** 提取份量 (克数) */
+    private fun extractPortion(sentence: String, foodName: String): Double {
+        // ★ 修复: 优先级 - 具体克数 > 半个拳头 > 一盘/半盘 > 几个/几个X > X个X
+        // 1. "X克的..." → 直接读 (最高优先级)
+        val gramMatch = Regex("(\\d+(?:\\.\\d+)?)\\s*克").find(sentence)
+        if (gramMatch != null) return gramMatch.groupValues[1].toDouble()
+
+        // 2. 拳头描述 (覆盖"X个"匹配)
+        if (sentence.contains("半个拳头")) return 35.0
+        if (sentence.contains("拳头大小") || sentence.contains("拳头大")) return 70.0
+        if (sentence.contains("半拳头")) return 35.0
+
+        // 3. 盘描述
+        if (sentence.contains("半盘")) return 100.0
+        if (sentence.contains("一盘")) return 200.0
+
+        // 4. 几/几个 (用户说"几个虾仁"=50g)
+        if (sentence.contains("几个")) return 50.0
+        if (sentence.contains("几片")) return 50.0
+
+        // 5. "X个[食物]" → 默认按食物类型估算
+        val countMatch = Regex("(\\d+)\\s*个").find(sentence)
+        if (countMatch != null) {
+            val count = countMatch.groupValues[1].toInt()
+            return when (foodName) {
+                "鸡蛋", "馒头", "荞麦馒头", "面包", "苏打饼干", "饼干", "苹果" -> count * 50.0
+                "虾仁", "虾" -> count * 30.0
+                "炸鸡腿", "炸鸡" -> count * 150.0
+                else -> count * 100.0
+            }
+        }
+
+        // 默认 100g
+        return 100.0
+    }
+
+    private fun Long.hourOfDay(): Int {
+        return Calendar.getInstance().apply { timeInMillis = this@hourOfDay }.get(Calendar.HOUR_OF_DAY)
     }
 
     private fun parseOne(type: String, json: JSONObject, timeDisplay: String, timestamp: Long): ParsedRecord? = when (type) {

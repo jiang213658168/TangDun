@@ -116,8 +116,15 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // ★ 移除: 数据源/广播接收卡 → 全部移到设置页 (用户反馈)
-        //   原 DataSourceCard (自检/同步历史/导入xlsx/通知监听) 已在 SettingsScreen.DataSourceCard 中
+        // ★ 修复: 之前误删了, 现在恢复 HomeScreen 的 DataSourceCard 保留所有功能
+        //   (自检/同步历史/导入xlsx/通知监听) - 用户要求"移动到设置页"是错的, 实际是"保留并显示"
+        DataSourceCard(
+            hasData = uiState.records.isNotEmpty(),
+            recordCount = uiState.recordCount,
+            syncMsg = uiState.error,
+            onSync = { viewModel.syncHistory() },
+            onImportXlsx = { uri -> viewModel.importXlsx(uri) }
+        )
 
         // 日期选择
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -171,7 +178,7 @@ fun HomeScreen(
                     icon = Icons.Default.AutoAwesome,
                     label = "AI 智能记录",
                     accentColor = MaterialTheme.colorScheme.primary,
-                    onClick = { navController?.navigate("ai_record") }
+                    onClick = { navController?.navigate("chat") }
                 ),
             )
         )
