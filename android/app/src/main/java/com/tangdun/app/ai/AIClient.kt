@@ -41,7 +41,7 @@ class AIClient(private val settingsManager: SettingsManager) {
     companion object {
         private const val TAG = "AIAgent"
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
-        private const val DEFAULT_MODEL = "deepseek-v4-flash"  // v3.0 默认 DeepSeek
+        private const val DEFAULT_MODEL = "deepseek-v4-flash"  // v3.0 默认 DeepSeek v4-flash
         private const val MAX_AGENT_TURNS = 8  // agent 循环最大轮数
     }
 
@@ -132,7 +132,7 @@ class AIClient(private val settingsManager: SettingsManager) {
                 response.use { resp ->
                     if (!resp.isSuccessful) {
                         val errBody = resp.body?.string() ?: ""
-                        lastError = "AI 服务返回 ${resp.code}: ${errBody.take(300)}"
+                        lastError = "AI 服务返回 HTTP ${resp.code} ${resp.message}\n${errBody.take(500)}"
                         Log.w(TAG, lastError!!)
                         return AgentResult(
                             success = false,
@@ -221,10 +221,12 @@ class AIClient(private val settingsManager: SettingsManager) {
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Agent 异常: ${e.message}", e)
+            val exClass = e.javaClass.simpleName
+            val exMsg = e.message ?: "(无消息, 可能是 SSL/网络/DNS 异常)"
+            Log.w(TAG, "Agent 异常: $exClass: $exMsg", e)
             return AgentResult(
                 success = false,
-                errorMessage = "AI 服务调用失败: ${e.message}",
+                errorMessage = "AI 服务调用失败 [$exClass]: $exMsg",
                 finalAnswer = "",
                 toolCalls = toolCallLog
             )
