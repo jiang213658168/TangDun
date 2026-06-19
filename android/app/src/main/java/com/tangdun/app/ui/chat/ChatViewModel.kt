@@ -399,6 +399,27 @@ class ChatViewModel @Inject constructor(
      */
     fun sendMessage(content: String) {
         if (_uiState.value.isLoading) return  // 防止并发发送
+
+        // ★ v3.0.4 激活码权限检查: AI 助手调用次数限制 (懒创建 ActivationManager)
+        val am = com.tangdun.app.util.ActivationManager(context)
+        if (!am.canAccess("chat")) {
+            val remaining = am.getRemaining("chat")
+            val blocked = ChatMessage(
+                conversationId = _uiState.value.conversationId ?: UUID.randomUUID().toString().replace("-", ""),
+                role = ChatMessage.ROLE_ASSISTANT,
+                content = "⚠️ AI 助手调用次数已用完（${if (remaining <= 0) "今日" else "本激活码"}）。\n\n请到「我的 → 激活」购买新的激活码或续费。"
+            )
+            viewModelScope.launch {
+                if (_uiState.value.conversationId != null) chatDao.insertMessage(blocked)
+                _uiState.value = _uiState.value.copy(
+                    messages = _uiState.value.messages + blocked,
+                    error = "AI 调用次数不足"
+                )
+            }
+            return
+        }
+        am.recordUse("chat")
+
         var conversationId = _uiState.value.conversationId
 
         // 如果还未创建会话，先同步创建

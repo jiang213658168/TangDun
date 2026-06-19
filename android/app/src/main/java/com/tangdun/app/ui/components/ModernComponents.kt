@@ -306,8 +306,19 @@ private fun TargetRangeIndicator(
     modifier: Modifier = Modifier
 ) {
     val range = (high - low).coerceAtLeast(0.1)
-    val currentRatio = current?.let {
-        ((it - low + range * 0.5) / (range * 2.5)).coerceIn(0.0, 1.0)
+    // ★ v3.0.4 修绿块位置: 进度条分 3 段 (低 20% / 正常 60% / 高 20%)
+    //   低区: low 到 low + range*0.2 → 0~0.2
+    //   正常区: low + range*0.2 到 low + range*0.8 → 0.2~0.8
+    //   高区: low + range*0.8 到 high → 0.8~1.0
+    //   越界: 强制 0 或 1
+    val currentRatio = current?.let { v ->
+        when {
+            v <= low -> 0f
+            v >= high -> 1f
+            v <= low + range * 0.2 -> ((v - low) / (range * 0.2) * 0.2).toFloat()
+            v <= low + range * 0.8 -> (0.2f + ((v - low - range * 0.2) / (range * 0.6) * 0.6).toFloat())
+            else -> (0.8f + ((v - low - range * 0.8) / (range * 0.2) * 0.2).toFloat())
+        }.coerceIn(0f, 1f)
     }
 
     Column(modifier = modifier) {

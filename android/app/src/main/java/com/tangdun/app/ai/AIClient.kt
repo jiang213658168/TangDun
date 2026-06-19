@@ -142,15 +142,15 @@ class AIClient(private val settingsManager: SettingsManager) {
         try {
             for (turn in 1..MAX_AGENT_TURNS) {
                 if (done) break
-                Log.i(TAG, "=== Agent Round $turn (model=$modelName) ===")
+                Log.i(TAG, "=== Agent Round $turn (model=$modelName, stream=true) ===")
                 val requestBody = JSONObject().apply {
                     put("model", modelName)
                     put("messages", JSONArray(messages))
                     put("tools", tools)
                     put("tool_choice", "auto")
-                    put("max_tokens", 4000)
-                    // ★ DeepSeek 思考模式: extra_body.thinking + reasoning_effort=max
-                    //   注意: 思考模式下 temperature/top_p/presence_penalty 等参数不生效, 不要传
+                    put("max_tokens", 8000)
+                    put("stream", true)  // ★ v3.0.4 启用流式, 让 thinking 实时推送
+                    // ★ DeepSeek 思考模式
                     put("reasoning_effort", "max")
                     put("extra_body", JSONObject().apply {
                         put("thinking", JSONObject().apply { put("type", "enabled") })
@@ -161,6 +161,7 @@ class AIClient(private val settingsManager: SettingsManager) {
                     .url("${settingsManager.getOpenAiBaseUrl().trimEnd('/')}/chat/completions")
                     .addHeader("Authorization", "Bearer ${settingsManager.getOpenAiApiKey()}")
                     .addHeader("Content-Type", "application/json")
+                    .addHeader("Accept", "text/event-stream")
                     .post(requestBody.toRequestBody(JSON_MEDIA))
                     .build()
 
@@ -177,37 +178,106 @@ class AIClient(private val settingsManager: SettingsManager) {
                             toolCalls = toolCallLog
                         )
                     }
-                    val bodyStr = resp.body?.string() ?: ""
-                    val json = JSONObject(bodyStr)
-                    val choice = json.getJSONArray("choices").getJSONObject(0)
-                    val message = choice.getJSONObject("message")
-                    val finishReason = choice.optString("finish_reason", "stop")
 
-                    Log.i(TAG, "Round $turn finish_reason=$finishReason")
+                    // ★ v3.0.4 流式 SSE 解析
+                    var content = ""
+                    var reasoningContent = ""
+                    var finishReason = ""
+                    val toolCallsMap = mutableMapOf<Int, JSONObject>()  // index -> 累积的 tool_call
 
-                    val content = message.optString("content", "")
-                    val reasoningContent = message.optString("reasoning_content", "")
+                    val source = resp.body?.charStream()
+                    if (source == null) {
+                        lastError = "AI 响应为空"
+                        done = true
+                        return@use
+                    }
+
+                    var dataBuilder = StringBuilder()
+                    val reader = java.io.BufferedReader(source)
+                    var line = reader.readLine()
+                    while (line != null) {
+                        when {
+                            line.isBlank() -> {
+                                if (dataBuilder.isNotEmpty()) {
+                                    val data = dataBuilder.toString().trim()
+                                    dataBuilder.clear()
+                                    if (data == "[DONE]") {
+                                        line = reader.readLine()
+                                        continue
+                                    }
+                                    try {
+                                        val json = JSONObject(data)
+                                        val choice = json.optJSONArray("choices")?.optJSONObject(0)
+                                        if (choice != null) {
+                                            finishReason = choice.optString("finish_reason", finishReason)
+                                            if (finishReason.isEmpty()) finishReason = choice.optString("finish_reason", "")
+                                            val delta = choice.optJSONObject("delta")
+                                            if (delta != null) {
+                                                // 思考增量 (DeepSeek stream 把 reasoning_content 放 delta 里)
+                                                val rc = delta.optString("reasoning_content", "")
+                                                if (rc.isNotEmpty()) {
+                                                    reasoningContent += rc
+                                                    onProgress?.invoke(ProgressEvent.Thinking(turn, rc))
+                                                }
+                                                // 内容增量
+                                                val c = delta.optString("content", "")
+                                                if (c.isNotEmpty()) content += c
+                                                // 工具调用增量 (按 index 累积)
+                                                val tcArr = delta.optJSONArray("tool_calls")
+                                                if (tcArr != null) {
+                                                    for (i in 0 until tcArr.length()) {
+                                                        val tcItem = tcArr.getJSONObject(i)
+                                                        val idx = tcItem.optInt("index", 0)
+                                                        val existing = toolCallsMap[idx] ?: JSONObject()
+                                                        if (tcItem.has("id")) existing.put("id", tcItem.getString("id"))
+                                                        if (tcItem.has("type")) existing.put("type", tcItem.getString("type"))
+                                                        val fn = tcItem.optJSONObject("function") ?: JSONObject()
+                                                        val existingFn = existing.optJSONObject("function") ?: JSONObject()
+                                                        if (fn.has("name")) existingFn.put("name", fn.getString("name"))
+                                                        if (fn.has("arguments")) {
+                                                            val args = fn.getString("arguments")
+                                                            val existingArgs = existingFn.optString("arguments", "")
+                                                            existingFn.put("arguments", existingArgs + args)
+                                                        }
+                                                        existing.put("function", existingFn)
+                                                        toolCallsMap[idx] = existing
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "SSE parse error: ${e.message}")
+                                    }
+                                }
+                            }
+                            line.startsWith("data:") -> {
+                                dataBuilder.append(line.removePrefix("data:"))
+                            }
+                        }
+                        line = reader.readLine()
+                    }
+
+                    Log.i(TAG, "Round $turn finish_reason=$finishReason, content_len=${content.length}, reasoning_len=${reasoningContent.length}, tools=${toolCallsMap.size}")
+
                     if (reasoningContent.isNotEmpty()) {
-                        Log.i(TAG, "💭 思考: ${reasoningContent.take(200)}")
                         thinkingLog.add(ThinkingRecord(turn, reasoningContent))
-                        onProgress?.invoke(ProgressEvent.Thinking(turn, reasoningContent))
-                    }
-                    if (content.isNotEmpty()) {
-                        onProgress?.invoke(ProgressEvent.Text(content))
-                    }
-                    if (content.isNotEmpty() && finishReason == "stop") {
-                        finalAnswer = content
-                        onProgress?.invoke(ProgressEvent.Done(finalAnswer))
-                    } else if (content.isNotEmpty()) {
-                        Log.i(TAG, "中间文本: $content")
                     }
 
-                    if (message.has("tool_calls")) {
-                        val toolCallsArr = message.getJSONArray("tool_calls")
-                        messages.add(message)
+                    // 处理工具调用
+                    if (toolCallsMap.isNotEmpty()) {
+                        // 构造完整的 assistant message 加入对话历史 (含 reasoning_content)
+                        val assistantMsg = JSONObject().apply {
+                            put("role", "assistant")
+                            put("content", content)
+                            if (reasoningContent.isNotEmpty()) put("reasoning_content", reasoningContent)
+                            val tcArr = JSONArray()
+                            toolCallsMap.values.forEach { tcArr.put(it) }
+                            put("tool_calls", tcArr)
+                        }
+                        messages.add(assistantMsg)
 
-                        for (i in 0 until toolCallsArr.length()) {
-                            val tc = toolCallsArr.getJSONObject(i)
+                        // 执行每个工具
+                        for (tc in toolCallsMap.values) {
                             val toolCallId = tc.getString("id")
                             val toolName = tc.getJSONObject("function").getString("name")
                             val argsStr = tc.getJSONObject("function").optString("arguments", "{}")
@@ -244,12 +314,16 @@ class AIClient(private val settingsManager: SettingsManager) {
                             done = true
                         }
                     } else {
-                        // 没有 tool_calls
-                        if (finishReason == "stop" || finishReason.isEmpty()) {
+                        // 没有工具调用 → 最终回复
+                        if (finishReason == "stop" || finishReason.isEmpty() || finishReason == "length") {
                             finalAnswer = content
+                            if (finishReason == "length") {
+                                lastError = "AI 回复因长度限制被截断 (可能需要调高 max_tokens)"
+                            }
                             Log.i(TAG, "Agent 完成, final_answer 长度=${finalAnswer.length}")
+                            onProgress?.invoke(ProgressEvent.Done(finalAnswer))
                         } else {
-                            lastError = "AI 回复被截断: $finishReason"
+                            lastError = "AI 回复异常: $finishReason"
                             if (content.isNotEmpty()) finalAnswer = content
                         }
                         done = true
@@ -596,6 +670,155 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
                 put("format", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("xlsx", "csv", "json"))); put("description", "导出格式") })
                 put("time_scope", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("today", "this_week", "this_month", "all"))) })
             }, listOf("format")))
+
+        // ★ v3.0.4 更多 AI 工具 (用户能做的所有事, AI 都能做)
+
+        // 21. UPDATE 类
+        tools.add(recordTool("update_glucose", "修改血糖记录",
+            JSONObject().apply {
+                put("record_id", JSONObject().apply { put("type", "integer"); put("description", "要修改的记录 ID") })
+                put("new_value", JSONObject().apply { put("type", "number"); put("description", "新血糖值 (mmol/L)") })
+                put("new_scene", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("fasting", "before_meal", "after_meal", "bedtime", "other"))) })
+            }, listOf("record_id")))
+
+        tools.add(recordTool("update_insulin", "修改胰岛素记录",
+            JSONObject().apply {
+                put("record_id", JSONObject().apply { put("type", "integer") })
+                put("new_dose", JSONObject().apply { put("type", "number"); put("description", "新剂量") })
+                put("new_dose_type", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("rapid", "short", "long", "mixed"))) })
+            }, listOf("record_id")))
+
+        // 22. 批量记录多餐
+        tools.add(recordTool("batch_record_meals", "一次性记录多种食物 (一顿饭的多个菜)",
+            JSONObject().apply {
+                put("foods", JSONObject().apply {
+                    put("type", "array")
+                    put("description", "食物列表, 每项是 {name: '米饭', grams: 100}")
+                    put("items", JSONObject().apply {
+                        put("type", "object")
+                        put("properties", JSONObject().apply {
+                            put("name", JSONObject().apply { put("type", "string"); put("description", "食物名") })
+                            put("grams", JSONObject().apply { put("type", "number"); put("description", "克数") })
+                        })
+                    })
+                })
+                put("meal_type", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("breakfast", "lunch", "dinner", "snack"))) })
+                put("time_offset_min", JSONObject().apply { put("type", "integer") })
+            }, listOf("foods")))
+
+        // 23. 食物搜索/查询
+        tools.add(recordTool("search_food", "查询食物的碳水/热量/GI",
+            JSONObject().apply {
+                put("food_name", JSONObject().apply { put("type", "string"); put("description", "食物名") })
+            }, listOf("food_name")))
+
+        // 24. 胰岛素剂量计算器 (基于碳水 + 个性化 ICR)
+        tools.add(recordTool("calc_insulin_dose", "估算胰岛素剂量 (碳水比例法)",
+            JSONObject().apply {
+                put("carbs_grams", JSONObject().apply { put("type", "number"); put("description", "碳水克数") })
+                put("current_glucose", JSONObject().apply { put("type", "number"); put("description", "当前血糖 (mmol/L), 用于计算修正剂量") })
+                put("target_glucose", JSONObject().apply { put("type", "number"); put("description", "目标血糖 (mmol/L), 默认 5.5") })
+                put("icr", JSONObject().apply { put("type", "number"); put("description", "碳水比 ICR (1 单位胰岛素覆盖多少克碳水), 默认 10") })
+                put("isf", JSONObject().apply { put("type", "number"); put("description", "胰岛素敏感系数 ISF (1 单位降多少 mmol/L), 默认 2.5") })
+            }, listOf("carbs_grams")))
+
+        // 25. TIR 达标率 (Time In Range)
+        tools.add(recordTool("get_tir", "获取 TIR 血糖目标范围内时间百分比",
+            JSONObject().apply {
+                put("time_scope", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("today", "yesterday", "this_week", "last_week", "this_month", "last_month"))) })
+                put("low", JSONObject().apply { put("type", "number"); put("description", "下限, 默认 3.9") })
+                put("high", JSONObject().apply { put("type", "number"); put("description", "上限, 默认 10.0") })
+            }, listOf("time_scope")))
+
+        // 26. 趋势分析 (近期血糖趋势)
+        tools.add(recordTool("analyze_trend", "分析近期血糖/体重/运动趋势",
+            JSONObject().apply {
+                put("target", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("glucose", "weight", "exercise", "sleep"))); put("description", "分析目标") })
+                put("days", JSONObject().apply { put("type", "integer"); put("description", "分析天数, 默认 7") })
+            }, listOf("target")))
+
+        // 27. 风险评估 (高低血糖风险)
+        tools.add(recordTool("assess_risk", "基于近期数据评估低血糖/高血糖风险",
+            JSONObject().apply {
+                put("days", JSONObject().apply { put("type", "integer"); put("description", "评估最近几天数据, 默认 7") })
+            }, listOf()))
+
+        // 28. 对比两个时间段
+        tools.add(recordTool("compare_periods", "对比两个时间段的数据 (上周 vs 本周 / 上月 vs 本月)",
+            JSONObject().apply {
+                put("target", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("glucose", "meal", "exercise", "weight", "insulin"))) })
+                put("period_a", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("last_week", "last_month"))) })
+                put("period_b", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("this_week", "this_month"))) })
+            }, listOf("target")))
+
+        // 29. 删除最近 N 条记录
+        tools.add(recordTool("delete_recent", "删除某个类型的最近 N 条记录",
+            JSONObject().apply {
+                put("target", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("glucose", "insulin", "meal", "exercise", "weight", "bp"))) })
+                put("count", JSONObject().apply { put("type", "integer"); put("description", "删除最近多少条") })
+            }, listOf("target", "count")))
+
+        // 30. 设置提醒 (基于时间)
+        tools.add(recordTool("set_reminder", "设置用药/测血糖/运动的提醒",
+            JSONObject().apply {
+                put("type", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("medication", "glucose", "exercise", "meal"))); put("description", "提醒类型") })
+                put("time", JSONObject().apply { put("type", "string"); put("description", "时间 HH:mm 如 '08:00'") })
+                put("note", JSONObject().apply { put("type", "string"); put("description", "备注 (可选)") })
+            }, listOf("type", "time")))
+
+        // 31. 食物营养估算 (基于克数和食物库)
+        tools.add(recordTool("estimate_nutrition", "估算食物的营养 (碳水/热量/蛋白质/脂肪)",
+            JSONObject().apply {
+                put("food_name", JSONObject().apply { put("type", "string") })
+                put("grams", JSONObject().apply { put("type", "number"); put("description", "份量 (克)") })
+            }, listOf("food_name", "grams")))
+
+        // 32. AI 设置暗黑模式/字体大小
+        tools.add(recordTool("set_preference", "设置应用偏好 (暗黑模式/字体大小/通知)",
+            JSONObject().apply {
+                put("key", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("dark_mode", "font_size", "notification_enabled", "language"))) })
+                put("value", JSONObject().apply { put("type", "string"); put("description", "新值 (true/false/small/medium/large/zh/en)") })
+            }, listOf("key", "value")))
+
+        // 33. AI 切换对话 (新建/加载历史)
+        tools.add(recordTool("manage_conversation", "AI 主动管理对话 (新建/列出/切换/删除)",
+            JSONObject().apply {
+                put("action", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("create", "list", "switch", "delete"))) })
+                put("conversation_id", JSONObject().apply { put("type", "string"); put("description", "对话 ID (switch/delete 时必填)") })
+            }, listOf("action")))
+
+        // 34. AI 自我总结 (总结对话/总结用户近况)
+        tools.add(recordTool("self_summarize", "总结对话内容 或 总结用户近期健康情况",
+            JSONObject().apply {
+                put("scope", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("conversation", "user_health"))); put("description", "总结范围") })
+                put("conversation_id", JSONObject().apply { put("type", "string"); put("description", "对话 ID (scope=conversation 时必填)") })
+                put("days", JSONObject().apply { put("type", "integer"); put("description", "健康数据天数 (scope=user_health 时)") })
+            }, listOf("scope")))
+
+        // 35. AI 紧急联系人管理
+        tools.add(recordTool("manage_emergency_contact", "管理紧急联系人 (增删改查)",
+            JSONObject().apply {
+                put("action", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("add", "list", "update", "delete"))) })
+                put("name", JSONObject().apply { put("type", "string"); put("description", "姓名 (add/update 时)") })
+                put("phone", JSONObject().apply { put("type", "string"); put("description", "电话 (add/update 时)") })
+                put("relation", JSONObject().apply { put("type", "string"); put("description", "关系 (add/update 时)") })
+                put("contact_id", JSONObject().apply { put("type", "integer"); put("description", "联系人 ID (update/delete 时)") })
+            }, listOf("action")))
+
+        // 36. AI 预测餐后血糖峰值
+        tools.add(recordTool("predict_post_meal", "基于当前血糖 + 即将摄入的碳水预测餐后血糖峰值",
+            JSONObject().apply {
+                put("current_glucose", JSONObject().apply { put("type", "number"); put("description", "餐前血糖 mmol/L") })
+                put("carbs_grams", JSONObject().apply { put("type", "number"); put("description", "即将摄入的碳水克数") })
+                put("insulin_taken", JSONObject().apply { put("type", "number"); put("description", "已注射的胰岛素单位 (可选)") })
+            }, listOf("current_glucose", "carbs_grams")))
+
+        // 37. AI 食物推荐 (基于血糖历史)
+        tools.add(recordTool("recommend_food", "基于用户近期血糖/偏好 推荐食物",
+            JSONObject().apply {
+                put("meal_type", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("breakfast", "lunch", "dinner", "snack"))) })
+                put("max_carbs", JSONObject().apply { put("type", "number"); put("description", "最大碳水克数 (可选)") })
+            }, listOf("meal_type")))
 
         return JSONArray(tools)
     }
