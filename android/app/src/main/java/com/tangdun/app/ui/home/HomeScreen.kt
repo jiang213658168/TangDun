@@ -30,6 +30,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.tangdun.app.sync.CGMNotificationListener
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.tangdun.app.ui.components.HeroGlucoseCard
+import com.tangdun.app.ui.components.InsightStatCard
+import com.tangdun.app.ui.components.ModernTopBar
+import com.tangdun.app.ui.components.SectionHeader
+import com.tangdun.app.ui.components.QuickActionRow
+import com.tangdun.app.ui.components.QuickAction
 import com.tangdun.app.ui.theme.*
 import java.util.Calendar
 
@@ -81,35 +87,29 @@ fun HomeScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
     ) {
-        // 顶部标题
-        TopAppBar(
-            title = {
-                Text(
-                    text = "糖盾",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            },
+        // ★ v2.0 重构: 现代顶部栏 (沉浸式 + 跟随主题色)
+        val sdf = java.text.SimpleDateFormat("MM/dd", java.util.Locale.getDefault())
+        val todayStr = sdf.format(java.util.Date())
+        val selStr = sdf.format(java.util.Date(uiState.selectedDate))
+        val isToday = selStr == todayStr
+
+        ModernTopBar(
+            title = "糖盾",
+            subtitle = if (isToday) "今天 $selStr · 守护血糖" else "$selStr · 历史数据",
             actions = {
-                // AI助手
                 IconButton(onClick = { navController?.navigate("chat") }) {
                     Icon(Icons.Default.Chat, contentDescription = "AI助手")
                 }
-                // 添加血糖按钮
                 IconButton(onClick = { showAddGlucoseDialog = true }) {
                     Icon(Icons.Default.Add, contentDescription = "记录血糖")
                 }
-                // 刷新按钮
                 IconButton(onClick = { viewModel.refresh() }) {
                     Icon(Icons.Default.Refresh, contentDescription = "刷新")
                 }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                actionIconContentColor = MaterialTheme.colorScheme.onPrimary
-            )
+            }
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         // 数据源状态
         DataSourceCard(
@@ -121,11 +121,7 @@ fun HomeScreen(
         )
 
         // 日期选择
-        val sdf = java.text.SimpleDateFormat("MM/dd", java.util.Locale.getDefault())
-        val todayStr = sdf.format(java.util.Date())
-        val selStr = sdf.format(java.util.Date(uiState.selectedDate))
-        val isToday = selStr == todayStr
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { viewModel.shiftDate(-1) }) { Icon(Icons.Default.ChevronLeft, "前一天") }
             Text(if (isToday) "今天 $selStr" else selStr, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             if (!isToday) TextButton(onClick = { viewModel.goToToday() }) { Text("今天", fontSize = 12.sp) }
@@ -140,7 +136,9 @@ fun HomeScreen(
             )
         }
 
-        // 当前血糖卡片
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // ★ Hero 血糖卡 (产品级新版)
         GlucoseCard(
             currentValue = uiState.currentGlucose,
             trend = uiState.trend,
@@ -148,7 +146,74 @@ fun HomeScreen(
             onAddClick = { showAddGlucoseDialog = true }
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        // ★ QuickAction 快捷操作行 (v2.0 新增)
+        Spacer(modifier = Modifier.height(16.dp))
+        QuickActionRow(
+            actions = listOf(
+                QuickAction(
+                    icon = Icons.Default.Restaurant,
+                    label = "记录饮食",
+                    accentColor = MaterialTheme.colorScheme.primary,
+                    onClick = { navController?.navigate("meal") }
+                ),
+                QuickAction(
+                    icon = Icons.Default.MedicalServices,
+                    label = "胰岛素",
+                    accentColor = MaterialTheme.colorScheme.tertiary,
+                    onClick = { navController?.navigate("insulin") }
+                ),
+                QuickAction(
+                    icon = Icons.Default.DirectionsRun,
+                    label = "运动",
+                    accentColor = MaterialTheme.colorScheme.secondary,
+                    onClick = { navController?.navigate("exercise") }
+                ),
+                QuickAction(
+                    icon = Icons.Default.AutoAwesome,
+                    label = "AI 智能记录",
+                    accentColor = MaterialTheme.colorScheme.primary,
+                    onClick = { navController?.navigate("ai_record") }
+                ),
+            )
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // ★ Insight 洞察栏 (v2.0 新增: 用 InsightStatCard)
+        SectionHeader(title = "今日洞察")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            InsightStatCard(
+                icon = Icons.Default.PieChart,
+                label = "TIR",
+                value = String.format("%.0f", uiState.tir ?: 0.0),
+                unit = "%",
+                accentColor = if ((uiState.tir ?: 0.0) >= 70) Success else Warning,
+                modifier = Modifier.weight(1f)
+            )
+            InsightStatCard(
+                icon = Icons.Default.Analytics,
+                label = "平均血糖",
+                value = String.format("%.1f", uiState.avgGlucose ?: 0.0),
+                unit = "mmol/L",
+                accentColor = glucoseColor(uiState.avgGlucose ?: 5.0),
+                modifier = Modifier.weight(1f)
+            )
+            InsightStatCard(
+                icon = Icons.Default.Timeline,
+                label = "记录数",
+                value = uiState.recordCount.toString(),
+                unit = "次",
+                accentColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
 
         // 指尖校准卡片 — 醒目位置
         CalibrationCard(
@@ -424,61 +489,14 @@ fun AlertBanner(message: String, severity: String) {
 fun GlucoseCard(
     currentValue: Double?, trend: String?, change30min: Double?, onAddClick: () -> Unit
 ) {
-    val g = currentValue
-    val bgColor = when { g == null -> TextHint; g < 3.0 -> GlucoseSevereLow; g < 3.9 -> GlucoseLow; g <= 10.0 -> GlucoseNormal; g <= 13.9 -> GlucoseHigh; else -> GlucoseSevereHigh }
-    val bgLabel = when { g == null -> ""; g < 3.0 -> "严重低血糖"; g < 3.9 -> "低血糖"; g <= 10.0 -> "正常"; g <= 13.9 -> "高血糖"; else -> "严重高血糖" }
-    val trendEmoji = when (trend) { "rising_fast" -> "⬆️"; "rising" -> "↗️"; "stable" -> "➡️"; "falling" -> "↘️"; "falling_fast" -> "⬇️"; else -> "" }
-    val trendLabel = when (trend) { "rising_fast" -> "快速上升"; "rising" -> "上升"; "stable" -> "平稳"; "falling" -> "下降"; "falling_fast" -> "快速下降"; else -> "" }
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(24.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = bgColor.copy(alpha = 0.06f))
-    ) {
-        Box {
-            Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                // 标签
-                Surface(shape = RoundedCornerShape(20.dp), color = bgColor.copy(alpha = 0.12f)) {
-                    Text(bgLabel, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                        fontSize = 13.sp, fontWeight = FontWeight.Medium, color = bgColor)
-                }
-                Spacer(Modifier.height(16.dp))
-
-                if (g != null) {
-                    // 大数字
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        Text(String.format("%.1f", g), fontSize = 64.sp, fontWeight = FontWeight.ExtraBold, color = TextDark)
-                        Spacer(Modifier.width(6.dp))
-                        Text("mmol/L", fontSize = 14.sp, color = TextBody, modifier = Modifier.padding(bottom = 12.dp))
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    // 趋势
-                    if (trendLabel.isNotEmpty()) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(trendEmoji, fontSize = 18.sp)
-                            Spacer(Modifier.width(6.dp))
-                            Text(trendLabel, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = bgColor)
-                        }
-                    }
-                    if (change30min != null) {
-                        Spacer(Modifier.height(4.dp))
-                        Text("30min ${String.format("%+.1f", change30min)}", fontSize = 12.sp, color = TextHint)
-                    }
-                } else {
-                    Icon(Icons.Default.WaterDrop, null, Modifier.size(56.dp), tint = TextHint.copy(alpha = 0.5f))
-                    Spacer(Modifier.height(12.dp))
-                    Text("暂无血糖数据", fontSize = 16.sp, color = TextHint)
-                    Spacer(Modifier.height(8.dp))
-                    Button(onClick = onAddClick, shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary)) {
-                        Icon(Icons.Default.Add, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("手动记录")
-                    }
-                }
-            }
-        }
-    }
+    // ★ v2.0 重构: 委托给 ModernComponents.HeroGlucoseCard (产品级视觉)
+    HeroGlucoseCard(
+        currentGlucose = currentValue,
+        targetLow = 3.9,
+        targetHigh = 10.0,
+        change30min = change30min,
+        onAddClick = onAddClick
+    )
 }
 
 @Composable
