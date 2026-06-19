@@ -105,30 +105,30 @@ class AiChatService(private val context: Context) {
 1. 先确认理解正确，回复简短确认
 2. 然后在回复末尾附加一个JSON指令块，格式:
 ```json
-{"action":"record_meal","food":"食物名","carbs":克数,"meal_type":"breakfast/lunch/dinner/snack","calories":热量,"gi":升糖指数,"time":"HH:mm或yyyy-MM-dd HH:mm"}
-{"action":"record_insulin","type":"rapid/short/long","dose":单位,"time":"HH:mm或yyyy-MM-dd HH:mm"}
-{"action":"record_exercise","type":"运动类型","minutes":分钟数,"time":"HH:mm或yyyy-MM-dd HH:mm"}
-{"action":"record_glucose","value":血糖值,"scene":"fasting/before_meal/after_meal/bedtime/other","time":"HH:mm或yyyy-MM-dd HH:mm"}
+{"action":"record_meal","food":"食物名","carbs":克数,"meal_type":"breakfast/lunch/dinner/snack","calories":热量,"gi":升糖指数,"protein":蛋白质克数,"fat":脂肪克数,"time":"HH:mm或now"}
+{"action":"record_insulin","type":"rapid/short/long/mixed","dose":单位,"site":"注射部位","time":"HH:mm或now"}
+{"action":"record_exercise","type":"运动类型","minutes":分钟数,"time":"HH:mm或now"}
+{"action":"record_glucose","value":血糖值,"scene":"fasting/before_meal/after_meal/bedtime/other","time":"HH:mm或now"}
 ```
 
 ### time字段规则 (必填!)
 - 如果用户说了具体时间(如"午饭时""8点""刚才")，**必须**填写time字段
 - 格式1: "HH:mm" (今天的时间, 如"12:30"="今天12:30")
-- 格式2: "yyyy-MM-dd HH:mm" (具体日期时间, 如"2026-06-19 12:30")
+- 格式2: "yyyy-MM-dd HH:mm" (具体日期时间)
 - 如果用户确实没有提到时间 → 写"now"表示当前时刻
-- 注意: 下午1点="13:00", 下午6点="18:00" (24小时制)
+- 下午1点="13:00", 下午6点="18:00" (24小时制)
 
-## 营养知识 (用于估算)
+### 营养知识 (用于估算)
 - 米饭100g≈28g碳水, 116kcal, GI=70
 - 面条100g≈25g碳水, 110kcal, GI=60
 - 馒头100g≈45g碳水, 220kcal, GI=85
 - 全麦面包100g≈41g碳水, 250kcal, GI=50
-- 苹果200g≈28g碳水, 104kcal, GI=36
-- 香蕉120g≈27g碳水, 110kcal, GI=55
-- 鸡蛋1个≈1g碳水, 70kcal
-- 牛奶250ml≈12g碳水, 160kcal, GI=30
+- 鸡蛋1个≈1g碳水, 70kcal, 蛋白质6g
+- 牛奶250ml≈12g碳水, 160kcal, 蛋白质8g, GI=30
+- 瘦肉100g≈0g碳水, 150kcal, 蛋白质30g, 脂肪8g
 - 蔬菜200g≈6g碳水, 40kcal
-- 如果用户没有说具体克数，根据常识估算
+- 水果200g≈25g碳水, 100kcal
+- 不确定时根据常识估算，填0表示无
 
 ## 重要原则
 - 始终建议用户咨询专业医生
@@ -309,18 +309,20 @@ class AiChatService(private val context: Context) {
                         val calories = if (json.has("calories")) json.optDouble("calories") else carbs * 4.0
                         val gi = json.optDouble("gi", 60.0)
                         val mealType = json.optString("meal_type", "snack")
+                        val protein = json.optDouble("protein", 0.0)
+                        val fat = json.optDouble("fat", 0.0)
 
                         val record = com.tangdun.app.data.local.entity.MealRecord(
-                            timestamp = timestamp,
-                            mealType = mealType, totalCarbs = carbs,
-                            totalCalories = calories, avgGi = gi
+                            timestamp = timestamp, mealType = mealType,
+                            totalCarbs = carbs, totalCalories = calories,
+                            totalProtein = protein, totalFat = fat, avgGi = gi
                         )
                         val mealId = db.mealDao().insert(record)
                         db.mealDao().insertItem(com.tangdun.app.data.local.entity.MealItem(
                             mealId = mealId, foodName = food,
-                            carbs = carbs, calories = calories, gi = gi
+                            carbs = carbs, calories = calories,
+                            protein = protein, fat = fat, gi = gi
                         ))
-                        // ★ 通知自学习引擎: AI记录了饮食
                         com.tangdun.app.domain.algorithm.SelfLearningManager.notifyMealRecorded()
                         displayText = displayText.replace(match.value, "")
                         executed++
@@ -328,11 +330,11 @@ class AiChatService(private val context: Context) {
                     "record_insulin" -> {
                         val type = json.optString("type", "rapid")
                         val dose = json.optDouble("dose", 1.0)
+                        val site = json.optString("site", "")
                         db.insulinDao().insert(com.tangdun.app.data.local.entity.InsulinRecord(
-                            timestamp = timestamp,
-                            insulinType = type, doseUnits = dose
+                            timestamp = timestamp, insulinType = type,
+                            doseUnits = dose, injectionSite = site
                         ))
-                        // ★ 通知自学习引擎: AI记录了胰岛素
                         com.tangdun.app.domain.algorithm.SelfLearningManager.notifyInsulinRecorded()
                         displayText = displayText.replace(match.value, "")
                         executed++

@@ -86,6 +86,7 @@ object SubScreen {
     const val HEALTH = "health"
     const val EXERCISE = "exercise"
     const val CHAT = "chat"
+    const val AI_RECORD = "ai_record"
 }
 
 val mainScreens = listOf(Screen.Home, Screen.Record, Screen.Prediction, Screen.Report, Screen.Settings)
@@ -146,6 +147,7 @@ fun MainScreen() {
             composable(SubScreen.HEALTH) { SubPageScaffold("健康记录", navController) { HealthScreen() } }
             composable(SubScreen.EXERCISE) { SubPageScaffold("运动管理", navController) { ExerciseScreen() } }
             composable(SubScreen.CHAT) { SubPageScaffold("AI助手", navController) { ChatScreen() } }
+            composable(SubScreen.AI_RECORD) { SubPageScaffold("AI智能记录", navController) { com.tangdun.app.ui.chat.AiRecordScreen() } }
         }
     }
 }
@@ -153,6 +155,7 @@ fun MainScreen() {
 @Composable
 fun RecordScreen(navController: androidx.navigation.NavController) {
     val items = listOf(
+        Triple("🤖 AI记录", Icons.Default.AutoAwesome, SubScreen.AI_RECORD),
         Triple("饮食", Icons.Default.Restaurant, SubScreen.MEAL),
         Triple("胰岛素", Icons.Default.MedicalServices, SubScreen.INSULIN),
         Triple("运动", Icons.Default.DirectionsRun, SubScreen.EXERCISE),
