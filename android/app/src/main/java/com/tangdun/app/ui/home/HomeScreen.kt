@@ -116,15 +116,8 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // ★ 修复: 之前误删了, 现在恢复 HomeScreen 的 DataSourceCard 保留所有功能
-        //   (自检/同步历史/导入xlsx/通知监听) - 用户要求"移动到设置页"是错的, 实际是"保留并显示"
-        DataSourceCard(
-            hasData = uiState.records.isNotEmpty(),
-            recordCount = uiState.recordCount,
-            syncMsg = uiState.error,
-            onSync = { viewModel.syncHistory() },
-            onImportXlsx = { uri -> viewModel.importXlsx(uri) }
-        )
+        // ★ v2.8: DataSourceCard (广播/通知监听/自检/同步历史/导入xlsx) 已迁移到 SettingsScreen
+        //   详见 SettingsScreen → DataSourceCard()
 
         // 日期选择
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -1183,90 +1176,4 @@ fun AddGlucoseDialog(
             }
         )
     }
-}
-
-@Composable
-fun DataSourceCard(hasData: Boolean, recordCount: Int, syncMsg: String?, onSync: () -> Unit, onImportXlsx: ((android.net.Uri) -> Unit)? = null) {
-    val context = LocalContext.current
-    var testResult by remember { mutableStateOf("") }
-    var lastRxTime by remember { mutableStateOf("") }
-    var importMsg by remember { mutableStateOf("") }
-    val xlsxLauncher = rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            importMsg = "导入中..."
-            onImportXlsx?.invoke(uri)
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        val prefs = context.applicationContext.getSharedPreferences("glucose_rx_log", android.content.Context.MODE_PRIVATE)
-        val time = prefs.getLong("last_receive_time", 0)
-        if (time > 0) {
-            val sdf = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
-            lastRxTime = "最后接收: ${sdf.format(java.util.Date(time))}"
-        }
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = if (hasData) AlertSuccess.copy(alpha = 0.08f) else AlertWarning.copy(alpha = 0.08f))
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (hasData) Icons.Default.CheckCircle else Icons.Default.Sync, null,
-                    tint = if (hasData) AlertSuccess else AlertWarning, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(if (hasData) "广播接收正常 (${recordCount}条)" else "等待广播数据...",
-                    style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-            }
-            if (lastRxTime.isNotEmpty()) Text(lastRxTime, style = MaterialTheme.typography.bodySmall, color = TextHint)
-            // 显示通知监听状态
-            val notifyOk = CGMNotificationListener.isEnabled(context)
-            val notifyMsg = when {
-                notifyOk && hasData -> "通知监听 ✅ | 广播 ✅"
-                notifyOk -> "通知监听 ✅ | 等待数据..."
-                else -> "通知监听 ❌ | 请去设置开启"
-            }
-            Text(notifyMsg, fontSize = 11.sp, color = if (notifyOk) AlertSuccess else AlertWarning)
-            Spacer(Modifier.height(8.dp))
-            // ★ 修复"导入xlsx右边长条形空框": 加 horizontalScroll 让 4 个按钮可横滑, 防止按钮溢出后显示成空框
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(onClick = {
-                    testResult = "发送中..."
-                    try {
-                        context.sendBroadcast(android.content.Intent("com.eveningoutpost.dexdrip.BgEstimate").apply {
-                            setPackage("com.tangdun.app")
-                            putExtra("com.eveningoutpost.dexdrip.Extras.BgEstimate", 126.0)
-                            putExtra("com.eveningoutpost.dexdrip.Extras.Time", System.currentTimeMillis())
-                        })
-                        testResult = "✅ 自检通过"
-                    } catch (e: Exception) { testResult = "❌ ${e.message}" }
-                }) { Text("自检", style = MaterialTheme.typography.bodySmall) }
-                OutlinedButton(onClick = onSync) { Text("同步历史", style = MaterialTheme.typography.bodySmall) }
-                OutlinedButton(onClick = { xlsxLauncher.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel")) }) {
-                    Text("导入xlsx", style = MaterialTheme.typography.bodySmall)
-                }
-                OutlinedButton(onClick = {
-                    if (notifyOk) {
-                        CGMNotificationListener.requestRebind(context)
-                        testResult = "通知监听已重新绑定"
-                    } else {
-                        CGMNotificationListener.openSettings(context)
-                    }
-                }) { Text(if (notifyOk) "刷新监听" else "开启监听", style = MaterialTheme.typography.bodySmall) }
-            }
-            if (syncMsg != null && syncMsg.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(syncMsg, fontSize = 12.sp, color = if (syncMsg.startsWith("已同步")) AlertSuccess else TextSecondary) }
-            if (testResult.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(testResult, fontSize = 12.sp, color = TextSecondary) }
-            if (importMsg.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(importMsg, fontSize = 12.sp, color = if (importMsg.startsWith("导入")) AlertSuccess else TextSecondary) }
-        }
-    }
-
 }

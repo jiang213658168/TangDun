@@ -104,14 +104,12 @@ fun PredictionHeroCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .shadow(
-                elevation = 6.dp,
-                shape = RoundedCornerShape(28.dp),
-                clip = false
-            ),
+            .padding(horizontal = 16.dp),
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 0.dp),
+        // ★ 修复灰边: 显式 transparent border
+        border = androidx.compose.foundation.BorderStroke(0.dp, Color.Transparent),
     ) {
         Box(
             modifier = Modifier
@@ -311,25 +309,22 @@ fun PredictionStatCard(
         ?: MaterialTheme.colorScheme.outline
     val animatedColor by animateColorAsState(valueColor, label = "valueColor")
 
-    // ★ 修复黑框: 完全去掉 border, 用 background tint + shadow 区分 primary
+    // ★ 修复灰边: 完全去掉手动 shadow, 用 cardElevation + border + tint 区分 primary, 视觉上不再有"灰边"
     Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .then(
-                if (isPrimary) Modifier.shadow(
-                    elevation = 3.dp,
-                    shape = RoundedCornerShape(20.dp),
-                    clip = false
-                ) else Modifier
-            ),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isPrimary) animatedColor.copy(alpha = 0.10f)
                             else MaterialTheme.colorScheme.surface
         ),
-        elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 0.dp),  // ★ 零阴影 (解决 light mode 下"看起来像黑框"的视觉错觉)
-        // ★ 关键修复: 显式设置 transparent border (防止 M3 Card 默认 1dp outline 显示成"黑框")
-        border = androidx.compose.foundation.BorderStroke(0.dp, Color.Transparent),
+        elevation = androidx.compose.material3.CardDefaults.cardElevation(
+            defaultElevation = if (isPrimary) 0.dp else 0.dp
+        ),
+        // ★ 关键修复: 显式设置 transparent border (防止 M3 Card 默认 1dp outline 显示成"黑框/灰边")
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (isPrimary) 1.5.dp else 0.dp,
+            color = if (isPrimary) animatedColor.copy(alpha = 0.35f) else Color.Transparent
+        ),
     ) {
         Column(
             modifier = Modifier

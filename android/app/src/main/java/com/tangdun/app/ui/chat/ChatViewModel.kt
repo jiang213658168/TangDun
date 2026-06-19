@@ -92,6 +92,8 @@ class ChatViewModel @Inject constructor(
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
     private val aiChatService = AiChatService(context)
+    // ★ v2.8 AI 助手: 调用通用大模型 API (OpenAI 兼容) 自动解析用户输入
+    private val aiClient = com.tangdun.app.ai.AIClient(settingsManager)
     // ★ AI 助手全套权限引擎
     private val aiEngine = AIPermissionEngine(
         context = context,
@@ -424,8 +426,13 @@ class ChatViewModel @Inject constructor(
                 }
             }
 
-            // ★ AI 助手全套权限 (v2.7): Step 1 - 用 AIIntentParser 解析所有可能的意图
-            val aiIntents = AIIntentParser.parse(content)
+            // ★ v2.8 AI 助手: 优先调用大模型 API 自动解析, 失败回退本地规则
+            val (aiIntents, parseSource) = AIIntentParser.parseAsync(content, aiClient)
+            val sourceLabel = when (parseSource) {
+                AIIntentParser.ParseSource.AI -> "🤖 AI 大模型"
+                AIIntentParser.ParseSource.LOCAL -> "📋 本地规则"
+            }
+            Log.i("ChatVM", "[$sourceLabel] 解析: ${aiIntents.size} 条 → ${aiIntents.joinToString { it.description }}")
             if (aiIntents.isNotEmpty()) {
                 Log.i("ChatVM", "AI 意图解析: ${aiIntents.size} 条 → ${aiIntents.joinToString { it.description }}")
 

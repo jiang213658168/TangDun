@@ -129,9 +129,34 @@ object AIIntentParser {
     )
 
     /**
-     * 主入口: 解析用户输入 → 意图列表
+     * 主入口 (同步, 纯本地规则解析) - 兼容旧代码
      */
-    fun parse(input: String): List<AIIntent> {
+    fun parse(input: String): List<AIIntent> = parseLocal(input)
+
+    /**
+     * ★ v2.8 异步入口: 优先调用 AI 大模型解析, 失败/未配回退到本地规则
+     *
+     * 工作流程:
+     *  1. 如果 aiClient 已配置 → 调用大模型 → 解析 JSON → 返回意图列表
+     *  2. AI 调用失败/超时/未配置 → 回退到本地 regex 解析
+     */
+    suspend fun parseAsync(input: String, aiClient: AIClient? = null): Pair<List<AIIntent>, ParseSource> {
+        // 1. 优先尝试 AI 大模型
+        if (aiClient != null && aiClient.isConfigured()) {
+            val aiIntents = aiClient.parseIntentsWithAI(input)
+            if (aiIntents != null && aiIntents.isNotEmpty()) {
+                return aiIntents to ParseSource.AI
+            }
+        }
+        // 2. 回退到本地规则
+        val localIntents = parseLocal(input)
+        return localIntents to ParseSource.LOCAL
+    }
+
+    /**
+     * 本地规则解析 (纯 regex, 不依赖网络)
+     */
+    private fun parseLocal(input: String): List<AIIntent> {
         val intents = mutableListOf<AIIntent>()
         val lower = input.lowercase()
         val timeAnchors = extractTimeAnchors(input)  // 用于推断事件时间
@@ -156,6 +181,9 @@ object AIIntentParser {
 
         return intents
     }
+
+    /** 解析来源: AI 大模型 or 本地规则 */
+    enum class ParseSource { AI, LOCAL }
 
     /**
      * 复用 AiRecordHelper 的本地解析, 提取饮食/胰岛素/血糖记录

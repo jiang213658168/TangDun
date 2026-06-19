@@ -25,6 +25,8 @@ import com.tangdun.app.util.SettingsManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.horizontalScroll
 
 /**
  * 设置页面
@@ -41,6 +43,9 @@ import kotlin.math.abs
 fun SettingsScreen() {
     val context = LocalContext.current
     val settingsManager = remember { SettingsManager(context) }
+    // ★ v2.8: HomeViewModel 提供同步历史/导入 xlsx/广播接收状态
+    val homeViewModel: com.tangdun.app.ui.home.HomeViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    val homeUiState by homeViewModel.uiState.collectAsState()
 
     Column(
         modifier = Modifier
@@ -68,7 +73,13 @@ fun SettingsScreen() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        DataSourceCard()
+        DataSourceCard(
+            recordCount = homeUiState.recordCount,
+            hasData = homeUiState.records.isNotEmpty(),
+            syncMsg = homeUiState.error,
+            onSync = { homeViewModel.syncHistory() },
+            onImportXlsx = { uri -> homeViewModel.importXlsx(uri) }
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -358,92 +369,130 @@ fun ParamRow(label: String, value: String) {
 }
 
 @Composable
-fun DataSourceCard() {
+fun DataSourceCard(
+    recordCount: Int = 0,
+    hasData: Boolean = false,
+    syncMsg: String? = null,
+    onSync: () -> Unit = {},
+    onImportXlsx: (android.net.Uri) -> Unit = {}
+) {
+    val context = LocalContext.current
+    var testResult by remember { mutableStateOf("") }
+    var lastRxTime by remember { mutableStateOf("") }
+    var importMsg by remember { mutableStateOf("") }
+    val xlsxLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            importMsg = "导入中..."
+            onImportXlsx(uri)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val prefs = context.applicationContext.getSharedPreferences("glucose_rx_log", android.content.Context.MODE_PRIVATE)
+        val time = prefs.getLong("last_receive_time", 0)
+        if (time > 0) {
+            val sdf = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
+            lastRxTime = "最后接收: ${sdf.format(java.util.Date(time))}"
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = if (hasData) AlertSuccess.copy(alpha = 0.08f) else AlertWarning.copy(alpha = 0.08f))
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (hasData) Icons.Default.CheckCircle else Icons.Default.Sync, null,
+                    tint = if (hasData) AlertSuccess else AlertWarning, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (hasData) "广播接收正常 (${recordCount}条)" else "等待广播数据...",
+                    style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            }
+            if (lastRxTime.isNotEmpty()) Text(lastRxTime, style = MaterialTheme.typography.bodySmall, color = TextHint)
+            // 显示通知监听状态
+            val notifyOk = com.tangdun.app.sync.CGMNotificationListener.isEnabled(context)
+            val notifyMsg = when {
+                notifyOk && hasData -> "通知监听 ✅ | 广播 ✅"
+                notifyOk -> "通知监听 ✅ | 等待数据..."
+                else -> "通知监听 ❌ | 请去设置开启"
+            }
+            Text(notifyMsg, fontSize = 11.sp, color = if (notifyOk) AlertSuccess else AlertWarning)
+            Spacer(Modifier.height(8.dp))
+            // ★ 4 个操作按钮: 自检/同步历史/导入xlsx/通知监听
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(onClick = {
+                    testResult = "发送中..."
+                    try {
+                        context.sendBroadcast(android.content.Intent("com.eveningoutpost.dexdrip.BgEstimate").apply {
+                            setPackage("com.tangdun.app")
+                            putExtra("com.eveningoutpost.dexdrip.Extras.BgEstimate", 126.0)
+                            putExtra("com.eveningoutpost.dexdrip.Extras.Time", System.currentTimeMillis())
+                        })
+                        testResult = "✅ 自检通过"
+                    } catch (e: Exception) { testResult = "❌ ${e.message}" }
+                }) { Text("自检", style = MaterialTheme.typography.bodySmall) }
+                OutlinedButton(onClick = onSync) { Text("同步历史", style = MaterialTheme.typography.bodySmall) }
+                OutlinedButton(onClick = { xlsxLauncher.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel")) }) {
+                    Text("导入xlsx", style = MaterialTheme.typography.bodySmall)
+                }
+                OutlinedButton(onClick = {
+                    if (notifyOk) {
+                        com.tangdun.app.sync.CGMNotificationListener.requestRebind(context)
+                        testResult = "通知监听已重新绑定"
+                    } else {
+                        com.tangdun.app.sync.CGMNotificationListener.openSettings(context)
+                    }
+                }) { Text(if (notifyOk) "刷新监听" else "开启监听", style = MaterialTheme.typography.bodySmall) }
+            }
+            if (syncMsg != null && syncMsg.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(syncMsg, fontSize = 12.sp, color = if (syncMsg.startsWith("已同步")) AlertSuccess else TextSecondary) }
+            if (testResult.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(testResult, fontSize = 12.sp, color = TextSecondary) }
+            if (importMsg.isNotEmpty()) { Spacer(Modifier.height(4.dp)); Text(importMsg, fontSize = 12.sp, color = if (importMsg.startsWith("导入")) AlertSuccess else TextSecondary) }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    // 数据来源说明 (原有的列表版)
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
+            .padding(horizontal = 16.dp),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.Sync,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "数据来源",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Text("数据来源说明", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             }
-
             Spacer(modifier = Modifier.height(16.dp))
-
-            // 血糖数据来源
-            Text(
-                text = "血糖数据",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Text("血糖数据", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.height(8.dp))
-
-            DataSourceItem(
-                name = "欧泰健康 / Aidex",
-                desc = "CGM设备自动同步（通过广播接收）",
-                icon = Icons.Default.Bluetooth
-            )
-            DataSourceItem(
-                name = "手动输入",
-                desc = "指尖血糖仪测量后手动记录",
-                icon = Icons.Default.Edit
-            )
-
+            DataSourceItem(name = "欧泰健康 / Aidex", desc = "CGM设备自动同步（通过广播接收）", icon = Icons.Default.Bluetooth)
+            DataSourceItem(name = "手动输入", desc = "指尖血糖仪测量后手动记录", icon = Icons.Default.Edit)
             Spacer(modifier = Modifier.height(16.dp))
-
-            // 其他健康数据来源
-            Text(
-                text = "其他健康数据",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Text("其他健康数据", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.height(8.dp))
-
-            DataSourceItem(
-                name = "华为手表",
-                desc = "心率、步数、运动、睡眠",
-                icon = Icons.Default.Watch
-            )
-
+            DataSourceItem(name = "华为手表", desc = "心率、步数、运动、睡眠", icon = Icons.Default.Watch)
             Spacer(modifier = Modifier.height(16.dp))
-
-            // 使用说明
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = "使用说明",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Text("使用说明", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "1. 在欧泰健康中开启数据分享\n2. 安装华为运动健康App连接手表\n3. 血糖自动同步，无需手动操作",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
+                    Text("1. 在欧泰健康中开启数据分享\n2. 安装华为运动健康App连接手表\n3. 血糖自动同步，无需手动操作",
+                        style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                 }
             }
         }
