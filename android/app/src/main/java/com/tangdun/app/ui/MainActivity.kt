@@ -146,7 +146,7 @@ fun MainScreen() {
             composable(SubScreen.INSULIN) { SubPageScaffold("胰岛素记录", navController) { InsulinScreen() } }
             composable(SubScreen.HEALTH) { SubPageScaffold("健康记录", navController) { HealthScreen() } }
             composable(SubScreen.EXERCISE) { SubPageScaffold("运动管理", navController) { ExerciseScreen() } }
-            composable(SubScreen.CHAT) { SubPageScaffold("AI助手", navController) { ChatScreen(navController = navController) } }
+            composable(SubScreen.CHAT) { SubPageScaffold("AI助手", navController, showTopBar = false) { ChatScreen(navController = navController) } }
         }
     }
 }
@@ -186,13 +186,15 @@ fun RecordScreen(navController: androidx.navigation.NavController) {
 }
 
 @Composable
-fun SubPageScaffold(title: String, navController: androidx.navigation.NavController, content: @Composable () -> Unit) {
+fun SubPageScaffold(title: String, navController: androidx.navigation.NavController, showTopBar: Boolean = true, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Text(title, fontWeight = FontWeight.Bold) },
-            navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.Default.ArrowBack, "返回") } },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary, titleContentColor = MaterialTheme.colorScheme.onPrimary, navigationIconContentColor = MaterialTheme.colorScheme.onPrimary)
-        )
+        if (showTopBar) {
+            TopAppBar(
+                title = { Text(title, fontWeight = FontWeight.Bold) },
+                navigationIcon = { IconButton(onClick = { navController.popBackStack() }) { Icon(Icons.Default.ArrowBack, "返回") } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary, titleContentColor = MaterialTheme.colorScheme.onPrimary, navigationIconContentColor = MaterialTheme.colorScheme.onPrimary)
+            )
+        }
         content()
     }
 }

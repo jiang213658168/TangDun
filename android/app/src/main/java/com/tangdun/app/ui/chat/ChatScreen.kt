@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -134,6 +137,8 @@ fun ChatScreen(
     ) {
         // ★ 修复键盘遮挡: 用 Scaffold 让 bottomBar 自动处理 imePadding
         Scaffold(
+            // ★ 让 Scaffold 也感知 IME, 内容区域跟着键盘一起调整
+            contentWindowInsets = WindowInsets.systemBars.union(WindowInsets.ime),
             topBar = {
                 // ★ v2.9 顶栏紧凑化: 用 Surface + Row 自定义 (48dp 高), 去掉默认 TopAppBar 的 padding/insets 让顶栏不再臃肿
                 Surface(
@@ -185,10 +190,11 @@ fun ChatScreen(
                 }
             },
         bottomBar = {
-            // ★ 关键修复: Scaffold.bottomBar 自动处理 imePadding, 输入框永远在键盘上方
+            // ★ 关键修复: Scaffold 默认不处理 IME, 这里显式加 imePadding 让输入框在键盘弹起时被顶上去
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .imePadding()
                     .background(MaterialTheme.colorScheme.surface)
             ) {
                 // 错误提示
