@@ -105,11 +105,18 @@ class AiChatService(private val context: Context) {
 1. 先确认理解正确，回复简短确认
 2. 然后在回复末尾附加一个JSON指令块，格式:
 ```json
-{"action":"record_meal","food":"食物名","carbs":克数,"meal_type":"breakfast/lunch/dinner/snack","calories":热量,"gi":升糖指数}
-{"action":"record_insulin","type":"rapid/short/long","dose":单位}
-{"action":"record_exercise","type":"运动类型","minutes":分钟数}
-{"action":"record_glucose","value":血糖值,"scene":"fasting/before_meal/after_meal/bedtime/other"}
+{"action":"record_meal","food":"食物名","carbs":克数,"meal_type":"breakfast/lunch/dinner/snack","calories":热量,"gi":升糖指数,"time":"HH:mm或yyyy-MM-dd HH:mm"}
+{"action":"record_insulin","type":"rapid/short/long","dose":单位,"time":"HH:mm或yyyy-MM-dd HH:mm"}
+{"action":"record_exercise","type":"运动类型","minutes":分钟数,"time":"HH:mm或yyyy-MM-dd HH:mm"}
+{"action":"record_glucose","value":血糖值,"scene":"fasting/before_meal/after_meal/bedtime/other","time":"HH:mm或yyyy-MM-dd HH:mm"}
 ```
+
+### time字段规则 (必填!)
+- 如果用户说了具体时间(如"午饭时""8点""刚才")，**必须**填写time字段
+- 格式1: "HH:mm" (今天的时间, 如"12:30"="今天12:30")
+- 格式2: "yyyy-MM-dd HH:mm" (具体日期时间, 如"2026-06-19 12:30")
+- 如果用户确实没有提到时间 → 写"now"表示当前时刻
+- 注意: 下午1点="13:00", 下午6点="18:00" (24小时制)
 
 ## 营养知识 (用于估算)
 - 米饭100g≈28g碳水, 116kcal, GI=70
@@ -250,6 +257,28 @@ class AiChatService(private val context: Context) {
     fun getSystemPrompt(): String = systemPrompt
 
     /**
+     * 解析AI返回的时间字段 → 毫秒时间戳
+     * "now"/空→当前, "HH:mm"→今天该时间, "yyyy-MM-dd HH:mm"→具体时间
+     */
+    private fun parseAiTime(timeStr: String, baseTime: Long = System.currentTimeMillis()): Long {
+        if (timeStr.isBlank() || timeStr == "now") return baseTime
+        // HH:mm → 今天该时间
+        Regex("^(\\d{1,2}):(\\d{2})$").matchEntire(timeStr.trim())?.let { m ->
+            val cal = java.util.Calendar.getInstance().apply { timeInMillis = baseTime }
+            cal.set(java.util.Calendar.HOUR_OF_DAY, m.groupValues[1].toInt())
+            cal.set(java.util.Calendar.MINUTE, m.groupValues[2].toInt())
+            cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
+            val r = cal.timeInMillis
+            return if (r > baseTime + 3600_000) r - 86400_000 else r  // 将来>1h→昨天
+        }
+        // yyyy-MM-dd HH:mm
+        try { return java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).parse(timeStr.trim())?.time ?: baseTime } catch (_: Exception) {}
+        // Unix毫秒数字
+        timeStr.trim().toLongOrNull()?.let { return it }
+        return baseTime
+    }
+
+    /**
      * 处理AI回复中的记录指令 — 提取JSON并执行数据库操作
      * @return Pair<显示文本, 执行结果数量>
      */
@@ -270,6 +299,7 @@ class AiChatService(private val context: Context) {
             try {
                 val json = org.json.JSONObject(match.value)
                 val action = json.optString("action", "")
+                val timestamp = parseAiTime(json.optString("time", ""))
                 val db = com.tangdun.app.TangDunApp.getDatabase(context)
 
                 when (action) {
@@ -281,7 +311,7 @@ class AiChatService(private val context: Context) {
                         val mealType = json.optString("meal_type", "snack")
 
                         val record = com.tangdun.app.data.local.entity.MealRecord(
-                            timestamp = System.currentTimeMillis(),
+                            timestamp = timestamp,
                             mealType = mealType, totalCarbs = carbs,
                             totalCalories = calories, avgGi = gi
                         )
@@ -299,7 +329,7 @@ class AiChatService(private val context: Context) {
                         val type = json.optString("type", "rapid")
                         val dose = json.optDouble("dose", 1.0)
                         db.insulinDao().insert(com.tangdun.app.data.local.entity.InsulinRecord(
-                            timestamp = System.currentTimeMillis(),
+                            timestamp = timestamp,
                             insulinType = type, doseUnits = dose
                         ))
                         // ★ 通知自学习引擎: AI记录了胰岛素
@@ -311,7 +341,7 @@ class AiChatService(private val context: Context) {
                         val exType = json.optString("type", "walking")
                         val minutes = json.optInt("minutes", 30)
                         db.exerciseDao().insert(com.tangdun.app.data.local.entity.ExerciseRecord(
-                            startTime = System.currentTimeMillis() - minutes * 60_000L,
+                            startTime = timestamp - minutes * 60_000L,
                             exerciseType = exType, durationMin = minutes
                         ))
                         displayText = displayText.replace(match.value, "")
@@ -321,7 +351,7 @@ class AiChatService(private val context: Context) {
                         val value = json.optDouble("value", 5.0)
                         val scene = json.optString("scene", "other")
                         db.glucoseDao().insert(com.tangdun.app.data.local.entity.GlucoseRecord(
-                            timestamp = System.currentTimeMillis(),
+                            timestamp = timestamp,
                             value = value, source = "manual", scene = scene
                         ))
                         displayText = displayText.replace(match.value, "")
