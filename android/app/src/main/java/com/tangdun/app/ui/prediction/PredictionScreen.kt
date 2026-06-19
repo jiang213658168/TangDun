@@ -198,7 +198,8 @@ fun PredictionScreen(
             if (uiState.tcnWeight > 0 || uiState.physioWeight > 0) {
                 ModelWeightBar(
                     tcnWeight = uiState.tcnWeight,
-                    physioWeight = uiState.physioWeight
+                    physioWeight = uiState.physioWeight,
+                    personalizationWeight = uiState.personalizationWeight
                 )
             }
 

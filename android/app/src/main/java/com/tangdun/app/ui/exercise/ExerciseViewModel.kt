@@ -43,6 +43,46 @@ class ExerciseViewModel @Inject constructor(
         loadData()
     }
 
+    /**
+     * ★ 手动添加运动记录
+     */
+    fun addExercise(
+        exerciseType: String,
+        durationMin: Int,
+        intensity: String,
+        steps: Int = 0,
+        caloriesBurned: Double = 0.0,
+        timestamp: Long = System.currentTimeMillis()
+    ) {
+        viewModelScope.launch {
+            try {
+                val record = com.tangdun.app.data.local.entity.ExerciseRecord(
+                    startTime = timestamp - durationMin * 60_000L,
+                    exerciseType = exerciseType,
+                    durationMin = durationMin,
+                    intensity = intensity,
+                    steps = steps,
+                    caloriesBurned = caloriesBurned
+                )
+                exerciseDao.insert(record)
+                loadData()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
+    fun deleteExercise(record: com.tangdun.app.data.local.entity.ExerciseRecord) {
+        viewModelScope.launch {
+            try {
+                exerciseDao.delete(record)
+                loadData()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
     private fun loadData() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)

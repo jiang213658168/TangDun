@@ -63,13 +63,32 @@ class GlucoseChartView @JvmOverloads constructor(
     fun setData(points: List<Pair<Long, Double>>) {
         dataPoints = points.sortedBy { it.first }
         if (dataPoints.isNotEmpty()) {
-            minY = max(1.0, dataPoints.minOf { it.second } - 2.0).coerceAtMost(2.0)
-            maxY = min(30.0, dataPoints.maxOf { it.second } + 3.0).coerceAtLeast(12.0)
+            val dataMin = dataPoints.minOf { it.second }
+            val dataMax = dataPoints.maxOf { it.second }
+            // ★ 修复: 保证 targetLow 在图表 30%-50% 高度, targetHigh 在 50%-70% 高度
+            //   原来代码 minY 强制 2.0 + maxY 强制 12.0, 当数据范围窄时 target 范围会偏离
+            val effectiveMin = min(dataMin, targetLow) - 2.0
+            val effectiveMax = max(dataMax, targetHigh) + 2.5
+            minY = effectiveMin.coerceIn(1.5, 4.0)
+            maxY = effectiveMax.coerceIn(13.0, 25.0)
         }
         invalidate()
     }
 
-    fun setTargetRange(low: Double, high: Double) { targetLow = low; targetHigh = high; invalidate() }
+    fun setTargetRange(low: Double, high: Double) {
+        targetLow = low
+        targetHigh = high
+        // ★ 关键修复: setTargetRange 后重算 minY/maxY, 否则 target range 不会自适应位置
+        if (dataPoints.isNotEmpty()) {
+            val dataMin = dataPoints.minOf { it.second }
+            val dataMax = dataPoints.maxOf { it.second }
+            val effectiveMin = min(dataMin, targetLow) - 2.0
+            val effectiveMax = max(dataMax, targetHigh) + 2.5
+            minY = effectiveMin.coerceIn(1.5, 4.0)
+            maxY = effectiveMax.coerceIn(13.0, 25.0)
+        }
+        invalidate()
+    }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         gestureDetector.onTouchEvent(event)

@@ -445,7 +445,7 @@ fun AddHealthRecordDialog(
         else -> "添加记录"
     }
 
-    Dialog(onDismissRequest = { }) {
+    Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             shape = RoundedCornerShape(16.dp)
@@ -528,7 +528,7 @@ fun AddHealthRecordDialog(
 
                 Spacer(modifier = Modifier.height(24.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { }) { Text("取消") }
+                    TextButton(onClick = onDismiss) { Text("取消") }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(onClick = {
                         val data = mutableMapOf<String, Any>()

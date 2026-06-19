@@ -35,6 +35,8 @@ data class ChatUiState(
     val pendingAction: PendingAction? = null,
     // ★ 上一条用户消息原文 (用于解析记录关联到具体消息)
     val lastUserInput: String = "",
+    // ★ AI 助手历史会话列表 (用于侧边栏)
+    val conversations: List<Conversation> = emptyList(),
 )
 
 /** ★ AI 助手权限: 待确认动作 */
@@ -246,6 +248,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             chatDao.insertConversation(conversation)
             _uiState.value = ChatUiState(conversationId = conversationId)
+            refreshConversations()
         }
     }
 
@@ -255,10 +258,33 @@ class ChatViewModel @Inject constructor(
     fun loadConversation(conversationId: String) {
         viewModelScope.launch {
             val messages = chatDao.getMessagesList(conversationId)
-            _uiState.value = ChatUiState(
+            _uiState.value = _uiState.value.copy(
                 conversationId = conversationId,
                 messages = messages
             )
+            refreshConversations()
+        }
+    }
+
+    /**
+     * ★ AI 助手历史: 刷新会话列表 (Flow 自动更新, 这里手动 reload 一次)
+     */
+    fun refreshConversations() {
+        viewModelScope.launch {
+            val all = chatDao.getAllConversationsOnce()
+            _uiState.value = _uiState.value.copy(conversations = all)
+        }
+    }
+
+    /** 删除一个会话 */
+    fun deleteConversation(conversationId: String) {
+        viewModelScope.launch {
+            chatDao.deleteConversationWithMessages(conversationId)
+            if (_uiState.value.conversationId == conversationId) {
+                createNewConversation()
+            } else {
+                refreshConversations()
+            }
         }
     }
 

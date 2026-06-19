@@ -23,7 +23,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tangdun.app.data.local.entity.ChatMessage
+import com.tangdun.app.data.local.entity.Conversation
 import com.tangdun.app.ui.theme.*
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /** ★ AI 助手权限: ParsedRecord → UI 显示辅助 */
 private fun ParsedRecord.icon(): ImageVector = when (this) {
@@ -59,12 +64,16 @@ fun ChatScreen(
 
     // ★ AI 助手权限: 应用记录弹窗状态
     var showApplyDialog by remember { mutableStateOf(false) }
+    // ★ AI 助手历史: 抽屉状态
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val coroutineScope = rememberCoroutineScope()
 
-    // 自动创建新会话
+    // 自动创建新会话 + 加载历史
     LaunchedEffect(Unit) {
         if (uiState.conversationId == null) {
             viewModel.createNewConversation()
         }
+        viewModel.refreshConversations()
     }
 
     // 自动滚动到底部
@@ -74,48 +83,75 @@ fun ChatScreen(
         }
     }
 
-    // ★ 修复键盘遮挡: 用 Scaffold 让 bottomBar 自动处理 imePadding
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "糖盾AI助手",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        if (uiState.isLoading) {
-                            Text(
-                                text = "正在解析/思考...",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextHint
-                            )
-                        }
-                    }
+    // ★ ModalNavigationDrawer: 侧边栏显示历史会话
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ChatHistoryDrawer(
+                conversations = uiState.conversations,
+                currentId = uiState.conversationId,
+                onNewConversation = {
+                    viewModel.createNewConversation()
+                    coroutineScope.launch { drawerState.close() }
                 },
-                actions = {
-                    // ★ AI 助手导航权限: TopAppBar 快捷跳转按钮
-                    IconButton(onClick = { navController?.navigate("home") }) {
-                        Icon(Icons.Default.Home, contentDescription = "首页", tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                    IconButton(onClick = { navController?.navigate("prediction") }) {
-                        Icon(Icons.Default.Timeline, contentDescription = "预测", tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                    IconButton(onClick = { navController?.navigate("insulin") }) {
-                        Icon(Icons.Default.MedicalServices, contentDescription = "胰岛素", tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                    IconButton(onClick = { viewModel.createNewConversation() }) {
-                        Icon(Icons.Default.Add, contentDescription = "新对话", tint = MaterialTheme.colorScheme.onPrimary)
-                    }
+                onSelect = { id ->
+                    viewModel.loadConversation(id)
+                    coroutineScope.launch { drawerState.close() }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                onDelete = { id ->
+                    viewModel.deleteConversation(id)
+                }
             )
-        },
+        }
+    ) {
+        // ★ 修复键盘遮挡: 用 Scaffold 让 bottomBar 自动处理 imePadding
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                text = "糖盾AI助手",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (uiState.isLoading) {
+                                Text(
+                                    text = "正在解析/思考...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextHint
+                                )
+                            }
+                        }
+                    },
+                    navigationIcon = {
+                        // ★ 抽屉按钮 (打开历史会话列表)
+                        IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
+                            Icon(Icons.Default.Menu, contentDescription = "历史会话", tint = MaterialTheme.colorScheme.onPrimary)
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { navController?.navigate("home") }) {
+                            Icon(Icons.Default.Home, contentDescription = "首页", tint = MaterialTheme.colorScheme.onPrimary)
+                        }
+                        IconButton(onClick = { navController?.navigate("prediction") }) {
+                            Icon(Icons.Default.Timeline, contentDescription = "预测", tint = MaterialTheme.colorScheme.onPrimary)
+                        }
+                        IconButton(onClick = { navController?.navigate("insulin") }) {
+                            Icon(Icons.Default.MedicalServices, contentDescription = "胰岛素", tint = MaterialTheme.colorScheme.onPrimary)
+                        }
+                        IconButton(onClick = { viewModel.createNewConversation() }) {
+                            Icon(Icons.Default.Add, contentDescription = "新对话", tint = MaterialTheme.colorScheme.onPrimary)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                        actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+            },
         bottomBar = {
             // ★ 关键修复: Scaffold.bottomBar 自动处理 imePadding, 输入框永远在键盘上方
             Column(
@@ -256,6 +292,153 @@ fun ChatScreen(
                 }
             },
             onDismiss = { viewModel.dismissPendingAction() }
+        )
+    }
+}
+}
+
+@Composable
+private fun ChatHistoryDrawer(
+    conversations: List<Conversation>,
+    currentId: String?,
+    onNewConversation: () -> Unit,
+    onSelect: (String) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    val dateFormat = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+    ModalDrawerSheet(
+        modifier = Modifier.width(300.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .padding(vertical = 16.dp)
+        ) {
+            // 标题
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.History, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text("历史会话", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Text("${conversations.size}", style = MaterialTheme.typography.labelMedium, color = TextHint)
+            }
+
+            // 新对话按钮
+            Button(
+                onClick = onNewConversation,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("开始新对话")
+            }
+
+            Divider(modifier = Modifier.padding(vertical = 8.dp))
+
+            // 会话列表
+            if (conversations.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.Forum, contentDescription = null, tint = TextHint, modifier = Modifier.size(48.dp))
+                        Spacer(Modifier.height(12.dp))
+                        Text("暂无历史会话", style = MaterialTheme.typography.bodyMedium, color = TextHint)
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    items(conversations, key = { it.id }) { conv ->
+                        ChatHistoryItem(
+                            conversation = conv,
+                            isCurrent = conv.id == currentId,
+                            dateFormat = dateFormat,
+                            onClick = { onSelect(conv.id) },
+                            onDelete = { onDelete(conv.id) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatHistoryItem(
+    conversation: Conversation,
+    isCurrent: Boolean,
+    dateFormat: SimpleDateFormat,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer
+                else androidx.compose.ui.graphics.Color.Transparent,
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                if (isCurrent) Icons.Default.Chat else Icons.Default.Forum,
+                contentDescription = null,
+                tint = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = conversation.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                Text(
+                    text = "${conversation.messageCount}条 · ${dateFormat.format(Date(conversation.updatedAt))}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = { showDeleteConfirm = true }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Default.Delete, contentDescription = "删除", tint = AlertCritical.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("删除会话?") },
+            text = { Text("将删除该会话及其全部消息,无法恢复") },
+            confirmButton = {
+                TextButton(onClick = { showDeleteConfirm = false; onDelete() }) {
+                    Text("删除", color = AlertCritical)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
+            }
         )
     }
 }
@@ -645,8 +828,7 @@ fun ChatInputBar(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding(),  // 只处理底部导航栏 (全面屏手势条)
-        shadowElevation = 8.dp,
-        tonalElevation = 2.dp
+        shadowElevation = 8.dp
     ) {
         Row(
             modifier = Modifier

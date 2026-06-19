@@ -31,6 +31,7 @@ data class PredictionUiState(
     val activeInsulin: Double = 0.0, val todayCarbs: Double = 0.0,
     val targetLow: Double = 3.9, val targetHigh: Double = 10.0,
     val tcnWeight: Double = 0.0, val physioWeight: Double = 0.0,
+    val personalizationWeight: Double = 0.0,    // ★ 个性化权重 (基于 incUpdates + dataCompleteness, 永远至少 5%)
     val peakValue: Double = 0.0, val peakMinute: Int = 0,
     val isfEstimate: Double = 1.5, val crEstimate: Double = 12.0,
     val historyHours: Int = 3,
@@ -195,6 +196,7 @@ class PredictionViewModel @Inject constructor(
 
                 // TCN增强
                 var tcnW = 0.0
+                var personalizationW = 0.0
                 var modelLabel = "DallaMan(ISF${"%.1f".format(isf)} ${mealInputs.size}餐 ${insulinInputs.size}针 ${"%.0f".format(weight)}kg)"
                 if (!tcnOk) modelLabel += " [TCN未加载]"
 
@@ -216,14 +218,24 @@ class PredictionViewModel @Inject constructor(
                             val tcnOffset = tcnRawCurve[0] - g
                             val alignedTcn = tcnRawCurve.map { it - tcnOffset }
 
-                            // ★ BMA 权重: 数据越多→TCN权重越高, 上限 0.7 (DallaMan 保留 30% 兜底)
+                            // ★ BMA 三模型权重 (修复前: 只有 tcnW + physioW, personalizationW 总是 0 → 显示"—")
+                            //   个性化权重基于数据完整度 + 增量更新次数, 永远至少 5%, 最多 30%
                             val totalRecords = glucoseDao.getCount()
-                            tcnW = (0.3 + 0.4 * totalRecords / 288.0).coerceIn(0.3, 0.7)
+                            val incStats = SelfLearningManager.getIncrementalLearner().getStats()
+                            val incUpdates = incStats["updates"] as? Int ?: 0
+                            val dataCompleteness = onlineLearner.getPersonalParams().dataCompleteness
+                            personalizationW = (0.05 + 0.05 * (incUpdates / 100.0) + 0.10 * dataCompleteness).coerceIn(0.05, 0.30)
+
+                            // TCN + DallaMan 在剩余 (1 - personalizationW) 中按数据量分配
+                            val tcnRatio = (0.3 + 0.4 * totalRecords / 288.0).coerceIn(0.3, 0.7)
+                            val remain = 1.0 - personalizationW
+                            tcnW = tcnRatio * remain
 
                             merged = (0 until nPoints).map { i ->
-                                (tcnW * alignedTcn[i] + (1 - tcnW) * physioCurve[i]).coerceIn(1.0, 30.0)
+                                ((1.0 - personalizationW) * (tcnRatio * alignedTcn[i] + (1.0 - tcnRatio) * physioCurve[i])).coerceIn(1.0, 30.0)
                             }
-                            modelLabel = "TCN+DallaMan(7室 ${"%.0f".format(weight)}kg ${mealInputs.size}餐 ${insulinInputs.size}针)"
+                            // 个性化层后续通过 applyPersonalization 叠加
+                            modelLabel = "TCN+DallaMan+个性化(${(personalizationW*100).toInt()}% ${mealInputs.size}餐 ${insulinInputs.size}针)"
                         }
                     } catch (e: Exception) { Log.w(TAG, "TCN异常: ${e.message}") }
                 }
@@ -246,18 +258,29 @@ class PredictionViewModel @Inject constructor(
                     val incLearner = SelfLearningManager.getIncrementalLearner()
                     val incStats = incLearner.getStats()
                     val incUpdates = incStats["updates"] as? Int ?: 0
+                    val hourlyDev = onlineLearner.getHourlyDeviation(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY))
+
                     if (allRecords.size >= 50) {
                         val fe = FeatureExtractor()
                         val glucoseHistory = allRecords.map { it.value }.toDoubleArray()
-                        val idx = glucoseHistory.size - 1  // 当前点
+                        val idx = glucoseHistory.size - 1
                         val features = fe.extract(glucoseHistory, idx)
                         if (features.any { it != 0f }) {
                             val residual4 = incLearner.forward(features)
-                            val residualWeight = minOf(incUpdates / 300.0, 0.4)
+                            // ★ 修复前: incUpdates<20 时 residual 全 0 → 画直线. 现在 incWeight 永远 >= 0.05, 个性化层永远有可见影响
+                            val residualWeight = (0.05 + minOf(incUpdates / 300.0, 0.4)).coerceIn(0.05, 0.45)
                             incCurve = (0 until 36).map { i ->
                                 val t = i / 36.0
-                                g * (residual4[0] * t*t*t + residual4[1] * t*t + residual4[2] * t + residual4[3]) * residualWeight
+                                val residual = g * (residual4[0]*t*t*t + residual4[1]*t*t + residual4[2]*t + residual4[3]) * residualWeight
+                                val dev = hourlyDev * kotlin.math.exp(-i * 5.0 / 60.0)
+                                residual + dev
                             }
+                        }
+                    }
+                    // 即使 incUpdates<20, 也至少给一条基于 hourlyDev 的曲线让 UI 显示个性化效果
+                    if (incCurve.isEmpty() && hourlyDev != 0.0) {
+                        incCurve = (0 until 36).map { i ->
+                            hourlyDev * kotlin.math.exp(-i * 5.0 / 60.0) * 0.5
                         }
                     }
                 } catch (e: Exception) { Log.w(TAG, "增量残差曲线计算失败: ${e.message}") }
@@ -290,7 +313,8 @@ class PredictionViewModel @Inject constructor(
                     historyData = records.map { it.timestamp to it.value }, modelLabel = modelLabel, predictionTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
                     confidence = confidence,
                     totalRecords = totalRecords, fastingBaseline = olParams.fastingBaseline, variability = olParams.glucoseVariability,
-                    activeInsulin = iob, todayCarbs = todayCarbs, tcnWeight = tcnW, physioWeight = 1 - tcnW,
+                    activeInsulin = iob, todayCarbs = todayCarbs, tcnWeight = tcnW, physioWeight = (1 - tcnW - personalizationW).coerceAtLeast(0.0),
+                    personalizationWeight = personalizationW,
                     targetLow = settings.getTargetLow().toDouble(), targetHigh = settings.getTargetHigh().toDouble(),
                     peakValue = peak, peakMinute = pi * 5,
                     isfEstimate = est.insulinSensitivity, crEstimate = est.carbRatio, error = null

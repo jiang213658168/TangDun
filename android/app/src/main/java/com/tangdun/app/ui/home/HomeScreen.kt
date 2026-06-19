@@ -46,13 +46,13 @@ import java.util.Calendar
 fun CalibrationCard(currentGlucose: Double?, offset: Double, calCount: Int, confidence: String, onCalibrate: (Double) -> Unit) {
     var fingerValue by remember { mutableStateOf("") }
     var showInput by remember { mutableStateOf(false) }
-    Card(
+    com.tangdun.app.ui.components.TangDunCard(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        // ★ 修复黑框: 显式去掉 M3 Card 的默认 1dp 边框 (light mode 下 outline 近黑色)
-        border = androidx.compose.foundation.BorderStroke(0.dp, androidx.compose.ui.graphics.Color.Transparent),
-        colors = CardDefaults.cardColors(containerColor = if (calCount == 0) AlertWarning.copy(alpha = 0.06f) else AlertSuccess.copy(alpha = 0.06f))
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (calCount == 0) AlertWarning.copy(alpha = 0.06f)
+                             else AlertSuccess.copy(alpha = 0.06f)
+        )
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -116,14 +116,8 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 数据源状态
-        DataSourceCard(
-            hasData = uiState.records.isNotEmpty(),
-            recordCount = uiState.recordCount,
-            syncMsg = uiState.error,
-            onSync = { viewModel.syncHistory() },
-            onImportXlsx = { uri -> viewModel.importXlsx(uri) }
-        )
+        // ★ 移除: 数据源/广播接收卡 → 全部移到设置页 (用户反馈)
+        //   原 DataSourceCard (自检/同步历史/导入xlsx/通知监听) 已在 SettingsScreen.DataSourceCard 中
 
         // 日期选择
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -296,12 +290,12 @@ fun HomeScreen(
 
 @Composable
 fun AdviceCard(advices: List<com.tangdun.app.domain.algorithm.SmartAdvisor.Advice>) {
-    Card(
+    com.tangdun.app.ui.components.TangDunCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -511,12 +505,12 @@ fun GlucoseChartCard(
     targetLow: Double,
     targetHigh: Double
 ) {
-    Card(
+    com.tangdun.app.ui.components.TangDunCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -578,12 +572,12 @@ fun TodayStatsCard(
     tir: Double?,
     recordCount: Int
 ) {
-    Card(
+    com.tangdun.app.ui.components.TangDunCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(

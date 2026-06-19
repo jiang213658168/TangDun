@@ -22,6 +22,9 @@ interface ChatDao {
     @Query("SELECT * FROM conversation ORDER BY updatedAt DESC")
     fun getAllConversations(): Flow<List<Conversation>>
 
+    @Query("SELECT * FROM conversation ORDER BY updatedAt DESC")
+    suspend fun getAllConversationsOnce(): List<Conversation>
+
     @Query("SELECT * FROM conversation WHERE id = :id")
     suspend fun getConversation(id: String): Conversation?
 

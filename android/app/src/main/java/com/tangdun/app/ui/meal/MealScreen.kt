@@ -348,14 +348,40 @@ fun AddMealDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
+                // ★ 跨日切换: 昨天/今天/明天 (事后补记更方便)
+                val now = System.currentTimeMillis()
+                val todayMidnight = Calendar.getInstance().apply {
+                    timeInMillis = now
+                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                }
+                fun shiftDate(delta: Int) {
+                    val c = Calendar.getInstance().apply { timeInMillis = selectedTime }
+                    c.add(Calendar.DAY_OF_MONTH, delta)
+                    selectedTime = c.timeInMillis
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("昨天" to -1, "今天" to 0, "明天" to 1).forEach { (label, delta) ->
+                        val target = Calendar.getInstance().apply {
+                            timeInMillis = todayMidnight.timeInMillis
+                            add(Calendar.DAY_OF_MONTH, delta)
+                        }
+                        val sc = Calendar.getInstance().apply { timeInMillis = selectedTime }
+                        val selected = sc.get(Calendar.YEAR) == target.get(Calendar.YEAR) &&
+                                       sc.get(Calendar.DAY_OF_YEAR) == target.get(Calendar.DAY_OF_YEAR)
+                        FilterChip(selected = selected, onClick = { shiftDate(delta) }, label = { Text(label, style = MaterialTheme.typography.bodySmall) })
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
                 OutlinedButton(
                     onClick = { showTimePicker = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.AccessTime, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(String.format("%02d:%02d", hour, minute))
+                    val md = String.format("%02d-%02d", calendar.get(Calendar.MONTH) + 1, calendar.get(Calendar.DAY_OF_MONTH))
+                    Text("$md ${String.format("%02d:%02d", hour, minute)}")
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

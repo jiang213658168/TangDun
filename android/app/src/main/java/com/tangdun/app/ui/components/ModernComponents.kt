@@ -34,6 +34,34 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
+ * ★ 糖盾标准卡片 - 统一解决 M3 Card 默认 1dp outline "黑框" 问题
+ *
+ * 行为:
+ *  - 无默认 border (避免 light mode 下显示近黑边框)
+ *  - elevation = 0 (避免阴影看起来像边框)
+ *  - tonalElevation = 1.dp (M3 标准 tonal surface 区分)
+ *  - shape = RoundedCornerShape(20.dp)
+ */
+@Composable
+fun TangDunCard(
+    modifier: Modifier = Modifier,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(20.dp),
+    colors: CardColors = CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.surface
+    ),
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = modifier,
+        shape = shape,
+        colors = colors,
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),     // ★ 零阴影
+        border = BorderStroke(0.dp, Color.Transparent),                      // ★ 零边框
+        content = content
+    )
+}
+
+/**
  * 糖盾 TangDun 产品级 UI 组件库 (v2.0)
  *
  * 设计原则:
