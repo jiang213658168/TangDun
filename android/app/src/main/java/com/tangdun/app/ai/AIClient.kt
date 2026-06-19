@@ -57,6 +57,42 @@ class AIClient(private val settingsManager: SettingsManager) {
     fun isConfigured(): Boolean = settingsManager.isAiConfigured()
 
     /**
+     * v3.0.1 测试连接: 简单调一次 chat/completions, 不带 tools, 用来诊断 API Key/网络/模型问题
+     */
+    suspend fun testConnection(): String {
+        if (!isConfigured()) return "❌ AI 未配置: 请先在「我的 → AI 对话配置」填入 API Key"
+        return try {
+            val requestBody = JSONObject().apply {
+                put("model", modelName)
+                put("messages", JSONArray().apply {
+                    put(JSONObject().put("role", "user").put("content", "ping"))
+                })
+                put("max_tokens", 20)
+            }.toString()
+            val request = Request.Builder()
+                .url("${settingsManager.getOpenAiBaseUrl().trimEnd('/')}/chat/completions")
+                .addHeader("Authorization", "Bearer ${settingsManager.getOpenAiApiKey()}")
+                .addHeader("Content-Type", "application/json")
+                .post(requestBody.toRequestBody(JSON_MEDIA))
+                .build()
+            Log.i(TAG, "测试连接: ${settingsManager.getOpenAiBaseUrl().trimEnd('/')}/chat/completions, model=$modelName")
+            val response = httpClient.newCall(request).execute()
+            response.use { resp ->
+                val body = resp.body?.string() ?: ""
+                if (resp.isSuccessful) {
+                    "✅ 连接成功!\nBase URL: ${settingsManager.getOpenAiBaseUrl()}\nModel: $modelName\nHTTP ${resp.code}\n\n${body.take(500)}"
+                } else {
+                    "❌ HTTP ${resp.code} ${resp.message}\n\n$body"
+                }
+            }
+        } catch (e: Exception) {
+            val cls = e.javaClass.simpleName
+            val msg = e.message ?: "(无消息)"
+            "❌ 异常 [$cls]: $msg\n\n可能原因:\n- 手机无法访问 ${settingsManager.getOpenAiBaseUrl()}\n- DNS 解析失败 / 防火墙拦截 / SSL 握手失败\n- 缺少网络权限 (manifest)"
+        }
+    }
+
+    /**
      * Agent 工具调用结果
      */
     data class ToolResult(

@@ -1,4 +1,4 @@
-package com.tangdun.app.ui.settings
+﻿package com.tangdun.app.ui.settings
 
 import android.content.Intent
 import android.net.Uri
@@ -539,6 +539,8 @@ fun AiChatConfigCard(settingsManager: SettingsManager) {
     var openAiApiKey by remember { mutableStateOf(settingsManager.getOpenAiApiKey()) }
     var openAiBaseUrl by remember { mutableStateOf(settingsManager.getOpenAiBaseUrl()) }
     var aiModel by remember { mutableStateOf(settingsManager.getAiModel()) }
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+    var testResult by remember { mutableStateOf("") }
     var ernieApiKey by remember { mutableStateOf(settingsManager.getErnieApiKey()) }
     var ernieSecretKey by remember { mutableStateOf(settingsManager.getErnieSecretKey()) }
     var showApiKey by remember { mutableStateOf(false) }
@@ -767,6 +769,43 @@ fun AiChatConfigCard(settingsManager: SettingsManager) {
                     style = MaterialTheme.typography.bodySmall,
                     color = AlertSuccess
                 )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ★ v3.0.1 测试连接按钮 - 立刻看到 API Key/网络/模型是否可用
+            OutlinedButton(
+                onClick = {
+                    testResult = "测试中..."
+                    coroutineScope.launch {
+                        val client = com.tangdun.app.ai.AIClient(settingsManager)
+                        testResult = client.testConnection()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(Icons.Default.NetworkCheck, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("测试连接 (诊断 API/网络/模型)")
+            }
+
+            if (testResult.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (testResult.startsWith("✅"))
+                            AlertSuccess.copy(alpha = 0.1f)
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Text(
+                        text = testResult,
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -1365,6 +1404,7 @@ fun DataBackupCard() {
     var backupStatus by remember { mutableStateOf("") }
     var isBackingUp by remember { mutableStateOf(false) }
     var backupFiles by remember { mutableStateOf(listOf<String>()) }
+    var isSaved by remember { mutableStateOf(false) }
 
     // 加载备份文件列表
     LaunchedEffect(Unit) {
@@ -1428,10 +1468,12 @@ fun DataBackupCard() {
                 shape = RoundedCornerShape(8.dp),
                 enabled = !isBackingUp
             ) {
-                Icon(Icons.Default.Save, contentDescription = null)
+Icon(Icons.Default.Save, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(if (isBackingUp) "备份中..." else "备份数据")
+                Text(if (isSaved) "已保存" else "保存配置")
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             // 调试导出(全量数据)
             var debugMsg by remember { mutableStateOf("") }
