@@ -882,6 +882,68 @@ SettingsScreen → SelfLearningCard → 三层学习卡片：
 └─────────────────────────────────────────┘
 ```
 
+### 5.5 AI 智能记录 (AiRecordScreen + AiRecordHelper)
+
+**文件:** `ui/chat/AiRecordScreen.kt` (320行) + `ui/chat/AiRecordHelper.kt` (210行)
+
+#### 设计理念
+
+AI 记录拥有与手动记录完全对等的权限。用户说一句话 → AI 解析 → 预览确认 → 一键保存。支持一次说多件事（"吃了饭还打了胰岛素"）。
+
+#### 支持的 7 种记录类型
+
+| 类型 | JSON字段 | DAO | 通知 |
+|-----|---------|-----|------|
+| meal | food/carbs/calories/gi/mealType/protein/fat/fiber/portion/time | mealDao | notifyMealRecorded |
+| insulin | dose/doseType(含mixed)/site/notes/time | insulinDao | notifyInsulinRecorded |
+| exercise | exType/minutes/intensity/notes/time | exerciseDao | — |
+| glucose | value/scene/time | glucoseDao | — |
+| medication | name/dose/medType/notes/time | medicationDao | — |
+| weight | value/time | weightDao | — |
+| symptom | symptomType/severity/description/glucose/time | symptomDao | — |
+
+#### 时间解析 (parseTime)
+
+```
+"now"/空 → System.currentTimeMillis()
+"HH:mm" → 今天该时间 (24h制, 如"12:30")
+"yyyy-MM-dd HH:mm" → SimpleDateFormat解析
+纯数字 → Unix毫秒 (toLongOrNull)
+```
+
+从语义自动提取："午饭"="12:00", "早饭"="07:30", "晚饭"="18:30", "刚才"="now"
+
+#### 多记录解析
+
+```kotlin
+// AiRecordHelper.parse() → 返回 List<ParsedRecord>
+// 输入JSON数组或单个JSON对象
+val jsonStr = if (jsonStr.startsWith("[")) JSONArray(jsonStr)
+             else JSONArray().put(JSONObject(jsonStr))
+// → 逐条解析为 ParsedRecord 子类
+```
+
+#### 保存流程
+
+```
+AiRecordHelper.saveRecord(context, record):
+  when (record) {
+    Meal → mealDao.insert + mealDao.insertItem + notifyMealRecorded
+    Insulin → insulinDao.insert + notifyInsulinRecorded
+    Exercise → exerciseDao.insert
+    Glucose → glucoseDao.insert
+    Medication → medicationDao.insert
+    Weight → weightDao.insert
+    Symptom → symptomDao.insert
+  }
+```
+
+#### 删除时一致性
+
+删除记录时和手动记录一样通知自学习引擎重新检查 dataCompleteness：
+- deleteMeal() → SelfLearningManager.notifyMealDeleted()
+- deleteRecord() (insulin) → SelfLearningManager.notifyInsulinDeleted()
+
 ---
 
 ## 6. 预测全链条
