@@ -80,6 +80,25 @@ class SelfLearningManager(private val context: Context) {
         }
 
         /**
+         * 外部通知: 已删除饮食 → 从DB重新检查数据完整度
+         * 避免误加后删除导致dataCompleteness永久偏高
+         */
+        fun notifyMealDeleted() { recalcCompleteness() }
+        fun notifyInsulinDeleted() { recalcCompleteness() }
+
+        /** 从DB诚实重算completeness (删除记录后调用) */
+        private fun recalcCompleteness() {
+            instance?.scope?.launch {
+                try {
+                    val (hasMeals, hasInsulin) = instance!!.checkDataCompleteness()
+                    instance!!.onlineLearner.updateDataCompleteness(hasMeals, hasInsulin)
+                } catch (e: Exception) {
+                    Log.w(TAG, "recalcCompleteness失败: ${e.message}")
+                }
+            }
+        }
+
+        /**
          * 外部通知: 已记录胰岛素 → 更新数据完整度
          */
         fun notifyInsulinRecorded() {

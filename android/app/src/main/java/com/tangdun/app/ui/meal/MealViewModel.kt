@@ -86,6 +86,8 @@ class MealViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 mealDao.deleteWithItems(record)
+                // ★ 通知自学习: 饮食已删除 → 重新检查数据完整度
+                com.tangdun.app.domain.algorithm.SelfLearningManager.notifyMealDeleted()
                 loadMeals()
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = e.message)
