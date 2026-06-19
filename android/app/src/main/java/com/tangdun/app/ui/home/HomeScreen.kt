@@ -2,6 +2,7 @@ package com.tangdun.app.ui.home
 
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -273,7 +274,8 @@ fun HomeScreen(
             GlucoseRecordsList(
                 records = uiState.records,
                 onDelete = { viewModel.deleteGlucose(it) },
-                onEdit = { record, newValue -> viewModel.editGlucose(record, newValue) }
+                onEdit = { record, newValue -> viewModel.editGlucose(record, newValue) },
+                onTimestampEdit = { record, newTimestamp -> viewModel.editGlucoseTimestamp(record, newTimestamp) }
             )
         }
 
@@ -619,9 +621,10 @@ fun TodayStatsCard(
 fun GlucoseRecordsList(
     records: List<com.tangdun.app.data.local.entity.GlucoseRecord>,
     onDelete: (com.tangdun.app.data.local.entity.GlucoseRecord) -> Unit,
-    onEdit: (com.tangdun.app.data.local.entity.GlucoseRecord, Double) -> Unit
+    onEdit: (com.tangdun.app.data.local.entity.GlucoseRecord, Double) -> Unit,
+    onTimestampEdit: (com.tangdun.app.data.local.entity.GlucoseRecord, Long) -> Unit
 ) {
-    // ★ 修复: 去掉 takeLast(10) 限制, 用 LazyColumn 支持滑动删除
+    // ★ 修复: 去掉 takeLast(10) 限制, 用 LazyColumn + 固定高度让用户可滚动看全部
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -644,20 +647,19 @@ fun GlucoseRecordsList(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            if (records.size > 10) {
-                Text(
-                    text = "← 左右滑动删除",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "↑↓ 上下滑动查看全部 · 点击右侧图标编辑/删除",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(modifier = Modifier.height(8.dp))
 
-            // LazyColumn: 支持长列表性能 + 显示所有记录 (去掉 takeLast 10 限制)
+            // ★ 修复滚动: 用 fixed height(380.dp) 确保 LazyColumn 在 verticalScroll 父级中有可用滚动空间
             androidx.compose.foundation.lazy.LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 480.dp),  // 限制最大高度, 避免撑爆整个页面
+                    .height(380.dp),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
                 items(
@@ -667,7 +669,10 @@ fun GlucoseRecordsList(
                     GlucoseRecordItem(
                         record = record,
                         onDelete = { onDelete(record) },
-                        onEdit = { newValue -> onEdit(record, newValue) }
+                        onEdit = { newValue, newTimestamp ->
+                            onEdit(record, newValue)
+                            onTimestampEdit(record, newTimestamp)
+                        }
                     )
                     Divider(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
@@ -684,7 +689,7 @@ fun GlucoseRecordsList(
 fun GlucoseRecordItem(
     record: com.tangdun.app.data.local.entity.GlucoseRecord,
     onDelete: () -> Unit,
-    onEdit: (Double) -> Unit
+    onEdit: (Double, Long) -> Unit
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
@@ -777,36 +782,135 @@ fun GlucoseRecordItem(
         )
     }
 
-    // 编辑对话框
+    // ★ 编辑对话框 (修复跨日编辑: 支持改血糖值 + 时间)
     if (showEditDialog) {
         var newValue by remember { mutableStateOf(record.value.toString()) }
-        AlertDialog(
-            onDismissRequest = { showEditDialog = false },
-            title = { Text("编辑血糖值") },
-            text = {
-                OutlinedTextField(
-                    value = newValue,
-                    onValueChange = { newValue = it },
-                    label = { Text("血糖值 (mmol/L)") },
-                    singleLine = true,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal
+        var editTime by remember { mutableStateOf(record.timestamp) }
+        var showTimePicker by remember { mutableStateOf(false) }
+
+        val editCal = Calendar.getInstance().apply { timeInMillis = editTime }
+        val editHour = editCal.get(Calendar.HOUR_OF_DAY)
+        val editMinute = editCal.get(Calendar.MINUTE)
+
+        // 跨日切换: 昨天 / 今天 / 明天
+        val now = System.currentTimeMillis()
+        val todayMidnight = Calendar.getInstance().apply {
+            timeInMillis = now
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        fun shiftEditDate(deltaDays: Int) {
+            val c = Calendar.getInstance().apply { timeInMillis = editTime }
+            c.add(Calendar.DAY_OF_MONTH, deltaDays)
+            editTime = c.timeInMillis
+        }
+
+        Dialog(onDismissRequest = { showEditDialog = false }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "编辑血糖记录",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
                     )
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val value = newValue.toDoubleOrNull()
-                    if (value != null && value in 1.0..30.0) {
-                        onEdit(value)
-                        showEditDialog = false
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = newValue,
+                        onValueChange = { newValue = it },
+                        label = { Text("血糖值 (mmol/L)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text("日期", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("昨天" to -1, "今天" to 0, "明天" to 1).forEach { (label, delta) ->
+                            val target = Calendar.getInstance().apply {
+                                timeInMillis = todayMidnight.timeInMillis
+                                add(Calendar.DAY_OF_MONTH, delta)
+                            }
+                            val sc = Calendar.getInstance().apply { timeInMillis = editTime }
+                            val selected = sc.get(Calendar.YEAR) == target.get(Calendar.YEAR) &&
+                                           sc.get(Calendar.DAY_OF_YEAR) == target.get(Calendar.DAY_OF_YEAR)
+                            FilterChip(
+                                selected = selected,
+                                onClick = { shiftEditDate(delta) },
+                                label = { Text(label, style = MaterialTheme.typography.bodySmall) }
+                            )
+                        }
                     }
-                }) { Text("保存") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEditDialog = false }) { Text("取消") }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = { showTimePicker = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.AccessTime, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        val monthDay = String.format("%02d-%02d", editCal.get(Calendar.MONTH) + 1, editCal.get(Calendar.DAY_OF_MONTH))
+                        Text(
+                            text = "$monthDay ${String.format("%02d:%02d", editHour, editMinute)}",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { showEditDialog = false }) { Text("取消") }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(onClick = {
+                            val value = newValue.toDoubleOrNull()
+                            if (value != null && value in 1.0..30.0) {
+                                onEdit(value, editTime)
+                                showEditDialog = false
+                            }
+                        }) { Text("保存") }
+                    }
+                }
             }
-        )
+        }
+
+        if (showTimePicker) {
+            val timePickerState = rememberTimePickerState(
+                initialHour = editHour,
+                initialMinute = editMinute
+            )
+            AlertDialog(
+                onDismissRequest = { showTimePicker = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val c = Calendar.getInstance().apply {
+                            timeInMillis = editTime
+                            set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                            set(Calendar.MINUTE, timePickerState.minute)
+                        }
+                        editTime = c.timeInMillis
+                        showTimePicker = false
+                    }) { Text("确定") }
+                },
+                dismissButton = { TextButton(onClick = { showTimePicker = false }) { Text("取消") } },
+                text = { TimePicker(state = timePickerState) }
+            )
+        }
     }
 }
 
@@ -1127,7 +1231,13 @@ fun DataSourceCard(hasData: Boolean, recordCount: Int, syncMsg: String?, onSync:
             }
             Text(notifyMsg, fontSize = 11.sp, color = if (notifyOk) AlertSuccess else AlertWarning)
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // ★ 修复"导入xlsx右边长条形空框": 加 horizontalScroll 让 4 个按钮可横滑, 防止按钮溢出后显示成空框
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 OutlinedButton(onClick = {
                     testResult = "发送中..."
                     try {

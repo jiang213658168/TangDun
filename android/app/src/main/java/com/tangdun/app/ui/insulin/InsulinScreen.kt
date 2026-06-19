@@ -92,7 +92,11 @@ fun InsulinScreen(
                 items(uiState.records) { record ->
                     InsulinCard(
                         record = record,
-                        onDelete = { viewModel.deleteRecord(record) }
+                        onDelete = { viewModel.deleteRecord(record) },
+                        onEdit = { newDose, newTimestamp ->
+                            viewModel.editDose(record, newDose)
+                            viewModel.editTimestamp(record, newTimestamp)
+                        }
                     )
                 }
             }
@@ -180,11 +184,12 @@ fun InsulinStatsCard(todayTotalDose: Double, iob: Double) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InsulinCard(
     record: InsulinRecord,
     onDelete: () -> Unit,
-    onEdit: (dose: Double) -> Unit = {}
+    onEdit: (dose: Double, timestamp: Long) -> Unit = { _, _ -> }
 ) {
     val dateFormat = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -193,7 +198,8 @@ fun InsulinCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = androidx.compose.foundation.BorderStroke(0.dp, androidx.compose.ui.graphics.Color.Transparent),
     ) {
         Row(
             modifier = Modifier
@@ -276,36 +282,137 @@ fun InsulinCard(
         }
     }
 
-    // 编辑对话框
+    // ★ 编辑对话框 (修复跨日编辑: 支持改剂量 + 时间)
     if (showEditDialog) {
         var newDose by remember { mutableStateOf(record.doseUnits.toString()) }
-        AlertDialog(
-            onDismissRequest = { showEditDialog = false },
-            title = { Text("编辑胰岛素剂量") },
-            text = {
-                OutlinedTextField(
-                    value = newDose,
-                    onValueChange = { newDose = it },
-                    label = { Text("剂量 (单位U)") },
-                    singleLine = true,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+        var editTime by remember { mutableStateOf(record.timestamp) }
+        var showTimePicker by remember { mutableStateOf(false) }
+
+        val editCal = Calendar.getInstance().apply { timeInMillis = editTime }
+        val editHour = editCal.get(Calendar.HOUR_OF_DAY)
+        val editMinute = editCal.get(Calendar.MINUTE)
+
+        // 跨日切换: 昨天 / 今天 / 明天 (解决 23:59 打的胰岛素进入第二天编辑时选昨天的需求)
+        val now = System.currentTimeMillis()
+        val todayMidnight = Calendar.getInstance().apply {
+            timeInMillis = now
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        fun shiftEditDate(deltaDays: Int) {
+            val c = Calendar.getInstance().apply { timeInMillis = editTime }
+            c.add(Calendar.DAY_OF_MONTH, deltaDays)
+            editTime = c.timeInMillis
+        }
+
+        Dialog(onDismissRequest = { showEditDialog = false }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "编辑胰岛素记录",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
                     )
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val dose = newDose.toDoubleOrNull()
-                    if (dose != null && dose > 0) {
-                        onEdit(dose)
-                        showEditDialog = false
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = newDose,
+                        onValueChange = { newDose = it },
+                        label = { Text("剂量 (单位U)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // ★ 跨日切换
+                    Text("日期", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("昨天" to -1, "今天" to 0, "明天" to 1).forEach { (label, delta) ->
+                            val target = Calendar.getInstance().apply {
+                                timeInMillis = todayMidnight.timeInMillis
+                                add(Calendar.DAY_OF_MONTH, delta)
+                            }
+                            val sc = Calendar.getInstance().apply { timeInMillis = editTime }
+                            val selected = sc.get(Calendar.YEAR) == target.get(Calendar.YEAR) &&
+                                           sc.get(Calendar.DAY_OF_YEAR) == target.get(Calendar.DAY_OF_YEAR)
+                            FilterChip(
+                                selected = selected,
+                                onClick = { shiftEditDate(delta) },
+                                label = { Text(label, style = MaterialTheme.typography.bodySmall) }
+                            )
+                        }
                     }
-                }) { Text("保存") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEditDialog = false }) { Text("取消") }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = { showTimePicker = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.AccessTime, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        val monthDay = String.format("%02d-%02d", editCal.get(Calendar.MONTH) + 1, editCal.get(Calendar.DAY_OF_MONTH))
+                        Text(
+                            text = "$monthDay ${String.format("%02d:%02d", editHour, editMinute)}",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { showEditDialog = false }) { Text("取消") }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(onClick = {
+                            val dose = newDose.toDoubleOrNull()
+                            if (dose != null && dose > 0) {
+                                onEdit(dose, editTime)
+                                showEditDialog = false
+                            }
+                        }) { Text("保存") }
+                    }
+                }
             }
-        )
+        }
+
+        // 时间选择器
+        if (showTimePicker) {
+            val timePickerState = rememberTimePickerState(
+                initialHour = editHour,
+                initialMinute = editMinute
+            )
+            AlertDialog(
+                onDismissRequest = { showTimePicker = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val c = Calendar.getInstance().apply {
+                            timeInMillis = editTime
+                            set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+                            set(Calendar.MINUTE, timePickerState.minute)
+                        }
+                        editTime = c.timeInMillis
+                        showTimePicker = false
+                    }) { Text("确定") }
+                },
+                dismissButton = { TextButton(onClick = { showTimePicker = false }) { Text("取消") } },
+                text = { TimePicker(state = timePickerState) }
+            )
+        }
     }
 
     // 删除确认对话框

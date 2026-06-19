@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tangdun.app.data.local.entity.ChatMessage
 import com.tangdun.app.ui.theme.*
-import kotlinx.coroutines.launch
 
 /** ★ AI 助手权限: ParsedRecord → UI 显示辅助 */
 private fun ParsedRecord.icon(): ImageVector = when (this) {
@@ -47,8 +46,10 @@ private fun ParsedRecord.summary(): String = when (this) {
     is ParsedRecord.Symptom -> description
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
+    navController: androidx.navigation.NavController? = null,
     viewModel: ChatViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -73,62 +74,117 @@ fun ChatScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // 顶部标题
-        TopAppBar(
-            title = {
-                Column {
-                    Text(
-                        text = "糖盾AI助手",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (uiState.isLoading) {
+    // ★ 修复键盘遮挡: 用 Scaffold 让 bottomBar 自动处理 imePadding
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
                         Text(
-                            text = "正在思考...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextHint
+                            text = "糖盾AI助手",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
                         )
+                        if (uiState.isLoading) {
+                            Text(
+                                text = "正在解析/思考...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextHint
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    // ★ AI 助手导航权限: TopAppBar 快捷跳转按钮
+                    IconButton(onClick = { navController?.navigate("home") }) {
+                        Icon(Icons.Default.Home, contentDescription = "首页", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                    IconButton(onClick = { navController?.navigate("prediction") }) {
+                        Icon(Icons.Default.Timeline, contentDescription = "预测", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                    IconButton(onClick = { navController?.navigate("insulin") }) {
+                        Icon(Icons.Default.MedicalServices, contentDescription = "胰岛素", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                    IconButton(onClick = { viewModel.createNewConversation() }) {
+                        Icon(Icons.Default.Add, contentDescription = "新对话", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            )
+        },
+        bottomBar = {
+            // ★ 关键修复: Scaffold.bottomBar 自动处理 imePadding, 输入框永远在键盘上方
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface)
+            ) {
+                // 错误提示
+                uiState.error?.let { error ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = AlertCritical.copy(alpha = 0.1f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Warning, contentDescription = null,
+                                tint = AlertCritical,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = error,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = AlertCritical,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
-            },
-            actions = {
-                IconButton(onClick = { viewModel.createNewConversation() }) {
-                    Icon(Icons.Default.Add, contentDescription = "新对话")
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                actionIconContentColor = MaterialTheme.colorScheme.onPrimary
-            )
-        )
 
+                // ★ AI 助手权限: 解析到可应用记录 → 显示应用按钮 (在输入框上方)
+                if (uiState.pendingRecords.isNotEmpty() && !uiState.isLoading) {
+                    ApplyRecordsBar(
+                        count = uiState.pendingRecords.size,
+                        onApply = { showApplyDialog = true },
+                        onDismiss = { viewModel.dismissPendingRecords() }
+                    )
+                }
+
+                // 输入框 (在 bottomBar 内, Scaffold 自动处理键盘)
+                ChatInputBar(
+                    onSendMessage = { message -> viewModel.sendMessage(message) },
+                    isLoading = uiState.isLoading
+                )
+            }
+        }
+    ) { paddingValues ->
         // 消息列表
         LazyColumn(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
+                .fillMaxSize()
+                .padding(paddingValues),
             state = listState,
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // ★ 食物助手面板 (3 个核心功能快捷入口)
-            item {
-                FoodAssistantSection(helper = foodHelper)
-            }
+            // ★ 食物助手面板
+            item { FoodAssistantSection(helper = foodHelper) }
 
             // 欢迎消息
             if (uiState.messages.isEmpty()) {
-                item {
-                    WelcomeMessage(onQuickQuestion = { viewModel.sendMessage(it) })
-                }
+                item { WelcomeMessage(onQuickQuestion = { viewModel.sendMessage(it) }) }
             }
 
             // 消息列表
-            items(uiState.messages) { message ->
-                ChatBubble(message = message)
-            }
+            items(uiState.messages) { message -> ChatBubble(message = message) }
 
             // 加载指示器
             if (uiState.isLoading) {
@@ -160,51 +216,6 @@ fun ChatScreen(
                 }
             }
         }
-
-        // 错误提示
-        uiState.error?.let { error ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                colors = CardDefaults.cardColors(containerColor = AlertCritical.copy(alpha = 0.1f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = AlertCritical,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = error,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = AlertCritical
-                    )
-                }
-            }
-        }
-
-        // ★ AI 助手权限: 解析到可应用记录 → 显示应用按钮
-        if (uiState.pendingRecords.isNotEmpty() && !uiState.isLoading) {
-            ApplyRecordsBar(
-                count = uiState.pendingRecords.size,
-                onApply = { showApplyDialog = true },
-                onDismiss = { viewModel.dismissPendingRecords() }
-            )
-        }
-
-        // 输入框
-        ChatInputBar(
-            onSendMessage = { message ->
-                viewModel.sendMessage(message)
-            },
-            isLoading = uiState.isLoading
-        )
     }
 
     // ★ AI 助手权限: 应用建议确认弹窗
@@ -215,7 +226,6 @@ fun ChatScreen(
             onConfirm = { selected ->
                 showApplyDialog = false
                 viewModel.applyPendingRecords(selected) { success, total ->
-                    // 用 Toast 提示结果 (简化: 也可加 SnackBar)
                     android.widget.Toast.makeText(
                         context,
                         "✅ 已保存 $success/$total 条记录",
@@ -224,6 +234,79 @@ fun ChatScreen(
                 }
             }
         )
+    }
+
+    // ★ AI 助手全套权限: 待执行动作 (导航/查询/修改/删除) 确认弹窗
+    uiState.pendingAction?.let { action ->
+        PendingActionDialog(
+            action = action,
+            onConfirm = {
+                viewModel.confirmPendingAction { target ->
+                    // ★ 执行导航: 根据 target 跳转
+                    when (target) {
+                        "home" -> navController?.navigate("home")
+                        "prediction" -> navController?.navigate("prediction")
+                        "meal" -> navController?.navigate("meal")
+                        "insulin" -> navController?.navigate("insulin")
+                        "exercise" -> navController?.navigate("exercise")
+                        "ai_record" -> navController?.navigate("ai_record")
+                        "records" -> navController?.navigate("records")
+                        else -> navController?.navigate("home")
+                    }
+                }
+            },
+            onDismiss = { viewModel.dismissPendingAction() }
+        )
+    }
+}
+
+@Composable
+private fun PendingActionDialog(
+    action: PendingAction,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val icon = when (action) {
+        is PendingAction.Navigate -> Icons.Default.ArrowForward
+        is PendingAction.DeleteRecord -> Icons.Default.Delete
+        is PendingAction.UpdateRecord -> Icons.Default.Edit
+        is PendingAction.BulkDelete -> Icons.Default.DeleteSweep
+    }
+    val tint = when (action) {
+        is PendingAction.Navigate -> MaterialTheme.colorScheme.primary
+        is PendingAction.DeleteRecord, is PendingAction.BulkDelete -> AlertCritical
+        is PendingAction.UpdateRecord -> MaterialTheme.colorScheme.tertiary
+    }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("AI 助手请求执行", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(icon, null, tint = tint, modifier = Modifier.size(28.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text(action.description, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                }
+                Spacer(Modifier.height(20.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("拒绝") }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = onConfirm,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = tint)
+                    ) { Text("确认") }
+                }
+            }
+        }
     }
 }
 
@@ -557,16 +640,17 @@ fun ChatInputBar(
 ) {
     var text by remember { mutableStateOf("") }
 
+    // ★ 修复键盘遮挡: imePadding 由外层 Scaffold.bottomBar 处理, 这里不再重复添加
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .imePadding()           // ★ 键盘弹出时自动上移
-            .navigationBarsPadding(), // ★ 同时处理底部导航栏
-        shadowElevation = 8.dp
+            .navigationBarsPadding(),  // 只处理底部导航栏 (全面屏手势条)
+        shadowElevation = 8.dp,
+        tonalElevation = 2.dp
     ) {
         Row(
             modifier = Modifier
-                .padding(12.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -574,7 +658,7 @@ fun ChatInputBar(
                 value = text,
                 onValueChange = { text = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("输入你的问题...") },
+                placeholder = { Text("输入你的问题或健康记录...") },
                 singleLine = false,
                 maxLines = 4,
                 shape = RoundedCornerShape(24.dp),
@@ -590,14 +674,16 @@ fun ChatInputBar(
                         text = ""
                     }
                 },
-                enabled = text.isNotBlank() && !isLoading
+                enabled = text.isNotBlank() && !isLoading,
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     Icons.Default.Send,
                     contentDescription = "发送",
                     tint = if (text.isNotBlank() && !isLoading)
                            MaterialTheme.colorScheme.primary
-                          else TextHint
+                          else TextHint,
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }

@@ -309,21 +309,24 @@ fun PredictionStatCard(
         ?: MaterialTheme.colorScheme.outline
     val animatedColor by animateColorAsState(valueColor, label = "valueColor")
 
-    // ★ 修复黑框: 用更细更淡的边框 + 仅在 primary 时才加
-    val border = if (isPrimary) {
-        BorderStroke(1.dp, animatedColor.copy(alpha = 0.35f))
-    } else null
-
+    // ★ 修复黑框: 完全去掉 border, 用 background tint + shadow 区分 primary
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .then(if (isPrimary) Modifier.shadow(2.dp, RoundedCornerShape(20.dp), clip = false) else Modifier),
+            .then(
+                if (isPrimary) Modifier.shadow(
+                    elevation = 3.dp,
+                    shape = RoundedCornerShape(20.dp),
+                    clip = false
+                ) else Modifier
+            ),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isPrimary) animatedColor.copy(alpha = 0.08f)
+            containerColor = if (isPrimary) animatedColor.copy(alpha = 0.10f)
                             else MaterialTheme.colorScheme.surface
         ),
-        border = border
+        // ★ 关键修复: 显式设置 transparent border (防止 M3 Card 默认 1dp outline 显示成"黑框")
+        border = androidx.compose.foundation.BorderStroke(0.dp, Color.Transparent),
     ) {
         Column(
             modifier = Modifier
@@ -336,17 +339,19 @@ fun PredictionStatCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
+                softWrap = false,
             )
             Spacer(Modifier.height(4.dp))
-            // ★ 修复数字换行: 用 headlineSmall 而非 TangDunNumberStyle (28sp)
-            //   3 个卡片 weight(1f) 时宽度有限, 大字体易断行
+            // ★ 修复数字换行: titleLarge (22sp) + fillMaxWidth, 强制单行
             Text(
                 text = value?.let { String.format("%.1f", it) } ?: "--",
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.titleLarge,
                 color = animatedColor,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 softWrap = false,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
             Spacer(Modifier.height(2.dp))
             Text(
@@ -354,6 +359,7 @@ fun PredictionStatCard(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
+                softWrap = false,
             )
         }
     }

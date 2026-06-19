@@ -146,7 +146,7 @@ fun MainScreen() {
             composable(SubScreen.INSULIN) { SubPageScaffold("胰岛素记录", navController) { InsulinScreen() } }
             composable(SubScreen.HEALTH) { SubPageScaffold("健康记录", navController) { HealthScreen() } }
             composable(SubScreen.EXERCISE) { SubPageScaffold("运动管理", navController) { ExerciseScreen() } }
-            composable(SubScreen.CHAT) { SubPageScaffold("AI助手", navController) { ChatScreen() } }
+            composable(SubScreen.CHAT) { SubPageScaffold("AI助手", navController) { ChatScreen(navController = navController) } }
             composable(SubScreen.AI_RECORD) { SubPageScaffold("AI智能记录", navController) { com.tangdun.app.ui.chat.AiRecordScreen() } }
         }
     }

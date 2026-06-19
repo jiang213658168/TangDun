@@ -88,6 +88,21 @@ class InsulinViewModel @Inject constructor(
         }
     }
 
+    /**
+     * ★ 修复跨日编辑: 支持编辑胰岛素记录的时间戳
+     * 场景: 用户 23:59 打胰岛素, 进入第二天编辑时想选"昨天"的时间
+     */
+    fun editTimestamp(record: InsulinRecord, newTimestamp: Long) {
+        viewModelScope.launch {
+            try {
+                insulinDao.update(record.copy(timestamp = newTimestamp))
+                loadRecords()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
     private fun loadRecords() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)

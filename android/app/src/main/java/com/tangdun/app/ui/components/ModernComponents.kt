@@ -372,6 +372,8 @@ fun InsightStatCard(
                 onClick = { onClick?.invoke() }
             ),
         shape = RoundedCornerShape(20.dp),
+        // ★ 修复黑框: 显式设置 border = transparent (M3 Card 默认有 1dp outline)
+        border = androidx.compose.foundation.BorderStroke(0.dp, Color.Transparent),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
@@ -379,48 +381,50 @@ fun InsightStatCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(horizontal = 12.dp, vertical = 14.dp)
         ) {
             // 图标 (柔和背景色)
             Box(
                 modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .background(accentColor.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     icon, contentDescription = null,
                     tint = accentColor,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
 
-            // 数值 (修复: 用 headlineSmall 而非 TangDunNumberStyle (48sp), 避免窄卡片断行)
-            Row(verticalAlignment = Alignment.Bottom) {
+            // ★ 修复数字纵向排列: value 单独占满宽度 + maxLines=1 + overflow=Ellipsis
+            //   unit 移到下一行, 不和 value 挤一行 → 根除断行问题
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Visible,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (unit != null) {
+                Spacer(Modifier.height(2.dp))
                 Text(
-                    text = value,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold,
+                    text = unit,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     softWrap = false,
                 )
-                if (unit != null) {
-                    Spacer(Modifier.width(2.dp))
-                    Text(
-                        text = unit,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 4.dp),
-                        maxLines = 1,
-                    )
-                }
             }
 
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(6.dp))
 
             // 标签
             Text(
@@ -428,6 +432,7 @@ fun InsightStatCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
+                softWrap = false,
             )
         }
     }

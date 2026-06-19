@@ -241,6 +241,21 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /**
+     * ★ 修复跨日编辑: 支持编辑血糖记录的时间戳
+     * 场景: 23:59 测的血糖, 进入第二天编辑时想选昨天的日期
+     */
+    fun editGlucoseTimestamp(record: GlucoseRecord, newTimestamp: Long) {
+        viewModelScope.launch {
+            try {
+                glucoseDao.update(record.copy(timestamp = newTimestamp))
+                loadData()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(error = e.message)
+            }
+        }
+    }
+
     private fun loadData(dateMillis: Long = _uiState.value.selectedDate) {
         val capturedDate = dateMillis  // ★ 捕获参数防竞态
         viewModelScope.launch {
