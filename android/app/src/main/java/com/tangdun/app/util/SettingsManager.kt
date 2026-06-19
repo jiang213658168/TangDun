@@ -272,6 +272,15 @@ class SettingsManager(private val context: Context) {
         return sharedPref.getString("openai_base_url", DEFAULT_OPENAI_BASE_URL) ?: DEFAULT_OPENAI_BASE_URL
     }
 
+    /** v2.9: 模型名 (用户可在设置里改) - 默认 MiMo-V2.5-Pro (旗舰, 支持 function calling) */
+    fun getAiModel(): String {
+        return sharedPref.getString("ai_model", "MiMo-V2.5-Pro") ?: "MiMo-V2.5-Pro"
+    }
+
+    fun setAiModel(model: String) {
+        sharedPref.edit().putString("ai_model", model).apply()
+    }
+
     fun setOpenAiConfig(apiKey: String, baseUrl: String) {
         sharedPref.edit()
             .putString("openai_api_key", apiKey)

@@ -29,7 +29,7 @@ class AIClient(private val settingsManager: SettingsManager) {
     companion object {
         private const val TAG = "AIAgent"
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
-        private const val DEFAULT_MODEL = "mimo-v2-flash"
+        private const val DEFAULT_MODEL = "MiMo-V2.5-Pro"  // 小米 MiMo 旗舰, 明确支持 function calling
         private const val MAX_AGENT_TURNS = 8  // agent 循环最大轮数
     }
 
@@ -38,6 +38,9 @@ class AIClient(private val settingsManager: SettingsManager) {
         .readTimeout(120, TimeUnit.SECONDS)  // agent loop 可能耗时
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
+
+    /** 真实使用的模型名 (用户可在设置里改, 默认 MiMo-V2.5-Pro 支持 function calling) */
+    private val modelName: String get() = runCatching { settingsManager.getAiModel() }.getOrDefault("MiMo-V2.5-Pro")
 
     fun isConfigured(): Boolean = settingsManager.isAiConfigured()
 
@@ -89,9 +92,9 @@ class AIClient(private val settingsManager: SettingsManager) {
         try {
             for (turn in 1..MAX_AGENT_TURNS) {
                 if (done) break
-                Log.i(TAG, "=== Agent Round $turn ===")
+                Log.i(TAG, "=== Agent Round $turn (model=$modelName) ===")
                 val requestBody = JSONObject().apply {
-                    put("model", DEFAULT_MODEL)
+                    put("model", modelName)
                     put("messages", JSONArray(messages))
                     put("tools", tools)
                     put("tool_choice", "auto")

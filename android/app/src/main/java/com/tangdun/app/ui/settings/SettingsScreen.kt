@@ -538,6 +538,7 @@ fun AiChatConfigCard(settingsManager: SettingsManager) {
     var selectedProvider by remember { mutableStateOf(settingsManager.getAiProvider()) }
     var openAiApiKey by remember { mutableStateOf(settingsManager.getOpenAiApiKey()) }
     var openAiBaseUrl by remember { mutableStateOf(settingsManager.getOpenAiBaseUrl()) }
+    var aiModel by remember { mutableStateOf(settingsManager.getAiModel()) }
     var ernieApiKey by remember { mutableStateOf(settingsManager.getErnieApiKey()) }
     var ernieSecretKey by remember { mutableStateOf(settingsManager.getErnieSecretKey()) }
     var showApiKey by remember { mutableStateOf(false) }
@@ -657,10 +658,25 @@ fun AiChatConfigCard(settingsManager: SettingsManager) {
                         shape = RoundedCornerShape(8.dp)
                     )
 
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = aiModel,
+                        onValueChange = {
+                            aiModel = it
+                            isSaved = false
+                        },
+                        label = { Text("模型名 (支持 function calling)") },
+                        placeholder = { Text("MiMo-V2.5-Pro") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "支持OpenAI兼容接口（如DeepSeek、通义千问等）",
+                        text = "推荐: MiMo-V2.5-Pro (Agent 旗舰), DeepSeek-V3, GPT-4o, Claude-3.5-Sonnet 等支持 function calling 的模型",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextHint
                     )
@@ -723,7 +739,10 @@ fun AiChatConfigCard(settingsManager: SettingsManager) {
                 onClick = {
                     settingsManager.setAiProvider(selectedProvider)
                     when (selectedProvider) {
-                        "openai" -> settingsManager.setOpenAiConfig(openAiApiKey, openAiBaseUrl)
+                        "openai" -> {
+                            settingsManager.setOpenAiConfig(openAiApiKey, openAiBaseUrl)
+                            settingsManager.setAiModel(aiModel)
+                        }
                         "ernie" -> settingsManager.setErnieConfig(ernieApiKey, ernieSecretKey)
                     }
                     isSaved = true
