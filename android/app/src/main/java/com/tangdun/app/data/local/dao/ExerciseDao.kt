@@ -19,6 +19,10 @@ interface ExerciseDao {
     @Delete
     suspend fun delete(record: ExerciseRecord)
 
+    /** 按 ID 删除 (AI 权限引擎用) */
+    @Query("DELETE FROM exercise_record WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("SELECT * FROM exercise_record WHERE id = :id")
     suspend fun getById(id: Long): ExerciseRecord?
 

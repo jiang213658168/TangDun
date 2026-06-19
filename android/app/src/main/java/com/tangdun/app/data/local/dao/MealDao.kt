@@ -19,6 +19,10 @@ interface MealDao {
     @Delete
     suspend fun delete(record: MealRecord)
 
+    /** 按 ID 删除 (AI 权限引擎用) */
+    @Query("DELETE FROM meal_record WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("SELECT * FROM meal_record WHERE id = :id")
     suspend fun getById(id: Long): MealRecord?
 

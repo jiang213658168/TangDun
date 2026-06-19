@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.tangdun.app.ai.AIIntent
 import com.tangdun.app.data.local.entity.ChatMessage
 import com.tangdun.app.data.local.entity.Conversation
 import com.tangdun.app.ui.theme.*
@@ -80,6 +81,33 @@ fun ChatScreen(
     LaunchedEffect(uiState.messages.size) {
         if (uiState.messages.isNotEmpty()) {
             listState.animateScrollToItem(uiState.messages.size - 1)
+        }
+    }
+
+    // ★ AI 助手全套权限 (v2.7): 监听执行结果, Toast 提示
+    LaunchedEffect(uiState.lastExecutionMessage) {
+        uiState.lastExecutionMessage?.let { msg ->
+            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.clearExecutionMessage()
+        }
+    }
+
+    // ★ AI 助手全套权限: 监听导航请求, 触发 NavController 跳转
+    LaunchedEffect(uiState.navigateRequest) {
+        uiState.navigateRequest?.let { route ->
+            when (route) {
+                "home" -> navController?.navigate("home")
+                "prediction" -> navController?.navigate("prediction")
+                "meal" -> navController?.navigate("meal")
+                "insulin" -> navController?.navigate("insulin")
+                "exercise" -> navController?.navigate("exercise")
+                "health" -> navController?.navigate("health")
+                "settings" -> navController?.navigate("settings")
+                "chat" -> navController?.navigate("chat")
+                "report" -> navController?.navigate("report")
+                else -> navController?.navigate("home")
+            }
+            viewModel.clearNavigateRequest()
         }
     }
 
@@ -294,7 +322,20 @@ fun ChatScreen(
             onDismiss = { viewModel.dismissPendingAction() }
         )
     }
+
+    // ★ AI 助手全套权限 (v2.7): 待执行的 AIIntent 列表 - 弹确认
+    if (uiState.pendingIntents.isNotEmpty() && !uiState.isLoading) {
+        IntentConfirmBar(
+            intents = uiState.pendingIntents,
+            onConfirm = { viewModel.applyPendingIntents() },
+            onDismiss = { viewModel.dismissPendingIntents() }
+        )
+    }
 }
+
+// ★ AI 助手执行结果 Toast + 导航请求 LaunchedEffect
+//   用 LaunchedEffect 监听 uiState.lastExecutionMessage 和 navigateRequest
+//   触发 Toast 和跳转
 }
 
 @Composable
@@ -487,6 +528,74 @@ private fun PendingActionDialog(
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = tint)
                     ) { Text("确认") }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * ★ AI 助手全套权限 (v2.7): 待执行 AIIntent 列表的确认条
+ * 显示在输入框上方, 让用户一目了然要执行的操作
+ */
+@Composable
+private fun IntentConfirmBar(
+    intents: List<AIIntent>,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        tonalElevation = 4.dp
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.AutoAwesome, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "AI 助手待执行 ${intents.size} 个操作",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            intents.take(5).forEach { intent ->
+                Text(
+                    text = "• ${intent.description}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(vertical = 2.dp)
+                )
+            }
+            if (intents.size > 5) {
+                Text(
+                    text = "  ...还有 ${intents.size - 5} 条",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) {
+                    Text("取消", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+                Spacer(Modifier.width(4.dp))
+                Button(
+                    onClick = onConfirm,
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("执行 ${intents.size} 个操作")
                 }
             }
         }

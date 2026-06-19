@@ -4,14 +4,27 @@ import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tangdun.app.ai.AIExecutionResult
+import com.tangdun.app.ai.AIIntent
+import com.tangdun.app.ai.AIIntentParser
+import com.tangdun.app.ai.AIPermissionEngine
+import com.tangdun.app.data.local.dao.AlertDao
+import com.tangdun.app.data.local.dao.BloodPressureDao
 import com.tangdun.app.data.local.dao.ChatDao
+import com.tangdun.app.data.local.dao.ExerciseDao
 import com.tangdun.app.data.local.dao.GlucoseDao
 import com.tangdun.app.data.local.dao.InsulinDao
+import com.tangdun.app.data.local.dao.KetoneDao
 import com.tangdun.app.data.local.dao.MealDao
+import com.tangdun.app.data.local.dao.MedicationDao
+import com.tangdun.app.data.local.dao.SleepDao
+import com.tangdun.app.data.local.dao.SymptomDao
+import com.tangdun.app.data.local.dao.WeightDao
 import com.tangdun.app.data.local.entity.ChatMessage
 import com.tangdun.app.data.local.entity.Conversation
 import com.tangdun.app.data.remote.AiChatService
 import com.tangdun.app.data.remote.ChatMessageDto
+import com.tangdun.app.util.SettingsManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,13 +46,19 @@ data class ChatUiState(
     val pendingRecords: List<ParsedRecord> = emptyList(),
     // ★ AI 助手权限: 待执行的动作 (导航/查询/修改/删除) - 用户确认后执行
     val pendingAction: PendingAction? = null,
+    // ★ AI 助手全套权限 (v2.7): 待执行的 AIIntent 列表 - 用户确认后批量执行
+    val pendingIntents: List<AIIntent> = emptyList(),
+    // ★ AI 助手权限执行反馈 (Toast 提示)
+    val lastExecutionMessage: String? = null,
+    // ★ AI 助手导航请求 (ChatScreen 监听这个执行跳转)
+    val navigateRequest: String? = null,
     // ★ 上一条用户消息原文 (用于解析记录关联到具体消息)
     val lastUserInput: String = "",
     // ★ AI 助手历史会话列表 (用于侧边栏)
     val conversations: List<Conversation> = emptyList(),
 )
 
-/** ★ AI 助手权限: 待确认动作 */
+/** ★ AI 助手权限: 待确认动作 (兼容旧版 PendingActionDialog) */
 sealed class PendingAction {
     abstract val description: String
 
@@ -56,13 +75,39 @@ class ChatViewModel @Inject constructor(
     // ★ AI 助手读权限: 注入 DAO 用于构造上下文
     private val glucoseDao: GlucoseDao,
     private val insulinDao: InsulinDao,
-    private val mealDao: MealDao
+    private val mealDao: MealDao,
+    // ★ AI 助手全套权限 (v2.7): 注入所有 DAO 给 AIPermissionEngine
+    private val exerciseDao: ExerciseDao,
+    private val sleepDao: SleepDao,
+    private val bloodPressureDao: BloodPressureDao,
+    private val weightDao: WeightDao,
+    private val ketoneDao: KetoneDao,
+    private val medicationDao: MedicationDao,
+    private val symptomDao: SymptomDao,
+    private val alertDao: AlertDao,
+    private val settingsManager: SettingsManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
     private val aiChatService = AiChatService(context)
+    // ★ AI 助手全套权限引擎
+    private val aiEngine = AIPermissionEngine(
+        context = context,
+        glucoseDao = glucoseDao,
+        insulinDao = insulinDao,
+        mealDao = mealDao,
+        exerciseDao = exerciseDao,
+        sleepDao = sleepDao,
+        bloodPressureDao = bloodPressureDao,
+        weightDao = weightDao,
+        ketoneDao = ketoneDao,
+        medicationDao = medicationDao,
+        symptomDao = symptomDao,
+        alertDao = alertDao,
+        settingsManager = settingsManager
+    )
 
     /**
      * ★ AI 助手权限: 应用用户确认后的 ParsedRecord 列表
@@ -84,6 +129,49 @@ class ChatViewModel @Inject constructor(
     /** 取消待应用的记录 */
     fun dismissPendingRecords() {
         _uiState.value = _uiState.value.copy(pendingRecords = emptyList())
+    }
+
+    /**
+     * ★ AI 助手全套权限 (v2.7): 用户确认后批量执行 AIIntent 列表
+     *
+     * 流程:
+     *  1. 遍历 intents
+     *  2. 对每个调用 aiEngine.execute() (本地操作, 不依赖网络)
+     *  3. 收集所有结果, 用 Toast 提示给用户
+     *  4. 如果有 navigateTo, 设置 navigateRequest 触发 ChatScreen 跳转
+     */
+    fun applyPendingIntents() {
+        val intents = _uiState.value.pendingIntents
+        if (intents.isEmpty()) return
+
+        viewModelScope.launch {
+            val results = aiEngine.executeAll(intents)
+            // 汇总消息
+            val combinedMsg = results.joinToString("\n") { it.message }
+            // 收集导航请求
+            val nav = results.firstNotNullOfOrNull { it.navigateTo }
+
+            _uiState.value = _uiState.value.copy(
+                pendingIntents = emptyList(),
+                lastExecutionMessage = combinedMsg,
+                navigateRequest = nav
+            )
+        }
+    }
+
+    /** 取消待执行的 intents */
+    fun dismissPendingIntents() {
+        _uiState.value = _uiState.value.copy(pendingIntents = emptyList())
+    }
+
+    /** 清除 navigateRequest (ChatScreen 执行跳转后调用) */
+    fun clearNavigateRequest() {
+        _uiState.value = _uiState.value.copy(navigateRequest = null)
+    }
+
+    /** 清除 lastExecutionMessage (Toast 显示后调用) */
+    fun clearExecutionMessage() {
+        _uiState.value = _uiState.value.copy(lastExecutionMessage = null)
     }
 
     /**
@@ -336,7 +424,68 @@ class ChatViewModel @Inject constructor(
                 }
             }
 
-            // ★ AI 助手权限 - Step 1: 优先解析用户输入 (解决 AI 聊天误识别"未能识别"问题)
+            // ★ AI 助手全套权限 (v2.7): Step 1 - 用 AIIntentParser 解析所有可能的意图
+            val aiIntents = AIIntentParser.parse(content)
+            if (aiIntents.isNotEmpty()) {
+                Log.i("ChatVM", "AI 意图解析: ${aiIntents.size} 条 → ${aiIntents.joinToString { it.description }}")
+
+                // 区分"需确认" vs "直接执行"
+                val needsConfirm = aiIntents.filter { it.requiresConfirmation }
+                val autoExecute = aiIntents.filter { !it.requiresConfirmation }
+
+                // 自动执行: 导航 / 配置 (跳转到目标页, 不需要用户逐条确认)
+                if (autoExecute.isNotEmpty()) {
+                    val results = aiEngine.executeAll(autoExecute)
+                    val combinedMsg = results.joinToString("\n") { it.message }
+                    val nav = results.firstNotNullOfOrNull { it.navigateTo }
+
+                    // 直接执行的提示消息
+                    val autoMsg = ChatMessage(
+                        conversationId = conversationId,
+                        role = ChatMessage.ROLE_ASSISTANT,
+                        content = combinedMsg.ifBlank { "已完成" }
+                    )
+                    chatDao.insertMessage(autoMsg)
+                    _uiState.value = _uiState.value.copy(
+                        messages = _uiState.value.messages + autoMsg,
+                        lastExecutionMessage = combinedMsg,
+                        navigateRequest = nav,
+                        isLoading = false
+                    )
+                    chatDao.updateConversationMessageCount(conversationId)
+
+                    // 如果没有需要确认的 intent, 直接 return
+                    if (needsConfirm.isEmpty()) return@launch
+                }
+
+                // 需要用户确认的 intent (创建/删除/更新) → 弹确认弹窗
+                if (needsConfirm.isNotEmpty()) {
+                    _uiState.value = _uiState.value.copy(
+                        pendingIntents = needsConfirm,
+                        isLoading = false
+                    )
+                    val hintMessage = ChatMessage(
+                        conversationId = conversationId,
+                        role = ChatMessage.ROLE_ASSISTANT,
+                        content = "🤖 我从你的描述中识别到 ${needsConfirm.size} 个操作:\n\n" +
+                                needsConfirm.joinToString("\n") { "• ${it.description}" } +
+                                "\n\n请确认是否执行。"
+                    )
+                    chatDao.insertMessage(hintMessage)
+                    _uiState.value = _uiState.value.copy(
+                        messages = _uiState.value.messages + hintMessage
+                    )
+                    // 更新会话标题
+                    val conv = chatDao.getConversation(conversationId)
+                    if (conv != null && conv.title == "新对话") {
+                        chatDao.updateConversation(conv.copy(title = "📝 智能记录"))
+                    }
+                    chatDao.updateConversationMessageCount(conversationId)
+                    return@launch
+                }
+            }
+
+            // ★ Step 2: AIIntentParser 没匹配到 → 走 AiRecordHelper 旧版解析 (食物)
             val records = try {
                 AiRecordHelper.parse(context, content)
             } catch (e: Exception) {

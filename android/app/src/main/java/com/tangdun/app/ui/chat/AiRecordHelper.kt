@@ -191,7 +191,11 @@ object AiRecordHelper {
      *  - 份量: "半盘" → 100g, "一个" → 200g(根据食物类型)
      *  - 营养: 查内置食物营养表 (米饭/面条/馒头/鸡蛋/蔬菜/肉/水果/油炸)
      */
-    private fun localParse(input: String): List<ParsedRecord> {
+    /**
+     * ★ 本地规则解析 (供 AI 权限引擎调用, 不依赖网络)
+     * 提取饮食 / 胰岛素 / 血糖等结构化记录
+     */
+    fun localParse(input: String): List<ParsedRecord> {
         val records = mutableListOf<ParsedRecord>()
 
         // 1. 提取时间锚点

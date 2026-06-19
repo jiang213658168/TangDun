@@ -19,6 +19,10 @@ interface GlucoseDao {
     @Delete
     suspend fun delete(record: GlucoseRecord)
 
+    /** 按 ID 删除 (AI 权限引擎用) */
+    @Query("DELETE FROM glucose_record WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("SELECT * FROM glucose_record WHERE id = :id")
     suspend fun getById(id: Long): GlucoseRecord?
 
