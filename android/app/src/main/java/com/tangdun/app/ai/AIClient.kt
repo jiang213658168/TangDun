@@ -59,9 +59,9 @@ class AIClient(private val settingsManager: SettingsManager) {
     /**
      * v3.0.1 测试连接: 简单调一次 chat/completions, 不带 tools, 用来诊断 API Key/网络/模型问题
      */
-    suspend fun testConnection(): String {
-        if (!isConfigured()) return "❌ AI 未配置: 请先在「我的 → AI 对话配置」填入 API Key"
-        return try {
+    suspend fun testConnection(): String = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext "❌ AI 未配置: 请先在「我的 → AI 对话配置」填入 API Key"
+        return@withContext try {
             val requestBody = JSONObject().apply {
                 put("model", modelName)
                 put("messages", JSONArray().apply {
@@ -118,9 +118,9 @@ class AIClient(private val settingsManager: SettingsManager) {
         userInput: String,
         toolExecutor: suspend (toolName: String, arguments: JSONObject) -> String,
         onProgress: (suspend (ProgressEvent) -> Unit)? = null
-    ): AgentResult {
+    ): AgentResult = withContext(Dispatchers.IO) {
         if (!isConfigured()) {
-            return AgentResult(
+            return@withContext AgentResult(
                 success = false,
                 errorMessage = "AI 助手未配置。请到「我的」→「AI 对话配置」中填写 API Key 和 Base URL。",
                 finalAnswer = "",
@@ -170,7 +170,7 @@ class AIClient(private val settingsManager: SettingsManager) {
                         val errBody = resp.body?.string() ?: ""
                         lastError = "AI 服务返回 HTTP ${resp.code} ${resp.message}\n${errBody.take(500)}"
                         Log.w(TAG, lastError!!)
-                        return AgentResult(
+                        return@withContext AgentResult(
                             success = false,
                             errorMessage = lastError,
                             finalAnswer = "",
@@ -260,7 +260,7 @@ class AIClient(private val settingsManager: SettingsManager) {
             val exClass = e.javaClass.simpleName
             val exMsg = e.message ?: "(无消息, 可能是 SSL/网络/DNS 异常)"
             Log.w(TAG, "Agent 异常: $exClass: $exMsg", e)
-            return AgentResult(
+            return@withContext AgentResult(
                 success = false,
                 errorMessage = "AI 服务调用失败 [$exClass]: $exMsg",
                 finalAnswer = "",
@@ -268,7 +268,7 @@ class AIClient(private val settingsManager: SettingsManager) {
             )
         }
 
-        return AgentResult(
+        return@withContext AgentResult(
             success = finalAnswer.isNotEmpty() || toolCallLog.isNotEmpty(),
             errorMessage = lastError,
             finalAnswer = finalAnswer,
