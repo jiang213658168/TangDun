@@ -1,8 +1,7 @@
 package com.tangdun.app.ui.prediction
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -12,25 +11,31 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.tangdun.app.ui.components.*
 import com.tangdun.app.ui.theme.*
-import com.tangdun.app.widget.PredictionChartView
 
 /**
- * 血糖预测页面
+ * 血糖预测页面 (产品级重构 v2.0)
  *
- * 显示：
- * - 风险等级
- * - 关键时间点预测（5/15/30/60/120分钟）
- * - 0-120分钟预测曲线
- * - 模型信息
+ * 新布局:
+ *  ┌──────────────────────────────┐
+ *  │ ModernTopBar + 刷新按钮       │
+ *  ├──────────────────────────────┤
+ *  │ PredictionHeroCard           │  ← 大数字 + 风险徽章 + 置信度环
+ *  │ (30min 预测 + 风险色背景)      │
+ *  ├──────────────────────────────┤
+ *  │ QuickInsightRow              │  ← IOB / 碳水 / 变异度 关键指标
+ *  ├──────────────────────────────┤
+ *  │ ComposePredictionChart       │  ← 三线曲线 + 选中 tooltip
+ *  ├──────────────────────────────┤
+ *  │ Section: 关键时间点预测        │
+ *  │ 30min / 60min / 120min       │  ← 三个 stat card 横排
+ *  ├──────────────────────────────┤
+ *  │ ModelWeightBar               │  ← BMA 融合权重可视化
+ *  └──────────────────────────────┘
  */
 @Composable
 fun PredictionScreen(
@@ -43,86 +48,163 @@ fun PredictionScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
     ) {
-        // 顶部标题
-        TopAppBar(
-            title = {
-                Text(
-                    text = "血糖预测",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            },
+        // ── 顶部: ModernTopBar ──
+        ModernTopBar(
+            title = "血糖预测",
+            subtitle = uiState.modelLabel.takeIf { it.isNotEmpty() }
+                ?: "AI 智能预测未来 3 小时血糖走势",
             actions = {
                 IconButton(onClick = { viewModel.refresh() }) {
                     Icon(Icons.Default.Refresh, contentDescription = "刷新")
                 }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                actionIconContentColor = MaterialTheme.colorScheme.onPrimary
-            )
+            }
         )
 
+        Spacer(Modifier.height(12.dp))
+
         if (uiState.isLoading) {
+            // 加载占位
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(40.dp),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator()
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         } else {
-            // 风险等级卡片
-            RiskLevelCard(
-                riskLevel = uiState.riskLevel,
-                currentGlucose = uiState.currentGlucose
+            // ── Hero: 大预测数字 ──
+            PredictionHeroCard(
+                currentGlucose = uiState.currentGlucose,
+                predicted30min = uiState.predicted30min,
+                targetLow = uiState.targetLow,
+                targetHigh = uiState.targetHigh,
+                confidence = uiState.confidence
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // 预测引擎信息
-            EngineInfoCard(
-                modelLabel = uiState.modelLabel,
-                confidence = uiState.confidence,
-                totalRecords = uiState.totalRecords,
-                fastingBaseline = uiState.fastingBaseline,
-                variability = uiState.variability,
-                activeInsulin = uiState.activeInsulin,
-                todayCarbs = uiState.todayCarbs,
-                isfEstimate = uiState.isfEstimate,
-                crEstimate = uiState.crEstimate,
-                tcnWeight = uiState.tcnWeight,
-                physioWeight = uiState.physioWeight
+            // ── 关键洞察行 (横滑) ──
+            SectionHeader(title = "上下文")
+            QuickInsightRow(
+                items = buildList {
+                    add(Triple("活性胰岛素 IOB", "${"%.1f".format(uiState.activeInsulin)} U", MaterialTheme.colorScheme.tertiary))
+                    add(Triple("今日碳水", "${"%.0f".format(uiState.todayCarbs)} g", MaterialTheme.colorScheme.primary))
+                    add(Triple("变异度 CV", "${"%.1f".format(uiState.variability)}%", glucoseColor(uiState.variability.coerceAtLeast(3.9), 3.0, 4.5)))
+                    add(Triple("空腹基线", "${"%.1f".format(uiState.fastingBaseline)}", glucoseColor(uiState.fastingBaseline)))
+                    add(Triple("ISF 估算", "${"%.1f".format(uiState.isfEstimate)}", MaterialTheme.colorScheme.secondary))
+                    add(Triple("CR 估算", "${"%.0f".format(uiState.crEstimate)}", MaterialTheme.colorScheme.secondary))
+                }
             )
 
-            // 时间范围选择
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(Modifier.height(20.dp))
+
+            // ── 时间范围选择 ──
+            SectionHeader(title = "预测曲线")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 for (h in listOf(1, 3, 6, 12, 24)) {
+                    val selected = uiState.historyHours == h
                     FilterChip(
-                        selected = uiState.historyHours == h,
+                        selected = selected,
                         onClick = { viewModel.setHistoryHours(h) },
-                        label = { Text("${h}h", fontSize = 12.sp) }
+                        label = {
+                            Text(
+                                "${h}h",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
 
-            // 预测曲线图（历史 + 预测叠加）
-            PredictionCurveCard(
-                history = uiState.historyData,
-                curve = uiState.curve,
-                physio = uiState.physioCurve,
-                incremental = uiState.incrementalCurve,
-                current = uiState.currentGlucose ?: 0.0,
-                targetLow = uiState.targetLow,
-                targetHigh = uiState.targetHigh
-            )
+            // ── 三线预测曲线图 ──
+            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                ComposePredictionChart(
+                    history = uiState.historyData,
+                    physioCurve = uiState.physioCurve,
+                    incrementalCurve = uiState.incrementalCurve,
+                    finalCurve = uiState.curve,
+                    currentGlucose = uiState.currentGlucose ?: 5.0,
+                    targetLow = uiState.targetLow,
+                    targetHigh = uiState.targetHigh,
+                    height = 300.dp
+                )
+            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // 图例
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                LegendDot(color = Chart1, label = "预测曲线")
+                LegendDot(color = Chart3, label = "DallaMan")
+                LegendDot(color = Chart2, label = "增量残差")
+            }
 
-            // 峰值预警
-            if (uiState.peakMinute > 0) {
+            Spacer(Modifier.height(20.dp))
+
+            // ── 关键时间点预测 ──
+            SectionHeader(title = "关键时间点")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                PredictionStatCard(
+                    label = "30 分钟",
+                    value = uiState.predicted30min,
+                    targetLow = uiState.targetLow,
+                    targetHigh = uiState.targetHigh,
+                    isPrimary = true,
+                    modifier = Modifier.weight(1f)
+                )
+                PredictionStatCard(
+                    label = "60 分钟",
+                    value = uiState.predicted60min,
+                    targetLow = uiState.targetLow,
+                    targetHigh = uiState.targetHigh,
+                    modifier = Modifier.weight(1f)
+                )
+                PredictionStatCard(
+                    label = "120 分钟",
+                    value = uiState.predicted120min,
+                    targetLow = uiState.targetLow,
+                    targetHigh = uiState.targetHigh,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            // ── BMA 融合权重 ──
+            if (uiState.tcnWeight > 0 || uiState.physioWeight > 0) {
+                ModelWeightBar(
+                    tcnWeight = uiState.tcnWeight,
+                    physioWeight = uiState.physioWeight
+                )
+            }
+
+            // ── 峰值预警 ──
+            if (uiState.peakMinute > 0 && uiState.predicted120min != null) {
+                Spacer(Modifier.height(16.dp))
                 PeakInfoCard(
                     peakValue = uiState.peakValue,
                     peakMinute = uiState.peakMinute,
@@ -130,173 +212,89 @@ fun PredictionScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
 
 @Composable
-fun RiskLevelCard(riskLevel: String, currentGlucose: Double?) {
-    val (riskText, riskColor, riskIcon) = when (riskLevel) {
-        "低血糖风险" -> Triple("低血糖风险", AlertWarning, Icons.Default.Warning)
-        "高血糖风险" -> Triple("高血糖风险", AlertCritical, Icons.Default.Error)
-        else -> Triple("正常", AlertSuccess, Icons.Default.CheckCircle)
+private fun LegendDot(color: androidx.compose.ui.graphics.Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .padding(2.dp)
+                .background(color, RoundedCornerShape(5.dp))
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
+}
 
+@Composable
+private fun PeakInfoCard(peakValue: Double, peakMinute: Int, predicted120min: Double?) {
+    val color = when {
+        peakValue > 13.9 -> GlucoseSevereHigh
+        peakValue > 10.0 -> GlucoseHigh
+        peakValue < 3.0 -> GlucoseSevereLow
+        peakValue < 3.9 -> GlucoseLow
+        else -> GlucoseNormal
+    }
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = riskColor.copy(alpha = 0.1f))
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.08f))
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = riskIcon,
-                contentDescription = null,
-                tint = riskColor,
-                modifier = Modifier.size(40.dp)
-            )
-            Spacer(modifier = Modifier.width(16.dp))
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(color.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.TrendingUp, contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "风险等级",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary
+                    "预计峰值",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Text(
-                    text = riskText,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = riskColor
-                )
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "当前",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextHint
-                )
-                Text(
-                    text = if (currentGlucose != null) String.format("%.1f", currentGlucose) else "--",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    }
-}
-
-// ─────── 商用级预测组件 ───────
-
-@Composable
-fun EngineInfoCard(
-    modelLabel: String, confidence: Double,
-    totalRecords: Int, fastingBaseline: Double, variability: Double,
-    activeInsulin: Double, todayCarbs: Double,
-    isfEstimate: Double, crEstimate: Double,
-    tcnWeight: Double, physioWeight: Double
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Insights, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("预测引擎", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.height(8.dp))
-            // 模型权重 — 明确展示用的是什么
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                if (tcnWeight > 0) StatItem2("TCN (MAE 0.552)", "${String.format("%.0f%%", tcnWeight * 100)}")
-                StatItem2("DallaMan(7室)", "${String.format("%.0f%%", physioWeight * 100)}")
-                StatItem2("个性化", "${String.format("%.0f%%", (1 - tcnWeight - physioWeight).coerceAtLeast(0.0) * 100)}")
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                StatItem2("置信度", "${String.format("%.0f", confidence)}%")
-                StatItem2("记录", "${totalRecords}条")
-                StatItem2("活性胰岛素", "${String.format("%.1f", activeInsulin)}U")
-                StatItem2("今日碳水", "${String.format("%.0f", todayCarbs)}g")
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                StatItem2("ISF估算", "${String.format("%.1f", isfEstimate)}")
-                StatItem2("CR估算", "${String.format("%.0f", crEstimate)}")
-                StatItem2("变异", "${String.format("%.1f", variability)}%")
-                StatItem2("基线", "${String.format("%.1f", fastingBaseline)}")
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(modelLabel, fontSize = 11.sp, color = TextHint)
-        }
-    }
-}
-
-@Composable
-fun StatItem2(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        Text(label, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-    }
-}
-
-@Composable
-fun PredictionCurveCard(history: List<Pair<Long, Double>>, curve: List<Double>, physio: List<Double>, incremental: List<Double>, current: Double, targetLow: Double, targetHigh: Double) {
-    // ★ physio曲线(DallaMan)始终存在 → 至少2条线; 增量>20次更新时3条线
-    val showMulti = physio.isNotEmpty()
-    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
-        Column(Modifier.padding(12.dp)) {
-            Text("血糖预测曲线", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            if (history.isEmpty() && curve.isEmpty()) {
-                Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Text("暂无数据", color = TextHint) }
-            } else {
-                AndroidView(
-                    factory = { ctx -> PredictionChartView(ctx).apply {
-                        if (showMulti) setThreeCurves(history, physio, incremental, curve, current)
-                        else setData(history, curve, current)
-                        setTargets(targetLow, targetHigh)
-                    } },
-                    update = { it.apply {
-                        if (showMulti) setThreeCurves(history, physio, incremental, curve, current)
-                        else setData(history, curve, current)
-                        setTargets(targetLow, targetHigh)
-                    } },
-                    modifier = Modifier.fillMaxWidth().height(280.dp)
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    for ((label, idx) in listOf("当前" to 0, "30min" to 6, "60min" to 12, "120min" to 24)) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(label, style = MaterialTheme.typography.bodySmall, color = TextHint)
-                            Text(String.format("%.1f", curve.getOrNull(idx) ?: (history.lastOrNull()?.second ?: 0.0)),
-                                fontSize = 16.sp, fontWeight = FontWeight.Bold, color = ChartLine1)
-                        }
-                    }
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = String.format("%.1f", peakValue),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = color,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "mmol/L",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
                 }
+                Text(
+                    text = "$peakMinute 分钟后 · 2h 后: ${predicted120min?.let { String.format("%.1f", it) } ?: "--"} mmol/L",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
 }
-
-@Composable
-fun PeakInfoCard(peakValue: Double, peakMinute: Int, predicted120min: Double?) {
-    val c = when { peakValue > 10.0 -> GlucoseHigh; peakValue < 3.9 -> GlucoseLow; else -> GlucoseNormal }
-    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = c.copy(alpha = 0.08f))) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.TrendingUp, null, tint = c, modifier = Modifier.size(32.dp))
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text("预计峰值 ${String.format("%.1f", peakValue)} mmol/L", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = c)
-                Text("${peakMinute}分钟后  |  2h后: ${predicted120min?.let { String.format("%.1f", it) } ?: "--"} mmol/L", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-            }
-        }
-    }
-}
-
