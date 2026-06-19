@@ -30,6 +30,8 @@ fun ChatScreen(
     val uiState by viewModel.uiState.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val foodHelper = remember(context) { FoodAssistantHelper(context) }
 
     // 自动创建新会话
     LaunchedEffect(Unit) {
@@ -85,6 +87,11 @@ fun ChatScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // ★ 食物助手面板 (3 个核心功能快捷入口)
+            item {
+                FoodAssistantSection(helper = foodHelper)
+            }
+
             // 欢迎消息
             if (uiState.messages.isEmpty()) {
                 item {
