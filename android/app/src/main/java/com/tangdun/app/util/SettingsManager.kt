@@ -41,8 +41,9 @@ class SettingsManager(private val context: Context) {
 
         // AI对话配置 (兼容OpenAI的API)
         private const val DEFAULT_AI_PROVIDER = "openai"
-        private const val DEFAULT_OPENAI_API_KEY = "tp-c46u5ce4kpsricwt4e6j7l3i2ncmc2stfh8g1qoprm1yisn9"
-        private const val DEFAULT_OPENAI_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
+        // ★ v3.0 默认改为 DeepSeek, API Key 留空让用户在设置页填写 (避免硬编码 Key 上传到 Git)
+        private const val DEFAULT_OPENAI_API_KEY = ""
+        private const val DEFAULT_OPENAI_BASE_URL = "https://api.deepseek.com"
     }
 
     fun setBaiduApiConfig(apiKey: String, secretKey: String) {
@@ -272,9 +273,9 @@ class SettingsManager(private val context: Context) {
         return sharedPref.getString("openai_base_url", DEFAULT_OPENAI_BASE_URL) ?: DEFAULT_OPENAI_BASE_URL
     }
 
-    /** v2.9: 模型名 (用户可在设置里改) - 默认 MiMo-V2.5-Pro (旗舰, 支持 function calling) */
+    /** v3.0: 模型名 (用户可在设置里改) - 默认 deepseek-v4-flash */
     fun getAiModel(): String {
-        return sharedPref.getString("ai_model", "MiMo-V2.5-Pro") ?: "MiMo-V2.5-Pro"
+        return sharedPref.getString("ai_model", "deepseek-v4-flash") ?: "deepseek-v4-flash"
     }
 
     fun setAiModel(model: String) {

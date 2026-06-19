@@ -24,12 +24,24 @@ import java.util.concurrent.TimeUnit
  *
  * 支持所有 OpenAI 兼容 API: DeepSeek / OpenAI / 小米 MiMo / 智谱 GLM / Moonshot 等
  */
+
+/**
+ * v3.0 Agent 实时进度事件 (推给 UI 显示)
+ */
+sealed class ProgressEvent {
+    data class Thinking(val turn: Int, val content: String) : ProgressEvent()
+    data class ToolCallStart(val name: String, val arguments: String) : ProgressEvent()
+    data class ToolCallDone(val name: String, val arguments: String, val result: String) : ProgressEvent()
+    data class Text(val content: String) : ProgressEvent()
+    data class Done(val finalAnswer: String) : ProgressEvent()
+}
+
 class AIClient(private val settingsManager: SettingsManager) {
 
     companion object {
         private const val TAG = "AIAgent"
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
-        private const val DEFAULT_MODEL = "MiMo-V2.5-Pro"  // 小米 MiMo 旗舰, 明确支持 function calling
+        private const val DEFAULT_MODEL = "deepseek-v4-flash"  // v3.0 默认 DeepSeek
         private const val MAX_AGENT_TURNS = 8  // agent 循环最大轮数
     }
 
@@ -40,7 +52,7 @@ class AIClient(private val settingsManager: SettingsManager) {
         .build()
 
     /** 真实使用的模型名 (用户可在设置里改, 默认 MiMo-V2.5-Pro 支持 function calling) */
-    private val modelName: String get() = runCatching { settingsManager.getAiModel() }.getOrDefault("MiMo-V2.5-Pro")
+    private val modelName: String get() = runCatching { settingsManager.getAiModel() }.getOrDefault("deepseek-v4-flash")
 
     fun isConfigured(): Boolean = settingsManager.isAiConfigured()
 
@@ -68,7 +80,8 @@ class AIClient(private val settingsManager: SettingsManager) {
      */
     suspend fun runAgent(
         userInput: String,
-        toolExecutor: suspend (toolName: String, arguments: JSONObject) -> String
+        toolExecutor: suspend (toolName: String, arguments: JSONObject) -> String,
+        onProgress: (suspend (ProgressEvent) -> Unit)? = null
     ): AgentResult {
         if (!isConfigured()) {
             return AgentResult(
@@ -85,6 +98,7 @@ class AIClient(private val settingsManager: SettingsManager) {
 
         val tools = buildToolsSchema()
         val toolCallLog = mutableListOf<ToolCallRecord>()
+        val thinkingLog = mutableListOf<ThinkingRecord>()
         var finalAnswer = ""
         var lastError: String? = null
         var done = false
@@ -98,8 +112,13 @@ class AIClient(private val settingsManager: SettingsManager) {
                     put("messages", JSONArray(messages))
                     put("tools", tools)
                     put("tool_choice", "auto")
-                    put("temperature", 0.3)
-                    put("max_tokens", 3000)
+                    put("max_tokens", 4000)
+                    // ★ DeepSeek 思考模式: extra_body.thinking + reasoning_effort=max
+                    //   注意: 思考模式下 temperature/top_p/presence_penalty 等参数不生效, 不要传
+                    put("reasoning_effort", "max")
+                    put("extra_body", JSONObject().apply {
+                        put("thinking", JSONObject().apply { put("type", "enabled") })
+                    })
                 }.toString()
 
                 val request = Request.Builder()
@@ -131,8 +150,18 @@ class AIClient(private val settingsManager: SettingsManager) {
                     Log.i(TAG, "Round $turn finish_reason=$finishReason")
 
                     val content = message.optString("content", "")
+                    val reasoningContent = message.optString("reasoning_content", "")
+                    if (reasoningContent.isNotEmpty()) {
+                        Log.i(TAG, "💭 思考: ${reasoningContent.take(200)}")
+                        thinkingLog.add(ThinkingRecord(turn, reasoningContent))
+                        onProgress?.invoke(ProgressEvent.Thinking(turn, reasoningContent))
+                    }
+                    if (content.isNotEmpty()) {
+                        onProgress?.invoke(ProgressEvent.Text(content))
+                    }
                     if (content.isNotEmpty() && finishReason == "stop") {
                         finalAnswer = content
+                        onProgress?.invoke(ProgressEvent.Done(finalAnswer))
                     } else if (content.isNotEmpty()) {
                         Log.i(TAG, "中间文本: $content")
                     }
@@ -149,6 +178,7 @@ class AIClient(private val settingsManager: SettingsManager) {
                             val argsObj = runCatching { JSONObject(argsStr) }.getOrElse { JSONObject() }
 
                             Log.i(TAG, "  🔧 工具调用: $toolName($argsStr)")
+                            onProgress?.invoke(ProgressEvent.ToolCallStart(toolName, argsStr))
 
                             val toolResult = try {
                                 toolExecutor(toolName, argsObj)
@@ -161,6 +191,7 @@ class AIClient(private val settingsManager: SettingsManager) {
                             }
 
                             toolCallLog.add(ToolCallRecord(toolName, argsStr, toolResult))
+                            onProgress?.invoke(ProgressEvent.ToolCallDone(toolName, argsStr, toolResult))
 
                             messages.add(JSONObject().apply {
                                 put("role", "tool")
@@ -203,7 +234,8 @@ class AIClient(private val settingsManager: SettingsManager) {
             success = finalAnswer.isNotEmpty() || toolCallLog.isNotEmpty(),
             errorMessage = lastError,
             finalAnswer = finalAnswer,
-            toolCalls = toolCallLog
+            toolCalls = toolCallLog,
+            thinking = thinkingLog
         )
     }
 
@@ -212,11 +244,15 @@ class AIClient(private val settingsManager: SettingsManager) {
      */
     data class ToolCallRecord(val name: String, val arguments: String, val result: String)
 
+    /** 思维链记录 (Claude Code / OpenClaw 风格, 把 AI 的思考过程暴露给用户) */
+    data class ThinkingRecord(val turn: Int, val content: String)
+
     data class AgentResult(
         val success: Boolean,
         val errorMessage: String?,
         val finalAnswer: String,
-        val toolCalls: List<ToolCallRecord>
+        val toolCalls: List<ToolCallRecord>,
+        val thinking: List<ThinkingRecord> = emptyList()
     )
 
     // ============== System Prompt ==============

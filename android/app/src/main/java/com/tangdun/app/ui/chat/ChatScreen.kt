@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tangdun.app.ai.AIIntent
@@ -260,34 +261,9 @@ fun ChatScreen(
             // 消息列表
             items(uiState.messages) { message -> ChatBubble(message = message) }
 
-            // 加载指示器
+            // 加载指示器 + Claude Code 风格的实时思考/工具调用卡片
             if (uiState.isLoading) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Start
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .padding(12.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "正在思考...",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = TextSecondary
-                                )
-                            }
-                        }
-                    }
-                }
+                item { AgentWorkingBubble(liveThinking = uiState.liveThinking, liveToolCalls = uiState.liveToolCalls) }
             }
         }
     }
@@ -986,6 +962,142 @@ fun ChatInputBar(
                           else TextHint,
                     modifier = Modifier.size(24.dp)
                 )
+            }
+        }
+    }
+}
+/**
+ * ★ v3.0 Agent 工作进度卡片 (Claude Code / OpenClaw 风格)
+ *
+ * 显示:
+ *  - 🤖 加载 spinner
+ *  - 💭 思考过程 (默认折叠, 点击展开)
+ *  - 🔧 工具调用列表 (每个可点击展开看 args + result)
+ */
+@Composable
+fun AgentWorkingBubble(
+    liveThinking: String?,
+    liveToolCalls: List<com.tangdun.app.ui.chat.LiveToolCall>
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Agent 工作中…",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary
+            )
+        }
+
+        if (!liveThinking.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            ThinkingCard(content = liveThinking)
+        }
+
+        liveToolCalls.forEach { tc ->
+            Spacer(modifier = Modifier.height(6.dp))
+            ToolCallCard(name = tc.name, arguments = tc.arguments, result = tc.result)
+        }
+    }
+}
+
+/** 思考过程卡片 (Claude Code 风格) */
+@Composable
+private fun ThinkingCard(content: String) {
+    var expanded by remember { mutableStateOf(false) }
+    val preview = if (content.length > 80) content.take(80) + "..." else content
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(end = 32.dp)
+            .clickable { expanded = !expanded },
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = androidx.compose.foundation.BorderStroke(0.dp, Color.Transparent)
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = "💭", style = MaterialTheme.typography.bodySmall)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = if (expanded) "思考过程" else "思考过程 (点击展开)",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = if (expanded) content else preview,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                maxLines = if (expanded) Int.MAX_VALUE else 3
+            )
+        }
+    }
+}
+
+/** 工具调用卡片 (Claude Code 风格) */
+@Composable
+private fun ToolCallCard(name: String, arguments: String, result: String?) {
+    var expanded by remember { mutableStateOf(false) }
+    val isRunning = result == null
+    val statusColor = if (isRunning) MaterialTheme.colorScheme.primary else AlertSuccess
+    val statusText = if (isRunning) "执行中..." else "已完成"
+    val statusIcon = if (isRunning) "⏳" else "✅"
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(end = 32.dp)
+            .clickable { expanded = !expanded },
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = "🔧", style = MaterialTheme.typography.bodySmall)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = statusColor
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = "$statusIcon $statusText",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = statusColor
+                )
+            }
+            if (expanded) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(text = "参数:", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                Text(
+                    text = arguments,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                )
+                if (!isRunning && result != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(text = "结果:", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                    Text(
+                        text = result,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
             }
         }
     }

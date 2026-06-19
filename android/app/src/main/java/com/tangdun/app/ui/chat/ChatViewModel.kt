@@ -9,6 +9,7 @@ import com.tangdun.app.ai.AIIntent
 import com.tangdun.app.ai.AIIntentParser
 import com.tangdun.app.ai.AIPermissionEngine
 import com.tangdun.app.ai.AgentToolExecutor
+import com.tangdun.app.ai.ProgressEvent
 import com.tangdun.app.data.local.dao.AlertDao
 import com.tangdun.app.data.local.dao.BloodPressureDao
 import com.tangdun.app.data.local.dao.ChatDao
@@ -57,6 +58,16 @@ data class ChatUiState(
     val lastUserInput: String = "",
     // ★ AI 助手历史会话列表 (用于侧边栏)
     val conversations: List<Conversation> = emptyList(),
+    // ★ v3.0 Claude Code 风格: 当前正在流式显示的思考过程 + 工具调用 (用户发消息 → AI 思考时实时更新)
+    val liveThinking: String? = null,
+    val liveToolCalls: List<LiveToolCall> = emptyList(),
+)
+
+/** 实时工具调用 (UI 展示用) */
+data class LiveToolCall(
+    val name: String,
+    val arguments: String,
+    val result: String? = null  // null = 还在执行中
 )
 
 /** ★ AI 助手权限: 待确认动作 (兼容旧版 PendingActionDialog) */
@@ -441,9 +452,34 @@ class ChatViewModel @Inject constructor(
             )
 
             Log.i("ChatVM", "[Agent 模式] 调用 AI: $content")
-            val agentResult = aiClient.runAgent(content) { toolName, args ->
-                agentExecutor.execute(toolName, args)
-            }
+            // ★ v3.0 实时进度: AI 思考 / 工具调用每步都推到 UI
+            val liveThinkingBuilder = StringBuilder()
+            val liveToolCalls = mutableListOf<LiveToolCall>()
+            val agentResult = aiClient.runAgent(
+                userInput = content,
+                toolExecutor = { toolName, args -> agentExecutor.execute(toolName, args) },
+                onProgress = { event ->
+                    when (event) {
+                        is ProgressEvent.Thinking -> {
+                            liveThinkingBuilder.append(event.content).append("\n\n")
+                            _uiState.value = _uiState.value.copy(liveThinking = liveThinkingBuilder.toString())
+                        }
+                        is ProgressEvent.ToolCallStart -> {
+                            liveToolCalls.add(LiveToolCall(event.name, event.arguments, null))
+                            _uiState.value = _uiState.value.copy(liveToolCalls = liveToolCalls.toList())
+                        }
+                        is ProgressEvent.ToolCallDone -> {
+                            val idx = liveToolCalls.indexOfLast { it.name == event.name && it.result == null }
+                            if (idx >= 0) liveToolCalls[idx] = LiveToolCall(event.name, event.arguments, event.result)
+                            _uiState.value = _uiState.value.copy(liveToolCalls = liveToolCalls.toList())
+                        }
+                        is ProgressEvent.Text -> {}
+                        is ProgressEvent.Done -> {}
+                    }
+                }
+            )
+            // 清空 live 状态
+            _uiState.value = _uiState.value.copy(liveThinking = null, liveToolCalls = emptyList())
 
             if (!agentResult.success && agentResult.finalAnswer.isEmpty()) {
                 // 失败 (API 未配置/网络错误/AI 返回空)
