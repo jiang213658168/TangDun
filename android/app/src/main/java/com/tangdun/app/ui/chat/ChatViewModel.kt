@@ -8,6 +8,7 @@ import com.tangdun.app.ai.AIExecutionResult
 import com.tangdun.app.ai.AIIntent
 import com.tangdun.app.ai.AIIntentParser
 import com.tangdun.app.ai.AIPermissionEngine
+import com.tangdun.app.ai.AgentToolExecutor
 import com.tangdun.app.data.local.dao.AlertDao
 import com.tangdun.app.data.local.dao.BloodPressureDao
 import com.tangdun.app.data.local.dao.ChatDao
@@ -426,166 +427,90 @@ class ChatViewModel @Inject constructor(
                 }
             }
 
-            // ★ v2.8 AI 助手: 优先调用大模型 API 自动解析, 失败回退本地规则
-            val (aiIntents, parseSource) = AIIntentParser.parseAsync(content, aiClient)
-            val sourceLabel = when (parseSource) {
-                AIIntentParser.ParseSource.AI -> "🤖 AI 大模型"
-                AIIntentParser.ParseSource.LOCAL -> "📋 本地规则"
-            }
-            Log.i("ChatVM", "[$sourceLabel] 解析: ${aiIntents.size} 条 → ${aiIntents.joinToString { it.description }}")
-            if (aiIntents.isNotEmpty()) {
-                Log.i("ChatVM", "AI 意图解析: ${aiIntents.size} 条 → ${aiIntents.joinToString { it.description }}")
-
-                // 区分"需确认" vs "直接执行"
-                val needsConfirm = aiIntents.filter { it.requiresConfirmation }
-                val autoExecute = aiIntents.filter { !it.requiresConfirmation }
-
-                // 自动执行: 导航 / 配置 (跳转到目标页, 不需要用户逐条确认)
-                if (autoExecute.isNotEmpty()) {
-                    val results = aiEngine.executeAll(autoExecute)
-                    val combinedMsg = results.joinToString("\n") { it.message }
-                    val nav = results.firstNotNullOfOrNull { it.navigateTo }
-
-                    // 直接执行的提示消息
-                    val autoMsg = ChatMessage(
-                        conversationId = conversationId,
-                        role = ChatMessage.ROLE_ASSISTANT,
-                        content = combinedMsg.ifBlank { "已完成" }
-                    )
-                    chatDao.insertMessage(autoMsg)
-                    _uiState.value = _uiState.value.copy(
-                        messages = _uiState.value.messages + autoMsg,
-                        lastExecutionMessage = combinedMsg,
-                        navigateRequest = nav,
-                        isLoading = false
-                    )
-                    chatDao.updateConversationMessageCount(conversationId)
-
-                    // 如果没有需要确认的 intent, 直接 return
-                    if (needsConfirm.isEmpty()) return@launch
+            // ★ v2.9 AI 助手 - 真正的 Agent 模式
+            // 不再使用本地 regex 解析, 完全由 AI 大模型通过 function calling 决定调用哪些工具
+            val agentExecutor = AgentToolExecutor(
+                engine = aiEngine,
+                onNavigate = { route ->
+                    _uiState.value = _uiState.value.copy(navigateRequest = route)
+                },
+                onExportRequest = { format, scope ->
+                    // 触发导出 (通过 navigateRequest 跳到记录页, 让用户手动导出)
+                    _uiState.value = _uiState.value.copy(navigateRequest = "record")
                 }
+            )
 
-                // 需要用户确认的 intent (创建/删除/更新) → 弹确认弹窗
-                if (needsConfirm.isNotEmpty()) {
-                    _uiState.value = _uiState.value.copy(
-                        pendingIntents = needsConfirm,
-                        isLoading = false
-                    )
-                    val hintMessage = ChatMessage(
-                        conversationId = conversationId,
-                        role = ChatMessage.ROLE_ASSISTANT,
-                        content = "🤖 我从你的描述中识别到 ${needsConfirm.size} 个操作:\n\n" +
-                                needsConfirm.joinToString("\n") { "• ${it.description}" } +
-                                "\n\n请确认是否执行。"
-                    )
-                    chatDao.insertMessage(hintMessage)
-                    _uiState.value = _uiState.value.copy(
-                        messages = _uiState.value.messages + hintMessage
-                    )
-                    // 更新会话标题
-                    val conv = chatDao.getConversation(conversationId)
-                    if (conv != null && conv.title == "新对话") {
-                        chatDao.updateConversation(conv.copy(title = "📝 智能记录"))
-                    }
-                    chatDao.updateConversationMessageCount(conversationId)
-                    return@launch
-                }
+            Log.i("ChatVM", "[Agent 模式] 调用 AI: $content")
+            val agentResult = aiClient.runAgent(content) { toolName, args ->
+                agentExecutor.execute(toolName, args)
             }
 
-            // ★ Step 2: AIIntentParser 没匹配到 → 走 AiRecordHelper 旧版解析 (食物)
-            val records = try {
-                AiRecordHelper.parse(context, content)
-            } catch (e: Exception) {
-                Log.w("ChatVM", "解析失败: ${e.message}")
-                emptyList()
-            }
-
-            if (records.isNotEmpty()) {
-                // ★ 解析到记录 → 不走 AI 聊天 (聊天 AI 不擅长结构化), 直接显示"应用建议"
-                Log.i("ChatVM", "解析到 ${records.size} 条可应用记录, 跳过 AI 聊天")
-                _uiState.value = _uiState.value.copy(
-                    pendingRecords = records,
-                    isLoading = false
-                )
-                // 加一条助手提示消息, 让用户知道发生了什么
-                val hintMessage = ChatMessage(
+            if (!agentResult.success && agentResult.finalAnswer.isEmpty()) {
+                // 失败 (API 未配置/网络错误/AI 返回空)
+                val errMsg = agentResult.errorMessage ?: "AI 服务异常"
+                Log.w("ChatVM", "Agent 失败: $errMsg")
+                val errorAssistantMsg = ChatMessage(
                     conversationId = conversationId,
                     role = ChatMessage.ROLE_ASSISTANT,
-                    content = "🤖 我从你的描述中识别到 ${records.size} 条可记录的医疗事件。\n\n请在下方确认是否保存到数据库（点击 [查看]）。"
+                    content = "⚠️ $errMsg\n\n请到「我的 → AI 对话配置」中检查 API Key 和 Base URL 是否正确。"
                 )
-                chatDao.insertMessage(hintMessage)
+                chatDao.insertMessage(errorAssistantMsg)
                 _uiState.value = _uiState.value.copy(
-                    messages = _uiState.value.messages + hintMessage
+                    messages = _uiState.value.messages + errorAssistantMsg,
+                    isLoading = false,
+                    error = errMsg
                 )
-                // 更新会话标题
-                val conv = chatDao.getConversation(conversationId)
-                if (conv != null && conv.title == "新对话") {
-                    chatDao.updateConversation(conv.copy(title = "📝 智能记录"))
-                }
                 chatDao.updateConversationMessageCount(conversationId)
                 return@launch
             }
 
-            // ★ Step 2: 没有可记录事件 → 走 AI 聊天回复
-            // ★ AI 助手读权限: 把最近 50 条数据作为 system context 注入, AI 能直接回答查询
-            val userDataContext = buildUserDataContext()
+            // ★ Agent 成功: 显示最终 AI 回复 + 工具调用记录
+            Log.i("ChatVM", "Agent 完成: ${agentResult.toolCalls.size} 个工具调用, 回复 ${agentResult.finalAnswer.length} 字")
 
-            val messageHistory = chatDao.getRecentMessages(conversationId, 20)
-                .reversed()
-                .map { msg ->
-                    ChatMessageDto(
-                        role = msg.role,
-                        content = msg.content
-                    )
-                }
-
-            // 注入上下文: 如果用户问"今天最高血糖", AI 能基于真实数据回答
-            val contextMsg = if (userDataContext.isNotBlank()) {
-                listOf(ChatMessageDto("system", userDataContext)) + messageHistory
-            } else messageHistory
-
-            val result = aiChatService.sendMessage(contextMsg)
-
-            result.fold(
-                onSuccess = { aiResponse ->
-                    // 处理AI回复中的自然语言记录指令 (旧版逻辑, 保留兼容)
-                    val (displayText, executed) = aiChatService.processRecordingCommands(context, aiResponse)
-
-                    // ★ AI 助手全套权限: 检测 AI 回复中的导航/删除/修改指令 → 弹确认
-                    parseAndSetPendingAction(aiResponse)
-
-                    // 添加AI回复 (已清理JSON指令块)
-                    val assistantMessage = ChatMessage(
-                        conversationId = conversationId,
-                        role = ChatMessage.ROLE_ASSISTANT,
-                        content = displayText
-                    )
-                    chatDao.insertMessage(assistantMessage)
-
-                    // 如果执行了记录操作，更新会话标题
-                    if (executed > 0) {
-                        val conv = chatDao.getConversation(conversationId)
-                        if (conv != null && conv.title == "新对话" || conv?.title?.startsWith("AI") == true) {
-                            chatDao.updateConversation(conv.copy(title = "📝 记录与咨询"))
+            // 工具调用摘要 (作为前缀, 让用户看到 AI 调用了哪些工具)
+            val toolSummary = if (agentResult.toolCalls.isNotEmpty()) {
+                buildString {
+                    append("🔧 已执行 ${agentResult.toolCalls.size} 个操作:\n")
+                    agentResult.toolCalls.forEach { call ->
+                        append("• ${call.name}")
+                        if (call.result.length < 100) {
+                            val r = runCatching {
+                                org.json.JSONObject(call.result).optString("message", "")
+                            }.getOrDefault("")
+                            if (r.isNotEmpty()) append(" → $r")
                         }
+                        append("\n")
                     }
-
-                    // 更新UI
-                    _uiState.value = _uiState.value.copy(
-                        messages = _uiState.value.messages + assistantMessage,
-                        isLoading = false
-                    )
-
-                    // 更新会话消息数量
-                    chatDao.updateConversationMessageCount(conversationId)
-                },
-                onFailure = { error ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = error.message ?: "请求失败"
-                    )
+                    append("\n")
                 }
+            } else ""
+
+            val finalContent = toolSummary + agentResult.finalAnswer.ifBlank { "已完成" }
+            val assistantMessage = ChatMessage(
+                conversationId = conversationId,
+                role = ChatMessage.ROLE_ASSISTANT,
+                content = finalContent
             )
+            chatDao.insertMessage(assistantMessage)
+
+            // 更新会话标题 (如果有工具调用)
+            if (agentResult.toolCalls.isNotEmpty()) {
+                val conv = chatDao.getConversation(conversationId)
+                if (conv != null && conv.title == "新对话") {
+                    chatDao.updateConversation(conv.copy(title = "📝 Agent 记录"))
+                }
+            }
+
+            // 通知 UI: 数据有变动, 触发刷新
+            if (agentResult.toolCalls.any { it.name.startsWith("record_") || it.name.startsWith("delete_") }) {
+                _uiState.value = _uiState.value.copy(lastExecutionMessage = "AI 已自动添加/删除记录")
+            }
+
+            _uiState.value = _uiState.value.copy(
+                messages = _uiState.value.messages + assistantMessage,
+                isLoading = false
+            )
+            chatDao.updateConversationMessageCount(conversationId)
         }
     }
 

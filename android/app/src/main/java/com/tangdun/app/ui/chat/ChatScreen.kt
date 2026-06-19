@@ -135,50 +135,54 @@ fun ChatScreen(
         // ★ 修复键盘遮挡: 用 Scaffold 让 bottomBar 自动处理 imePadding
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(
-                                text = "糖盾AI助手",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
-                            )
-                            if (uiState.isLoading) {
-                                Text(
-                                    text = "正在解析/思考...",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextHint
-                                )
-                            }
-                        }
-                    },
-                    navigationIcon = {
-                        // ★ 抽屉按钮 (打开历史会话列表)
+                // ★ v2.9 顶栏紧凑化: 用 Surface + Row 自定义 (48dp 高), 去掉默认 TopAppBar 的 padding/insets 让顶栏不再臃肿
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    color = MaterialTheme.colorScheme.primary
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "历史会话", tint = MaterialTheme.colorScheme.onPrimary)
+                            Icon(Icons.Default.Menu, contentDescription = "历史会话", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
                         }
-                    },
-                    actions = {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "AI助手",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            maxLines = 1,
+                        )
+                        if (uiState.isLoading) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "思考中...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f),
+                                maxLines = 1,
+                            )
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
                         IconButton(onClick = { navController?.navigate("home") }) {
-                            Icon(Icons.Default.Home, contentDescription = "首页", tint = MaterialTheme.colorScheme.onPrimary)
+                            Icon(Icons.Default.Home, contentDescription = "首页", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
                         }
                         IconButton(onClick = { navController?.navigate("prediction") }) {
-                            Icon(Icons.Default.Timeline, contentDescription = "预测", tint = MaterialTheme.colorScheme.onPrimary)
+                            Icon(Icons.Default.Timeline, contentDescription = "预测", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
                         }
                         IconButton(onClick = { navController?.navigate("insulin") }) {
-                            Icon(Icons.Default.MedicalServices, contentDescription = "胰岛素", tint = MaterialTheme.colorScheme.onPrimary)
+                            Icon(Icons.Default.MedicalServices, contentDescription = "胰岛素", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
                         }
                         IconButton(onClick = { viewModel.createNewConversation() }) {
-                            Icon(Icons.Default.Add, contentDescription = "新对话", tint = MaterialTheme.colorScheme.onPrimary)
+                            Icon(Icons.Default.Add, contentDescription = "新对话", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                        actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
-                    )
-                )
+                    }
+                }
             },
         bottomBar = {
             // ★ 关键修复: Scaffold.bottomBar 自动处理 imePadding, 输入框永远在键盘上方

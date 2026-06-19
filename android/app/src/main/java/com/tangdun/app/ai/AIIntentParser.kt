@@ -134,23 +134,17 @@ object AIIntentParser {
     fun parse(input: String): List<AIIntent> = parseLocal(input)
 
     /**
-     * ★ v2.8 异步入口: 优先调用 AI 大模型解析, 失败/未配回退到本地规则
+     * ★ v2.9 已废弃 - AI 助手改成真正的 agent 模式, 不再使用 parseAsync
      *
-     * 工作流程:
-     *  1. 如果 aiClient 已配置 → 调用大模型 → 解析 JSON → 返回意图列表
-     *  2. AI 调用失败/超时/未配置 → 回退到本地 regex 解析
+     * 保留此方法仅为向后兼容, 内部走本地规则 (不建议使用, 请改用 AIClient.runAgent)
      */
     suspend fun parseAsync(input: String, aiClient: AIClient? = null): Pair<List<AIIntent>, ParseSource> {
-        // 1. 优先尝试 AI 大模型
-        if (aiClient != null && aiClient.isConfigured()) {
-            val aiIntents = aiClient.parseIntentsWithAI(input)
-            if (aiIntents != null && aiIntents.isNotEmpty()) {
-                return aiIntents to ParseSource.AI
-            }
+        // v2.9: 不再回退本地, 强制要求 AI
+        if (aiClient == null || !aiClient.isConfigured()) {
+            return emptyList<AIIntent>() to ParseSource.LOCAL
         }
-        // 2. 回退到本地规则
-        val localIntents = parseLocal(input)
-        return localIntents to ParseSource.LOCAL
+        // 旧 parseIntentsWithAI 已被 AIClient.runAgent 替代, 这里返回空 (v2.9 改走 agent loop)
+        return emptyList<AIIntent>() to ParseSource.AI
     }
 
     /**
