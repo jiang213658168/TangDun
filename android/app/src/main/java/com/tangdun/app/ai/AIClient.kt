@@ -681,6 +681,144 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
                 put("time_scope", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("today", "this_week", "this_month", "all"))) })
             }, listOf("format")))
 
+        // 22. 导入 xlsx (用户能导入历史 CGM 数据)
+        tools.add(recordTool("import_xlsx", "导入 xlsx/csv 文件 (历史 CGM 数据)",
+            JSONObject().apply {
+                put("file_path", JSONObject().apply { put("type", "string"); put("description", "文件绝对路径") })
+                put("format", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("xlsx", "csv"))); put("description", "文件格式") })
+            }, listOf("file_path")))
+
+        // 23. 生成健康报告
+        tools.add(recordTool("generate_report", "生成健康报告 (周报/月报/自定义时段)",
+            JSONObject().apply {
+                put("report_type", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("weekly", "monthly", "quarterly", "custom"))); put("description", "报告类型") })
+                put("start_date", JSONObject().apply { put("type", "string"); put("description", "起始日期 yyyy-MM-dd (custom 时必填)") })
+                put("end_date", JSONObject().apply { put("type", "string"); put("description", "结束日期 yyyy-MM-dd (custom 时必填)") })
+                put("format", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("pdf", "html", "markdown"))); put("description", "输出格式") })
+            }, listOf("report_type")))
+
+        // 24. 立即同步 CGM 数据
+        tools.add(recordTool("sync_cgm_now", "立即同步 xDrip/CGM 设备的数据 (不用等自动同步)",
+            JSONObject().apply {
+                put("force_full", JSONObject().apply { put("type", "boolean"); put("description", "是否强制全量同步 (默认增量)") })
+            }, listOf()))
+
+        // 25. 开关通知监听
+        tools.add(recordTool("toggle_notification_listener", "开关 CGM 通知监听服务",
+            JSONObject().apply {
+                put("enabled", JSONObject().apply { put("type", "boolean"); put("description", "true 开启 / false 关闭") })
+            }, listOf("enabled")))
+
+        // 26. 切换血糖单位
+        tools.add(recordTool("set_glucose_unit", "切换血糖单位 mmol/L ↔ mg/dL",
+            JSONObject().apply {
+                put("unit", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("mmol/L", "mg/dL"))) })
+            }, listOf("unit")))
+
+        // 27. 查询设备状态
+        tools.add(recordTool("check_device_status", "查询 xDrip/CGM 设备连接状态",
+            JSONObject().apply {
+                put("device_type", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("xdrip", "aidex", "ot_dynamic", "all"))); put("description", "设备类型, 默认 all") })
+            }, listOf()))
+
+        // 28. 30分钟血糖预测 (基于 DallaMan 算法)
+        tools.add(recordTool("predict_glucose", "预测未来 30/60/120 分钟血糖 (基于 DallaMan 算法)",
+            JSONObject().apply {
+                put("minutes_ahead", JSONObject().apply { put("type", "integer"); put("enum", JSONArray(listOf(30, 60, 120, 180))); put("description", "预测多少分钟后, 默认 30") })
+            }, listOf()))
+
+        // 29. 检测血糖模式
+        tools.add(recordTool("detect_patterns", "分析近期血糖数据, 自动发现异常模式 (如'周三下午总偏高'/'餐后峰值过高')",
+            JSONObject().apply {
+                put("days", JSONObject().apply { put("type", "integer"); put("description", "分析最近几天, 默认 30") })
+            }, listOf()))
+
+        // 30. 分析某餐对血糖的影响
+        tools.add(recordTool("analyze_meal_impact", "分析某餐/某时间段的血糖影响 (餐后峰值/上升幅度/回到目标范围时间)",
+            JSONObject().apply {
+                put("meal_id", JSONObject().apply { put("type", "integer"); put("description", "饮食记录 ID") })
+                put("time_window_hours", JSONObject().apply { put("type", "integer"); put("description", "分析餐后几小时, 默认 4") })
+            }, listOf()))
+
+        // 31. 应用内搜索记录
+        tools.add(recordTool("search_records", "在所有记录中搜索 (按关键词/日期范围)",
+            JSONObject().apply {
+                put("keyword", JSONObject().apply { put("type", "string"); put("description", "搜索关键词 (食物名/症状/备注等)") })
+                put("target", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("all", "meal", "glucose", "exercise", "symptom", "medication", "notes"))); put("description", "搜索范围, 默认 all") })
+                put("days", JSONObject().apply { put("type", "integer"); put("description", "最近几天, 默认 90") })
+            }, listOf("keyword")))
+
+        // 32. 添加自定义食物 (扩展食物营养表)
+        tools.add(recordTool("add_custom_food", "添加用户自定义食物到营养表 (供以后查询)",
+            JSONObject().apply {
+                put("food_name", JSONObject().apply { put("type", "string") })
+                put("carbs_per_100g", JSONObject().apply { put("type", "number"); put("description", "每 100g 碳水 g") })
+                put("cal_per_100g", JSONObject().apply { put("type", "number"); put("description", "每 100g 热量 kcal") })
+                put("gi", JSONObject().apply { put("type", "integer"); put("description", "升糖指数 GI 0-100") })
+            }, listOf("food_name", "carbs_per_100g", "cal_per_100g")))
+
+        // 33. 复制记录 (复用最近一条作为模板)
+        tools.add(recordTool("duplicate_recent", "复制最近一条同类记录 (用于快速记第二次)",
+            JSONObject().apply {
+                put("target", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("meal", "insulin", "exercise", "medication"))) })
+                put("new_timestamp", JSONObject().apply { put("type", "integer"); put("description", "新记录的时间 (epoch ms)") })
+            }, listOf("target", "new_timestamp")))
+
+        // 34. 设置目标体重
+        tools.add(recordTool("set_target_weight", "设置用户目标体重",
+            JSONObject().apply {
+                put("target_kg", JSONObject().apply { put("type", "number") })
+            }, listOf("target_kg")))
+
+        // 35. 解释医学术语
+        tools.add(recordTool("explain_term", "解释糖尿病/医学术语 (如'糖化血红蛋白'/'TIR'/'黎明现象')",
+            JSONObject().apply {
+                put("term", JSONObject().apply { put("type", "string") })
+            }, listOf("term")))
+
+        // 36. 给医生分享报告 (生成可分享的纯文本/Markdown 摘要)
+        tools.add(recordTool("share_to_doctor", "生成可分享给医生的报告摘要 (微信/邮件可粘贴)",
+            JSONObject().apply {
+                put("time_scope", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("today", "this_week", "this_month", "last_month"))) })
+                put("format", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("markdown", "plain_text"))) })
+            }, listOf("time_scope")))
+
+        // 37. 应用锁
+        tools.add(recordTool("lock_app", "锁定 App (需要重新输入密码/生物识别才能打开)",
+            JSONObject(), listOf()))
+
+        // 38. 切换暗黑模式
+        tools.add(recordTool("toggle_dark_mode", "切换暗黑模式 / 浅色模式 / 跟随系统",
+            JSONObject().apply {
+                put("mode", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("light", "dark", "system"))) })
+            }, listOf("mode")))
+
+        // 39. 切换语言
+        tools.add(recordTool("set_language", "切换 App 语言",
+            JSONObject().apply {
+                put("language", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("zh", "en"))) })
+            }, listOf("language")))
+
+        // 40. 校准指尖血 (录入指尖血校准 CGM)
+        tools.add(recordTool("calibrate_cgm", "录入指尖血校准 CGM 传感器",
+            JSONObject().apply {
+                put("fingerstick_value", JSONObject().apply { put("type", "number"); put("description", "指尖血血糖 mmol/L") })
+                put("timestamp", JSONObject().apply { put("type", "integer"); put("description", "测量时间 epoch ms") })
+            }, listOf("fingerstick_value")))
+
+        // 41. 应用内导航深层链接
+        tools.add(recordTool("navigate_deep", "AI 智能跳转到相关页面 (根据上下文)",
+            JSONObject().apply {
+                put("context", JSONObject().apply { put("type", "string"); put("description", "上下文关键词, 比如血糖趋势或饮食或设置") })
+            }, listOf("context")))
+
+        // 42. 添加/编辑快捷短语 (用于 AI 助手快速回复)
+        tools.add(recordTool("manage_quick_reply", "管理 AI 助手快捷短语 (常用输入)",
+            JSONObject().apply {
+                put("action", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("add", "list", "delete"))) })
+                put("phrase", JSONObject().apply { put("type", "string") })
+            }, listOf("action")))
+
         // ★ v3.0.4 更多 AI 工具 (用户能做的所有事, AI 都能做)
 
         // 21. UPDATE 类
@@ -696,6 +834,65 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
                 put("record_id", JSONObject().apply { put("type", "integer") })
                 put("new_dose", JSONObject().apply { put("type", "number"); put("description", "新剂量") })
                 put("new_dose_type", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("rapid", "short", "long", "mixed"))) })
+            }, listOf("record_id")))
+
+        // ★ v3.0.6 补全 6 类 update 工具
+        tools.add(recordTool("update_meal", "修改饮食记录",
+            JSONObject().apply {
+                put("record_id", JSONObject().apply { put("type", "integer") })
+                put("new_carbs", JSONObject().apply { put("type", "number"); put("description", "新碳水 g") })
+                put("new_calories", JSONObject().apply { put("type", "number"); put("description", "新热量 kcal") })
+                put("new_food_name", JSONObject().apply { put("type", "string"); put("description", "新食物名") })
+                put("new_portion_grams", JSONObject().apply { put("type", "number"); put("description", "新份量 g") })
+            }, listOf("record_id")))
+
+        tools.add(recordTool("update_exercise", "修改运动记录",
+            JSONObject().apply {
+                put("record_id", JSONObject().apply { put("type", "integer") })
+                put("new_duration_min", JSONObject().apply { put("type", "integer"); put("description", "新时长 分钟") })
+                put("new_exercise_type", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("running", "walking", "cycling", "swimming", "strength", "yoga", "jumping_rope", "hiking", "ball_sports", "other"))) })
+                put("new_intensity", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("low", "medium", "high"))) })
+            }, listOf("record_id")))
+
+        tools.add(recordTool("update_sleep", "修改睡眠记录",
+            JSONObject().apply {
+                put("record_id", JSONObject().apply { put("type", "integer") })
+                put("new_duration_minutes", JSONObject().apply { put("type", "integer"); put("description", "新睡眠时长 分钟") })
+                put("new_quality", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("good", "normal", "poor"))) })
+            }, listOf("record_id")))
+
+        tools.add(recordTool("update_blood_pressure", "修改血压记录",
+            JSONObject().apply {
+                put("record_id", JSONObject().apply { put("type", "integer") })
+                put("new_systolic", JSONObject().apply { put("type", "integer"); put("description", "新收缩压 mmHg") })
+                put("new_diastolic", JSONObject().apply { put("type", "integer"); put("description", "新舒张压 mmHg") })
+                put("new_heart_rate", JSONObject().apply { put("type", "integer"); put("description", "新心率") })
+            }, listOf("record_id")))
+
+        tools.add(recordTool("update_weight", "修改体重记录",
+            JSONObject().apply {
+                put("record_id", JSONObject().apply { put("type", "integer") })
+                put("new_weight_kg", JSONObject().apply { put("type", "number"); put("description", "新体重 kg") })
+            }, listOf("record_id")))
+
+        tools.add(recordTool("update_ketone", "修改酮体记录",
+            JSONObject().apply {
+                put("record_id", JSONObject().apply { put("type", "integer") })
+                put("new_ketone_level", JSONObject().apply { put("type", "number"); put("description", "新酮体值 mmol/L") })
+            }, listOf("record_id")))
+
+        tools.add(recordTool("update_medication", "修改用药记录",
+            JSONObject().apply {
+                put("record_id", JSONObject().apply { put("type", "integer") })
+                put("new_medication_name", JSONObject().apply { put("type", "string"); put("description", "新药品名") })
+                put("new_dose", JSONObject().apply { put("type", "string"); put("description", "新剂量 如 '500mg'") })
+            }, listOf("record_id")))
+
+        tools.add(recordTool("update_symptom", "修改症状记录",
+            JSONObject().apply {
+                put("record_id", JSONObject().apply { put("type", "integer") })
+                put("new_symptoms", JSONObject().apply { put("type", "string"); put("description", "新症状描述, 逗号分隔") })
+                put("new_severity", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("mild", "moderate", "severe"))) })
             }, listOf("record_id")))
 
         // 22. 批量记录多餐

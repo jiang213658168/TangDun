@@ -432,13 +432,90 @@ class AIPermissionEngine(
                 )
             }
             AITarget.SLEEP -> {
-                AIExecutionResult(success = false, message = "睡眠记录不支持直接修改, 请删除后重新添加")
+                val record = sleepDao.getById(id) ?: return fail("睡眠记录不存在")
+                val newDuration = (params["duration_minutes"] as? Int) ?: record.durationMinutes
+                val newQuality = (params["quality"] as? String) ?: record.quality
+                sleepDao.update(record.copy(
+                    durationMinutes = newDuration,
+                    quality = newQuality,
+                    timestamp = timestamp ?: record.timestamp
+                ))
+                AIExecutionResult(
+                    success = true,
+                    message = "已修改睡眠记录 #$id (${newDuration}分钟, $newQuality)",
+                    refreshDataSources = listOf("health")
+                )
             }
             AITarget.BP -> {
-                AIExecutionResult(success = false, message = "血压记录不支持直接修改, 请删除后重新添加")
+                val record = bloodPressureDao.getById(id) ?: return fail("血压记录不存在")
+                val newSys = (params["systolic"] as? Int) ?: record.systolic
+                val newDia = (params["diastolic"] as? Int) ?: record.diastolic
+                bloodPressureDao.update(record.copy(
+                    systolic = newSys,
+                    diastolic = newDia,
+                    timestamp = timestamp ?: record.timestamp
+                ))
+                AIExecutionResult(
+                    success = true,
+                    message = "已修改血压记录 #$id = $newSys/$newDia mmHg",
+                    refreshDataSources = listOf("health")
+                )
             }
             AITarget.WEIGHT -> {
-                AIExecutionResult(success = false, message = "体重记录不支持直接修改, 请删除后重新添加")
+                val record = weightDao.getById(id) ?: return fail("体重记录不存在")
+                val newKg = (params["weight_kg"] as? Double) ?: record.weightKg
+                weightDao.update(record.copy(
+                    weightKg = newKg,
+                    timestamp = timestamp ?: record.timestamp
+                ))
+                AIExecutionResult(
+                    success = true,
+                    message = "已修改体重记录 #$id = ${"%.1f".format(newKg)} kg",
+                    refreshDataSources = listOf("health")
+                )
+            }
+            AITarget.KETONE -> {
+                val record = ketoneDao.getById(id) ?: return fail("酮体记录不存在")
+                val newLevel = (params["ketone_level"] as? Double) ?: record.ketoneLevel
+                ketoneDao.update(record.copy(
+                    ketoneLevel = newLevel,
+                    timestamp = timestamp ?: record.timestamp
+                ))
+                AIExecutionResult(
+                    success = true,
+                    message = "已修改酮体记录 #$id = ${"%.2f".format(newLevel)} mmol/L",
+                    refreshDataSources = listOf("health")
+                )
+            }
+            AITarget.MEDICATION -> {
+                val record = medicationDao.getById(id) ?: return fail("用药记录不存在")
+                val newName = (params["medication_name"] as? String) ?: record.medicationName
+                val newDose = (params["dose"] as? String) ?: record.dose
+                medicationDao.update(record.copy(
+                    medicationName = newName,
+                    dose = newDose,
+                    timestamp = timestamp ?: record.timestamp
+                ))
+                AIExecutionResult(
+                    success = true,
+                    message = "已修改用药记录 #$id = $newName $newDose",
+                    refreshDataSources = listOf("health")
+                )
+            }
+            AITarget.SYMPTOM -> {
+                val record = symptomDao.getById(id) ?: return fail("症状记录不存在")
+                val newSymptoms = (params["symptoms"] as? String) ?: record.symptoms
+                val newSeverity = (params["severity"] as? String) ?: record.severity
+                symptomDao.update(record.copy(
+                    symptoms = newSymptoms,
+                    severity = newSeverity,
+                    timestamp = timestamp ?: record.timestamp
+                ))
+                AIExecutionResult(
+                    success = true,
+                    message = "已修改症状记录 #$id = $newSymptoms ($newSeverity)",
+                    refreshDataSources = listOf("health")
+                )
             }
             else -> fail("不支持的更新目标: $target")
         }
