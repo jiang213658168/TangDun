@@ -88,14 +88,19 @@ class PersonalizedPredictor(private val context: Context) {
         )
 
         // 4. 合成: 基础曲线 + 个性化偏移 + 时段模式 + 残差
-        //   残差按 currentGlucose × polynomial × incWeight 计算 (相对 TCN 输出格式)
+        //   ★ v3.0.9 修复: t 必须按 baseCurve 实际时间跨度归一化到 [0, 1]
+        //   之前硬编码 t = i/24.0 在 baseCurve=36 点 (180min) 时 t 最大 1.46 → 多项式爆炸
+        //   现在 t = i / (n - 1) 保证 [0, 1]
         val n = baseCurve.size
+        val tMax = if (n > 1) (n - 1).toDouble() else 1.0
         return baseCurve.mapIndexed { i, v ->
             var a = onlineLearner.applyPersonalization(v, currentGlucose, i)
             if (hourlyDev != 0.0 && i < n) a += hourlyDev * kotlin.math.exp(-i * 5.0 / 60.0)
             if (hasInc) {
-                val t = i / 24.0
-                a += currentGlucose * (residual[0]*t*t*t + residual[1]*t*t + residual[2]*t + residual[3]) * incWeight
+                val t = i / tMax
+                // 安全保护: t 范围外 clamp 到 [0, 1]
+                val tClamped = t.coerceIn(0.0, 1.0)
+                a += currentGlucose * (residual[0]*tClamped*tClamped*tClamped + residual[1]*tClamped*tClamped + residual[2]*tClamped + residual[3]) * incWeight
             }
             a.coerceIn(1.0, 30.0)
         }

@@ -256,11 +256,13 @@ class PredictionViewModel @Inject constructor(
                 // 兜底: 如果 TCN 没拿到, 用最终曲线作为 TCN 线 (UI 不会显示空白)
                 if (tcnCurve.isEmpty()) tcnCurve = physioCurve.toList()
 
-                // ★ 最终曲线: TCN + DallaMan BMA 融合 + 个性化 (含用户实际饮食/胰岛素)
+// ★ v3.0.9 修: personalization 双叠加问题
+                //   修复前: physioCurve 已叠加过 applyPersonalization, finalCurve 又叠一次 → 1.7 倍
+                //   修复后: finalCurve 只叠 "时段模式 + 残差" 两个独立项 (不再叠 OnlineLearner 偏移)
                 val finalCurve = try {
-                    predictor.applyPersonalization(merged, g, gh).toMutableList().apply { this[0] = g }
+                    applyLightPersonalization(merged, g).toMutableList().apply { this[0] = g }
                 } catch (e: Exception) {
-                    Log.w(TAG, "个性化叠加失败, 使用纯 merged: ${e.message}")
+                    Log.w(TAG, "轻量化个性化失败, 使用纯 merged: ${e.message}")
                     merged.toMutableList().apply { this[0] = g }
                 }
 
@@ -305,6 +307,53 @@ class PredictionViewModel @Inject constructor(
 
                 Log.i(TAG, "预测: ${String.format("%.1f", g)} IOB${String.format("%.1f", iob)} 碳水${String.format("%.0f", todayCarbs)} 模型=$modelLabel ISF≈${String.format("%.1f", est.insulinSensitivity)} CR≈${String.format("%.1f", est.carbRatio)}")
             } catch (e: Exception) { Log.e(TAG, "预测失败: ${e.message}", e); _uiState.value = _uiState.value.copy(isLoading = false, error = "预测失败: ${e.message}") }
+        }
+    }
+
+    /**
+     * ★ v3.0.9 轻量化个性化叠加 — 只叠时段模式 + 残差, 不再叠 OnlineLearner 偏移
+     *   原因: physioCurve 已叠过一次 applyPersonalization, finalCurve 再叠就 1.7 倍
+     *   行为: 时段模式 (hourlyDev, 24h 周期) + IncrementalLearner 残差 (TCN 残差网络输出)
+     */
+    private suspend fun applyLightPersonalization(
+        baseCurve: List<Double>,
+        currentGlucose: Double
+    ): List<Double> {
+        if (baseCurve.isEmpty()) return baseCurve
+        val n = baseCurve.size
+        val tMax = if (n > 1) (n - 1).toDouble() else 1.0
+
+        // 时段模式 (24h 时段偏离基线)
+        val hourlyDev = onlineLearner.getHourlyDeviation(
+            java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        )
+
+        // 残差 (从 IncrementalLearner forward)
+        val incLearner = SelfLearningManager.getIncrementalLearner()
+        val incStats = incLearner.getStats()
+        val incUpdates = incStats["updates"] as? Int ?: 0
+        val hasInc = incUpdates > 20
+        val incWeight = minOf(incUpdates.toDouble() / 300.0, 0.4)
+
+        val residual = if (hasInc) {
+            val gh = try { glucoseDao.getRecent(288).reversed().map { it.value }.toDoubleArray() }
+                     catch (_: Exception) { DoubleArray(0) }
+            if (gh.size >= 10) {
+                val features = com.tangdun.app.domain.algorithm.FeatureExtractor().extract(gh, gh.size - 1)
+                incLearner.forward(features)
+            } else null
+        } else null
+
+        return baseCurve.mapIndexed { i, v ->
+            var a = v
+            if (hourlyDev != 0.0 && i < n) {
+                a += hourlyDev * kotlin.math.exp(-i * 5.0 / 60.0)
+            }
+            if (residual != null && hasInc) {
+                val t = (i / tMax).coerceIn(0.0, 1.0)
+                a += currentGlucose * (residual[0]*t*t*t + residual[1]*t*t + residual[2]*t + residual[3]) * incWeight
+            }
+            a.coerceIn(1.0, 30.0)
         }
     }
 }

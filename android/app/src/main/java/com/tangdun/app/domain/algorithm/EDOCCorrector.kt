@@ -320,7 +320,9 @@ class EDOCCorrector(private val context: Context) {
                 // ★ 批量导入: 用简单的上下文 (无meal/insulin信息)
                 val batchCtx = SnapContext(curr.value, 0.0, 0.0, Double.MAX_VALUE, 0.0, Double.MAX_VALUE, 0)
                 val effectiveParams = applyDeltas(baseParams)
-                val syntheticPred = runOneStepRK4(effectiveParams, prev.value, 0.0, 0.0)
+                // ★ v3.0.9 修: 之前永远推 5min, 但 dt 可达 65min → 误差归因错位 (餐后事件被当系统偏差学)
+                //   现在按实际 dt 推, 让 batch 误差反映真实时间跨度上的预测偏差
+                val syntheticPred = runOneStepRK4(effectiveParams, prev.value, 0.0, 0.0, dtMinutes = dt)
                 val error = curr.value - syntheticPred
 
                 val quality = 0.7
@@ -461,12 +463,13 @@ class EDOCCorrector(private val context: Context) {
         val error = if (cached != null) {
             actualValue - cached.atStep(step)
         } else {
-            // ★ 回退: 用单步模型生成伪预测
-            if (step > 6) return null
-            val stomach = if (context.recentCarbs > 5) 10_000.0 else 0.0
-            val effectiveParams = applyDeltas(baseParams)
-            val syntheticPred = runOneStepRK4(effectiveParams, actualValue, stomach, context.iob)
-            actualValue - syntheticPred
+            // ★ v3.0.9 修: 之前用 actualValue 当起点跑 5min 一步 → syntheticPred ≈ actualValue → error ≈ 0 → 永远学不到东西
+            //   现在 fallback 时按 step 实际推对应时长 (step=1→5min, step=6→30min, step=12→60min)
+            //   起点改为: 5min 前 = currentGlucose 的 t-(step*5) 分钟前的近似值 (无法拿到, 用 currentGlucose 本身)
+            //   真实可改进: 把 prevReading 缓存进 EDOC state, 此处用 actualValue 已是当前, 误差评估仍近似 0
+            //   → 折中方案: fallback 时直接 return null (没预测缓存就没法评估, 别瞎猜)
+            if (step > 12) return null
+            return null  // fallback 路径不强行修正, 避免噪声当信号
         }
 
         return applyCorrection(error, actualValue, quality, baseParams, context, label)
@@ -703,9 +706,10 @@ class EDOCCorrector(private val context: Context) {
      */
     private fun runOneStepRK4(
         params: DallaManModel.Parameters, glucose: Double,
-        assumedStomach: Double, iob: Double
+        assumedStomach: Double, iob: Double,
+        dtMinutes: Double = 5.0  // ★ v3.0.9 修: 接受 dt, 默认 5min (实时模式), 批量导入传实际 dt
     ): Double {
-        val dt = 5.0
+        val dt = dtMinutes
         val g = glucose.coerceIn(2.0, 35.0)
         val Vg = params.Vg
         val BW = params.bodyWeight

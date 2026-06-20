@@ -237,9 +237,28 @@ class SelfLearningManager(private val context: Context) {
                         val (hasMeals, hasInsulin) = checkDataCompleteness()
                         onlineLearner.updateDataCompleteness(hasMeals, hasInsulin)
                         // ★ 修复 Bug 4: 传入真实 TCN 推理回调, 让 IncrementalLearner 拿到真的 tcnParams
-                        incrementalLearner.periodicLearn(dao) { features, currentGlucose ->
-                            if (tcnLoaded) tcnPredictor.predict(features) else null
+                        // ★ v3.0.9 修: 传入 24h 饮食/胰岛素 288 点稀疏数组, 让残差学习器看到饮食事件
+                        val now2 = System.currentTimeMillis()
+                        val bhArr = DoubleArray(288) { 0.0 }
+                        val chArr = DoubleArray(288) { 0.0 }
+                        val recentInsulin = db.insulinDao().getSince(now2 - 24 * 3600_000)
+                        val recentMeals = db.mealDao().getByTimeRange(now2 - 24 * 3600_000, now2)
+                        for (r in recentInsulin) {
+                            val i = (287 - ((now2 - r.timestamp) / 300000).toInt())
+                            if (i in 0..287) bhArr[i] += r.doseUnits
                         }
+                        for (m in recentMeals) {
+                            val i = (287 - ((now2 - m.timestamp) / 300000).toInt())
+                            if (i in 0..287) chArr[i] += m.totalCarbs
+                        }
+                        incrementalLearner.periodicLearn(
+                            dao,
+                            { features, currentGlucose ->
+                                if (tcnLoaded) tcnPredictor.predict(features) else null
+                            },
+                            bhArr,
+                            chArr
+                        )
                         Log.d(TAG, "增量学习@${readingCount}条 | " +
                             "EDOC:${edocCorrector.getStatus().totalCorrections}次 | " +
                             "C:${String.format("%.1f", onlineLearner.getPersonalParams().dataCompleteness)}")

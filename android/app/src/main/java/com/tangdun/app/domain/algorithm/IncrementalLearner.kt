@@ -270,10 +270,14 @@ class IncrementalLearner(private val context: Context) {
      * @param tcnPredictFn TCN 推断回调: 接收 (features, currentGlucose) → FloatArray(4) 的 [a,b,c,d]
      *                     修复前: tcnParams 永远传 0, 增量学习器错把"血糖变化"当 TCN 误差学习
      *                     修复后: 调用方传入真实 TCN 推理结果
+     * @param bolusHistory 可选: 24h 速效/短效胰岛素历史 288 点稀疏数组 (用于特征 11-12)
+     * @param carbHistory  可选: 24h 碳水历史 288 点稀疏数组 (用于特征 13)
      */
     suspend fun periodicLearn(
         glucoseDao: GlucoseDao,
-        tcnPredictFn: ((features: FloatArray, currentGlucose: Double) -> FloatArray?)? = null
+        tcnPredictFn: ((features: FloatArray, currentGlucose: Double) -> FloatArray?)? = null,
+        bolusHistory: DoubleArray? = null,
+        carbHistory: DoubleArray? = null
     ) = withContext(Dispatchers.IO) {
         try {
             val records = glucoseDao.getRecent(1000)
@@ -288,7 +292,12 @@ class IncrementalLearner(private val context: Context) {
             val idx = glucoseHistory.size - 7  // 倒数第7点=30min前 (6×5=30)
             if (idx < 10) return@withContext
 
-            val features = extractor.extract(glucoseHistory, idx)
+            // ★ v3.0.9 修: 传入饮食/胰岛素 288 点稀疏数组 (即使为空也让 extractor 知道)
+            val features = extractor.extract(
+                glucoseHistory, idx,
+                bolusHistory = bolusHistory,
+                carbHistory = carbHistory
+            )
             val currentGlucose = glucoseHistory[idx]
 
             // 实际值: 30分钟后=最后一个点
