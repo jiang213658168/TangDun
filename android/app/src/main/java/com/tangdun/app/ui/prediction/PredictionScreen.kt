@@ -137,7 +137,7 @@ fun PredictionScreen(
                 ComposePredictionChart(
                     history = uiState.historyData,
                     physioCurve = uiState.physioCurve,
-                    incrementalCurve = uiState.incrementalCurve,
+                    tcnCurve = uiState.tcnCurve,
                     finalCurve = uiState.curve,
                     currentGlucose = uiState.currentGlucose ?: 5.0,
                     targetLow = uiState.targetLow,
@@ -153,9 +153,9 @@ fun PredictionScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                LegendDot(color = Chart1, label = "预测曲线")
-                LegendDot(color = Chart3, label = "DallaMan")
-                LegendDot(color = Chart2, label = "增量残差")
+                LegendDot(color = Chart1, label = "融合预测")
+                LegendDot(color = Chart3, label = "DallaMan 生理")
+                LegendDot(color = Chart2, label = "TCN 模型")
             }
 
             Spacer(Modifier.height(20.dp))

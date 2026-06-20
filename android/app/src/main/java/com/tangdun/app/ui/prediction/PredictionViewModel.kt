@@ -23,7 +23,7 @@ data class PredictionUiState(
     val riskLevel: String = "正常",
     val curve: List<Double> = emptyList(),          // 最终融合预测
     val physioCurve: List<Double> = emptyList(),     // DallaMan生理模型
-    val incrementalCurve: List<Double> = emptyList(), // 增量自学习残差
+    val tcnCurve: List<Double> = emptyList(),         // ★ v3.0.8 TCN 模型单独预测线 (替换原来的增量残差)
     val historyData: List<Pair<Long, Double>> = emptyList(),
     val modelLabel: String = "", val predictionTime: String = "",
     val confidence: Double = 0.0, val totalRecords: Int = 0,
@@ -204,12 +204,13 @@ class PredictionViewModel @Inject constructor(
                 val physioCurve = personalizedCurve.toMutableList().apply { this[0] = g }
 
                 var merged: List<Double> = physioCurve
+                // ★ v3.0.8: 把 bh/ch 提到外层, 让下面的 TCN 单独预测也能用
+                val bh = DoubleArray(288) { 0.0 }; val ch = DoubleArray(288) { 0.0 }
+                for (r in insulin) { val i = (287 - ((now - r.timestamp) / 300000).toInt()); if (i in 0..287) bh[i] += r.doseUnits }
+                for (m in meals24h) { val i = (287 - ((now - m.timestamp) / 300000).toInt()); if (i in 0..287) ch[i] += m.totalCarbs }
+
                 if (tcnOk && records.size >= 10) {
                     try {
-                        val bh = DoubleArray(288) { 0.0 }; val ch = DoubleArray(288) { 0.0 }
-                        for (r in insulin) { val i = (287 - ((now - r.timestamp) / 300000).toInt()); if (i in 0..287) bh[i] += r.doseUnits }
-                        for (m in meals24h) { val i = (287 - ((now - m.timestamp) / 300000).toInt()); if (i in 0..287) ch[i] += m.totalCarbs }
-
                         // ★ 只跑 TCN, 不让 PersonalizedPredictor 重算 DallaMan (避免 Path B 重复)
                         val tcnRawCurve = predictor.predictTCNOnly(gh, g, bh, ch)
                         val nPoints = minOf(tcnRawCurve?.size ?: 0, physioCurve.size)
@@ -240,50 +241,28 @@ class PredictionViewModel @Inject constructor(
                     } catch (e: Exception) { Log.w(TAG, "TCN异常: ${e.message}") }
                 }
 
-                // ★ 增量自学习残差曲线 (单独计算, 仅用于显示, 不叠加到 merged)
-                // 修复前: 残差在 PersonalizedPredictor 内部叠加一次, 又在 Path A 叠加一次, 实际权重翻倍
-                // 修复后: 残差只在 PersonalizedPredictor.applyPersonalization 里叠加到 personalizedCurve,
-                //        这里只计算一份独立的增量曲线供 UI 三线显示用
-                var incCurve: List<Double> = emptyList()
+                // ★ v3.0.8: TCN 模型单独预测线 (用于 UI 三线对比)
+                // 之前用"增量残差"作为第三线, 但残差在 t=0 处恒为 0, 看起来像从 0 突然上升然后衰减, 让用户误解为"AI 预测大幅度下降"
+                // 现在改为 TCN 模型自己跑出来的曲线, 是真实的预测轨迹
+                var tcnCurve: List<Double> = emptyList()
+                try {
+                    val tcnResult = predictor.predictTCNOnly(gh, g, bh, ch)
+                    if (tcnResult != null && tcnResult.size >= 25) {
+                        // 配准起点到当前血糖
+                        val tcnOffset = tcnResult[0] - g
+                        tcnCurve = tcnResult.map { it - tcnOffset }
+                    }
+                } catch (e: Exception) { Log.w(TAG, "TCN 曲线计算失败: ${e.message}") }
+                // 兜底: 如果 TCN 没拿到, 用最终曲线作为 TCN 线 (UI 不会显示空白)
+                if (tcnCurve.isEmpty()) tcnCurve = physioCurve.toList()
+
+                // ★ 最终曲线: TCN + DallaMan BMA 融合 + 个性化 (含用户实际饮食/胰岛素)
                 val finalCurve = try {
-                    // 应用个性化 + 增量残差叠加到 BMA 融合后的曲线
                     predictor.applyPersonalization(merged, g, gh).toMutableList().apply { this[0] = g }
                 } catch (e: Exception) {
                     Log.w(TAG, "个性化叠加失败, 使用纯 merged: ${e.message}")
                     merged.toMutableList().apply { this[0] = g }
                 }
-
-                // 单独的增量残差曲线 (供 UI 三线显示)
-                try {
-                    val incLearner = SelfLearningManager.getIncrementalLearner()
-                    val incStats = incLearner.getStats()
-                    val incUpdates = incStats["updates"] as? Int ?: 0
-                    val hourlyDev = onlineLearner.getHourlyDeviation(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY))
-
-                    if (allRecords.size >= 50) {
-                        val fe = FeatureExtractor()
-                        val glucoseHistory = allRecords.map { it.value }.toDoubleArray()
-                        val idx = glucoseHistory.size - 1
-                        val features = fe.extract(glucoseHistory, idx)
-                        if (features.any { it != 0f }) {
-                            val residual4 = incLearner.forward(features)
-                            // ★ 修复前: incUpdates<20 时 residual 全 0 → 画直线. 现在 incWeight 永远 >= 0.05, 个性化层永远有可见影响
-                            val residualWeight = (0.05 + minOf(incUpdates / 300.0, 0.4)).coerceIn(0.05, 0.45)
-                            incCurve = (0 until 36).map { i ->
-                                val t = i / 36.0
-                                val residual = g * (residual4[0]*t*t*t + residual4[1]*t*t + residual4[2]*t + residual4[3]) * residualWeight
-                                val dev = hourlyDev * kotlin.math.exp(-i * 5.0 / 60.0)
-                                residual + dev
-                            }
-                        }
-                    }
-                    // 即使 incUpdates<20, 也至少给一条基于 hourlyDev 的曲线让 UI 显示个性化效果
-                    if (incCurve.isEmpty() && hourlyDev != 0.0) {
-                        incCurve = (0 until 36).map { i ->
-                            hourlyDev * kotlin.math.exp(-i * 5.0 / 60.0) * 0.5
-                        }
-                    }
-                } catch (e: Exception) { Log.w(TAG, "增量残差曲线计算失败: ${e.message}") }
 
                 val anchored = finalCurve
 
@@ -309,7 +288,7 @@ class PredictionViewModel @Inject constructor(
                 _uiState.value = PredictionUiState(
                     isLoading = false, currentGlucose = g, riskLevel = riskLabel,
                     predicted30min = anchored.getOrNull(6), predicted60min = anchored.getOrNull(12), predicted120min = anchored.getOrNull(24),
-                    curve = anchored, physioCurve = physioCurve, incrementalCurve = incCurve,
+                    curve = anchored, physioCurve = physioCurve, tcnCurve = tcnCurve,
                     historyData = records.map { it.timestamp to it.value }, modelLabel = modelLabel, predictionTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
                     confidence = confidence,
                     totalRecords = totalRecords, fastingBaseline = olParams.fastingBaseline, variability = olParams.glucoseVariability,

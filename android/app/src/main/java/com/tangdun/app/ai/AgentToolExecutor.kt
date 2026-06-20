@@ -125,6 +125,7 @@ class AgentToolExecutor(
                 "calibrate_cgm" -> toolCalibrateCgm(args)
                 "navigate_deep" -> toolNavigateDeep(args)
                 "manage_quick_reply" -> toolManageQuickReply(args)
+                "web_search" -> toolWebSearch(args)
 
                 else -> JSONObject().apply {
                     put("success", false)
@@ -637,18 +638,57 @@ class AgentToolExecutor(
 
     private fun toolEstimateNutrition(args: JSONObject): String {
         val name = args.optString("food_name", "")
-        val grams = args.optDouble("grams", 100.0)
         if (name.isEmpty()) return fail("food_name 必填")
+        // ★ v3.0.8: 支持 count+unit 自动换算克数 (如 22 个饺子 → 22 * 18g/个)
+        val count = args.optDouble("count", 1.0)
+        val unit = args.optString("unit", "g")  // "g" / "个" / "碗" / "盘" / "杯"
+        val explicitGrams = args.optDouble("grams", Double.NaN)
+        val grams = when {
+            !explicitGrams.isNaN() -> explicitGrams
+            else -> count * perUnitGrams(name, unit)
+        }
         val (carbs, cal, gi) = FoodNutrition.estimate(name, grams)
-        // 估算蛋白质/脂肪 (简单比例)
-        val protein = grams * 0.05  // 默认 5%
-        val fat = grams * 0.03      // 默认 3%
+        val protein = grams * 0.05
+        val fat = grams * 0.03
         return JSONObject().apply {
             put("success", true); put("food_name", name); put("grams", grams)
             put("carbs", String.format("%.1f", carbs)); put("calories", String.format("%.1f", cal))
             put("protein", String.format("%.1f", protein)); put("fat", String.format("%.1f", fat)); put("gi", gi.toInt())
-            put("message", "$name ${grams.toInt()}g: 碳水 ${String.format("%.1f", carbs)}g, 热量 ${String.format("%.1f", cal)} kcal, 蛋白质 ${String.format("%.1f", protein)}g, 脂肪 ${String.format("%.1f", fat)}g, GI ${gi.toInt()}")
+            put("message", "$name ${grams.toInt()}g (${count}${unit}): 碳水 ${String.format("%.1f", carbs)}g, 热量 ${String.format("%.1f", cal)} kcal, GI ${gi.toInt()}")
         }.toString()
+    }
+
+    /**
+     * ★ v3.0.8 按单位估算克数:
+     * 1 个饺子/包子 ≈ 18g (中号), 1 碗米饭/面条 ≈ 150g, 1 个鸡蛋 ≈ 50g
+     * 1 个苹果 ≈ 200g, 1 个馒头 ≈ 100g, 1 杯牛奶 ≈ 250ml
+     */
+    private fun perUnitGrams(food: String, unit: String): Double {
+        if (unit == "g" || unit == "克") return 100.0
+        return when {
+            food.contains("饺子") || food.contains("馄饨") || food.contains("烧麦") -> 18.0 * if (unit == "个") 1.0 else 18.0
+            food.contains("包子") -> 100.0
+            food.contains("汤圆") -> 25.0
+            food.contains("鸡蛋") || food.contains("蛋") -> 50.0
+            food.contains("米饭") || food.contains("面条") || food.contains("米线") || food.contains("河粉") || food.contains("米粉") || food.contains("凉皮") -> when (unit) {
+                "碗" -> 150.0
+                "盘" -> 300.0
+                "份" -> 200.0
+                else -> 150.0
+            }
+            food.contains("馒头") || food.contains("饼") -> 80.0
+            food.contains("粥") -> 250.0
+            food.contains("苹果") || food.contains("梨") || food.contains("橙") || food.contains("橘子") || food.contains("香蕉") || food.contains("桃") || food.contains("水果") -> 150.0
+            food.contains("牛奶") || food.contains("豆浆") || food.contains("酸奶") || food.contains("水") -> 250.0
+            food.contains("杯") || unit == "杯" -> 250.0
+            food.contains("块") || unit == "块" -> 50.0
+            food.contains("片") || unit == "片" -> 30.0
+            unit == "个" -> 50.0  // 兜底 1 个 = 50g
+            unit == "碗" -> 200.0
+            unit == "盘" -> 300.0
+            unit == "杯" -> 250.0
+            else -> 100.0
+        }
     }
 
     private suspend fun toolSetPreference(args: JSONObject): String {
@@ -1064,4 +1104,64 @@ class AgentToolExecutor(
             put("message", "快捷短语管理: $action '$phrase'")
         }.toString()
     }
+
+    /**
+     * ★ v3.0.8 web_search: 用 Bing/Google 公开搜索 API + fallback 到 DuckDuckGo HTML
+     * 不需要 API key, 通过 DDG 的 HTML 接口 + 正则解析 <a class="result__a"> 标题 + <a class="result__snippet"> 摘要
+     */
+    private suspend fun toolWebSearch(args: JSONObject): String = withContext(Dispatchers.IO) {
+        val query = args.optString("query", "")
+        val maxResults = args.optInt("max_results", 5).coerceIn(1, 10)
+        if (query.isEmpty()) return@withContext fail("query 必填")
+        try {
+            val url = "https://html.duckduckgo.com/html/?q=" + java.net.URLEncoder.encode(query, "UTF-8")
+            val req = okhttp3.Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36")
+                .get()
+                .build()
+            val httpClient = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            val resp = httpClient.newCall(req).execute()
+            val body = resp.body?.string() ?: ""
+            resp.close()
+            // DDG HTML 用 class="result__a" 标记标题, class="result__snippet" 标记摘要
+            val titleRegex = Regex("""class="result__a"[^>]*>(.*?)</a>""", RegexOption.DOT_MATCHES_ALL)
+            val snippetRegex = Regex("""class="result__snippet"[^>]*>(.*?)</[at]""", RegexOption.DOT_MATCHES_ALL)
+            val titles = titleRegex.findAll(body).take(maxResults).map { stripHtml(it.groupValues[1]) }.toList()
+            val snippets = snippetRegex.findAll(body).take(maxResults).map { stripHtml(it.groupValues[1]) }.toList()
+            return@withContext JSONObject().apply {
+                put("success", true); put("query", query); put("count", titles.size)
+                put("results", org.json.JSONArray().apply {
+                    for (i in titles.indices) {
+                        put(org.json.JSONObject().apply {
+                            put("title", titles[i])
+                            put("snippet", snippets.getOrNull(i) ?: "")
+                        })
+                    }
+                })
+                put("message", if (titles.isEmpty()) "未找到相关结果" else "找到 ${titles.size} 条结果")
+            }.toString()
+        } catch (e: Exception) {
+            Log.w(TAG, "web_search 失败: ${e.message}", e)
+            // 兜底: 直接返回 query 让 AI 用知识回答
+            return@withContext JSONObject().apply {
+                put("success", false); put("query", query)
+                put("error", e.message ?: "网络搜索失败")
+                put("fallback", "请基于你的知识库回答用户问题, 并提示用户联网搜索失败")
+            }.toString()
+        }
+    }
+
+    private fun stripHtml(s: String): String =
+        s.replace(Regex("<[^>]+>"), "")
+         .replace("&nbsp;", " ")
+         .replace("&amp;", "&")
+         .replace("&lt;", "<")
+         .replace("&gt;", ">")
+         .replace("&quot;", "\"")
+         .trim()
+         .let { if (it.length > 200) it.take(200) + "..." else it }
 }

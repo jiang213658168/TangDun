@@ -567,7 +567,12 @@ private fun QuickInsightChip(label: String, value: String, color: Color) {
 fun ComposePredictionChart(
     history: List<Pair<Long, Double>>,
     physioCurve: List<Double>,
-    incrementalCurve: List<Double>,
+    /**
+     * ★ v3.0.8: 第三条线改名为 tcnCurve (原 incrementalCurve), 含义从"增量残差"改为"TCN 模型单独预测"
+     * 兼容旧名: 仍接收 incrementalCurve 参数, 但推荐使用 tcnCurve
+     */
+    tcnCurve: List<Double> = emptyList(),
+    incrementalCurve: List<Double> = emptyList(),
     finalCurve: List<Double>,
     currentGlucose: Double,
     targetLow: Double,
@@ -575,6 +580,8 @@ fun ComposePredictionChart(
     modifier: Modifier = Modifier,
     height: androidx.compose.ui.unit.Dp = 280.dp
 ) {
+    // 兼容: tcnCurve 优先, 兜底用 incrementalCurve
+    val thirdCurve = if (tcnCurve.isNotEmpty()) tcnCurve else incrementalCurve
     // ★ 修复精准定位: 用浮点 fractionalIndex (0..futureLen-1), 支持任意位置点击/拖动
     var fractionalIndex by remember { mutableStateOf<Float?>(null) }
 
@@ -635,7 +642,7 @@ fun ComposePredictionChart(
                 val allValues = (history.map { it.second } +
                     finalCurve.filter { it > 0 } +
                     physioCurve.filter { it > 0 } +
-                    incrementalCurve.filter { it > 0 })
+                    thirdCurve.filter { it > 0 })
                 val yMin = (allValues.minOrNull() ?: 2.0).coerceAtMost(targetLow - 1)
                 val yMax = (allValues.maxOrNull() ?: 14.0).coerceAtLeast(targetHigh + 2)
                 val yRange = (yMax - yMin).coerceAtLeast(2.0)
@@ -768,15 +775,15 @@ fun ComposePredictionChart(
                     )
                 }
 
-                // ───── 7. 增量残差曲线 (点线 + 平滑) ─────
-                if (incrementalCurve.isNotEmpty() && incrementalCurve.size >= futureLen) {
-                    val incPoints = (0 until futureLen).map { i ->
-                        Offset(toX(historyLen + i), toY(currentGlucose + incrementalCurve[i]))
+                // ───── 7. TCN 模型曲线 (点线) ─────
+                if (thirdCurve.isNotEmpty() && thirdCurve.size >= futureLen) {
+                    val tcnPoints = (0 until futureLen).map { i ->
+                        Offset(toX(historyLen + i), toY(thirdCurve[i]))
                     }
                     drawPath(
-                        path = buildSmoothPath(incPoints),
-                        color = Chart2.copy(alpha = 0.6f),
-                        style = Stroke(width = 1.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(2f, 4f)))
+                        path = buildSmoothPath(tcnPoints),
+                        color = Chart2.copy(alpha = 0.7f),
+                        style = Stroke(width = 1.8f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)))
                     )
                 }
 

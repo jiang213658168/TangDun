@@ -57,6 +57,60 @@ class AIClient(private val settingsManager: SettingsManager) {
     fun isConfigured(): Boolean = settingsManager.isAiConfigured()
 
     /**
+     * ★ v3.0.8 简单 chat (不带 tools): 给 FoodAssistantHelper 等用, 走 DeepSeek 思考模式 + Agent Loop 同款 OkHttp
+     * @return Result.success(text) 或 Result.failure(throwable)
+     */
+    suspend fun simpleChat(
+        systemPrompt: String,
+        userInput: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        if (!isConfigured()) {
+            return@withContext Result.failure(Exception("AI 未配置: 请先在「我的 → AI 对话配置」填入 API Key"))
+        }
+        try {
+            val requestBody = JSONObject().apply {
+                put("model", modelName)
+                put("messages", JSONArray().apply {
+                    put(JSONObject().put("role", "system").put("content", systemPrompt))
+                    put(JSONObject().put("role", "user").put("content", userInput))
+                })
+                put("max_tokens", 1500)
+                // ★ DeepSeek 思考模式
+                put("reasoning_effort", "medium")
+                put("extra_body", JSONObject().apply {
+                    put("thinking", JSONObject().apply { put("type", "enabled") })
+                })
+            }.toString()
+            val request = Request.Builder()
+                .url("${settingsManager.getOpenAiBaseUrl().trimEnd('/')}/chat/completions")
+                .addHeader("Authorization", "Bearer ${settingsManager.getOpenAiApiKey()}")
+                .addHeader("Content-Type", "application/json")
+                .post(requestBody.toRequestBody(JSON_MEDIA))
+                .build()
+            Log.i(TAG, "simpleChat: model=$modelName")
+            val response = httpClient.newCall(request).execute()
+            response.use { resp ->
+                val body = resp.body?.string() ?: ""
+                if (!resp.isSuccessful) {
+                    return@withContext Result.failure(Exception("HTTP ${resp.code}: ${body.take(200)}"))
+                }
+                val json = JSONObject(body)
+                val choices = json.optJSONArray("choices")
+                val first = choices?.optJSONObject(0)
+                val msg = first?.optJSONObject("message")
+                val content = msg?.optString("content", "")
+                if (content.isNullOrBlank()) {
+                    return@withContext Result.failure(Exception("AI 返回内容为空 (model=$modelName 可能不支持思考模式或无内容)"))
+                }
+                Result.success(content)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "simpleChat 异常", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * v3.0.1 测试连接: 简单调一次 chat/completions, 不带 tools, 用来诊断 API Key/网络/模型问题
      */
     suspend fun testConnection(): String = withContext(Dispatchers.IO) {
@@ -117,7 +171,13 @@ class AIClient(private val settingsManager: SettingsManager) {
     suspend fun runAgent(
         userInput: String,
         toolExecutor: suspend (toolName: String, arguments: JSONObject) -> String,
-        onProgress: (suspend (ProgressEvent) -> Unit)? = null
+        onProgress: (suspend (ProgressEvent) -> Unit)? = null,
+        /**
+         * ★ v3.0.8 历史消息: 支持连续对话
+         * 每条: Pair<String, String> = role ("user"/"assistant") + content
+         * 最近的 10 条会拼到 system 后面
+         */
+        history: List<Pair<String, String>> = emptyList()
     ): AgentResult = withContext(Dispatchers.IO) {
         if (!isConfigured()) {
             return@withContext AgentResult(
@@ -130,6 +190,13 @@ class AIClient(private val settingsManager: SettingsManager) {
 
         val messages = mutableListOf<JSONObject>()
         messages.add(JSONObject().put("role", "system").put("content", buildSystemPrompt()))
+        // ★ v3.0.8: 附加历史对话 (取最近 10 条, 截断单条 1000 字避免 token 爆炸)
+        history.takeLast(10).forEach { (role, content) ->
+            if (content.isNotBlank() && (role == "user" || role == "assistant")) {
+                val truncated = if (content.length > 1000) content.take(1000) + "..." else content
+                messages.add(JSONObject().put("role", role).put("content", truncated))
+            }
+        }
         messages.add(JSONObject().put("role", "user").put("content", userInput))
 
         val tools = buildToolsSchema()
@@ -296,13 +363,16 @@ class AIClient(private val settingsManager: SettingsManager) {
                                 }.toString()
                             }
 
-                            toolCallLog.add(ToolCallRecord(toolName, argsStr, toolResult))
-                            onProgress?.invoke(ProgressEvent.ToolCallDone(toolName, argsStr, toolResult))
+                            // ★ v3.0.8 防 null 乱码: 清理工具结果 (去 null 字段, 截断超长, 包装成人类可读)
+                            val cleanToolResult = sanitizeToolResult(toolResult)
+
+                            toolCallLog.add(ToolCallRecord(toolName, argsStr, cleanToolResult))
+                            onProgress?.invoke(ProgressEvent.ToolCallDone(toolName, argsStr, cleanToolResult))
 
                             messages.add(JSONObject().apply {
                                 put("role", "tool")
                                 put("tool_call_id", toolCallId)
-                                put("content", toolResult)
+                                put("content", cleanToolResult)
                             })
 
                             Log.i(TAG, "  ✅ 工具结果: ${toolResult.take(200)}")
@@ -382,6 +452,12 @@ class AIClient(private val settingsManager: SettingsManager) {
 ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
 所有时间相关参数 (如 timestamp / time_offset_min) 都以此为基准。
 
+## 工具结果使用规则 (关键!)
+- 工具返回的 JSON 是给你的内部数据, 不是给用户看的原文
+- **禁止直接复制工具结果原文给用户**, 必须整理成自然语言
+- 如有大量数字/字段, 提取关键信息用"**粗体**"和列表呈现
+- 如果数据有缺失或异常, 主动说明而不是堆砌字段
+
 ## 中文数字识别
 "十"=10, "十五"=15, "半"=0.5, "一百二十"=120, "一万"=10000
 
@@ -392,11 +468,26 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
 - 没明确时间 = time_offset_min = 0 (当前)
 - time_offset_min 为负表示过去, 正表示未来
 
-## 食物份量
-- "半盘"=100g, "一整盘"=200g
-- "拳头大小"=70g, "半个拳头"=35g
-- "几个" 按 50g/个 估算
-- "数字+克" = 直接用 (如 "30克")
+## 食物份量 (必读!)
+- **数字+克** = 直接用 (如 "30克"=30)
+- **数字+个** (饺子/包子/鸡蛋/苹果): 1 个饺子 ≈ 18g, 1 个包子 ≈ 100g, 1 个鸡蛋 ≈ 50g, 1 个苹果 ≈ 150g
+- **数字+碗** (米饭/面条/粥): 1 碗 ≈ 150g, 1 盘 ≈ 300g
+- **数字+杯** (牛奶/豆浆): 1 杯 ≈ 250ml
+- **"半盘"**=100g, **"拳头大小"**=70g, **"半个拳头"**=35g
+
+## 饮食记录流程 (强制!)
+当用户说"我吃了X"时, 你必须:
+1. **第一步**: 调用 `search_food` 工具查 X 的每 100g 营养, 拿到碳水/热量/GI
+2. **第二步**: 按上方份量规则把"X 个"换算成克数 (如 22 个饺子 = 22×18 = 396g)
+3. **第三步**: 计算实际营养: carbs = (克数/100) × search_food 返回的 carbs
+4. **第四步**: 调用 `add_meal` 记录, 传 carbs (克), calories (kcal), food_name, portion_grams
+**禁止**: 直接传 grams=100 让系统默认估算, 这样误差极大 (如 22 个饺子会被算成 30g 碳水)
+
+例如: 用户说"中午吃了22个饺子"
+1. search_food(name="饺子") → 每100g 含 22g 碳水, 240kcal
+2. 22 个 × 18g/个 = 396g
+3. carbs = 396 × 22 / 100 = 87g 碳水
+4. add_meal(food="饺子", carbs=87, calories=950, portion_grams=396)
 
 ## 场景识别
 "空腹"/"早上没吃饭" → scene="fasting"
@@ -727,6 +818,13 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
                 put("minutes_ahead", JSONObject().apply { put("type", "integer"); put("enum", JSONArray(listOf(30, 60, 120, 180))); put("description", "预测多少分钟后, 默认 30") })
             }, listOf()))
 
+        // ★ v3.0.8 web_search (联网搜索, 给 AI 联网能力)
+        tools.add(recordTool("web_search", "联网搜索 (医学指南/食物营养/糖尿病科普/最新研究等)",
+            JSONObject().apply {
+                put("query", JSONObject().apply { put("type", "string"); put("description", "搜索关键词, 如 '糖尿病患者能吃西瓜吗' '阿卡波糖副作用'") })
+                put("max_results", JSONObject().apply { put("type", "integer"); put("description", "最大结果数, 默认 5") })
+            }, listOf("query")))
+
         // 29. 检测血糖模式
         tools.add(recordTool("detect_patterns", "分析近期血糖数据, 自动发现异常模式 (如'周三下午总偏高'/'餐后峰值过高')",
             JSONObject().apply {
@@ -976,9 +1074,11 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
         // 31. 食物营养估算 (基于克数和食物库)
         tools.add(recordTool("estimate_nutrition", "估算食物的营养 (碳水/热量/蛋白质/脂肪)",
             JSONObject().apply {
-                put("food_name", JSONObject().apply { put("type", "string") })
-                put("grams", JSONObject().apply { put("type", "number"); put("description", "份量 (克)") })
-            }, listOf("food_name", "grams")))
+                put("food_name", JSONObject().apply { put("type", "string"); put("description", "食物名, 如 '饺子' '米饭' '苹果'") })
+                put("count", JSONObject().apply { put("type", "number"); put("description", "数量 (默认 1)") })
+                put("unit", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("g", "个", "碗", "盘", "杯", "块", "片"))); put("description", "单位, g=克, 个/碗/盘/杯/块/片 自动换算") })
+                put("grams", JSONObject().apply { put("type", "number"); put("description", "直接克数 (与 count/unit 二选一)") })
+            }, listOf("food_name")))
 
         // 32. AI 设置暗黑模式/字体大小
         tools.add(recordTool("set_preference", "设置应用偏好 (暗黑模式/字体大小/通知)",
@@ -1028,5 +1128,56 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
             }, listOf("meal_type")))
 
         return JSONArray(tools)
+    }
+
+    /**
+     * ★ v3.0.8 防 null 乱码:
+     * 1. 解析工具返回的 JSON, 递归去掉 null/空字段
+     * 2. 截断超长内容 (最多 4000 字符, 避免占满上下文)
+     * 3. 关键字段提到顶层 (success/message/data), 让 AI 一眼看到结果
+     */
+    private fun sanitizeToolResult(raw: String): String {
+        if (raw.isEmpty()) return "{}"
+        // 1. 尝试解析为 JSON
+        val parsed = runCatching { JSONObject(raw) }.getOrNull() ?: return raw.take(4000)
+        // 2. 递归去 null 字段
+        val cleaned = stripNulls(parsed)
+        // 3. 截断
+        val out = cleaned.toString()
+        return if (out.length > 4000) out.take(4000) + "...(已截断)" else out
+    }
+
+    private fun stripNulls(obj: Any?): Any? {
+        return when (obj) {
+            null -> JSONObject.NULL
+            is JSONObject -> {
+                val out = JSONObject()
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    val v = obj.opt(k)
+                    if (v == null || v == JSONObject.NULL) continue
+                    val stripped = stripNulls(v)
+                    if (stripped == null || stripped == JSONObject.NULL) continue
+                    // 跳过空对象/空数组
+                    if (stripped is JSONObject && stripped.length() == 0) continue
+                    if (stripped is JSONArray && stripped.length() == 0) continue
+                    out.put(k, stripped)
+                }
+                out
+            }
+            is JSONArray -> {
+                val arr = JSONArray()
+                for (i in 0 until obj.length()) {
+                    val v = obj.opt(i)
+                    if (v == null || v == JSONObject.NULL) continue
+                    val stripped = stripNulls(v)
+                    if (stripped == null || stripped == JSONObject.NULL) continue
+                    arr.put(stripped)
+                }
+                arr
+            }
+            else -> obj
+        }
     }
 }

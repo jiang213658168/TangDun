@@ -3,7 +3,7 @@ package com.tangdun.app.ui.chat
 import android.content.Context
 import android.util.Log
 import com.tangdun.app.TangDunApp
-import com.tangdun.app.data.remote.AiChatService
+import com.tangdun.app.ai.AIClient
 import com.tangdun.app.data.remote.FoodNutritionAi
 import com.tangdun.app.data.remote.FoodNutritionAi.NutritionInfo
 import com.tangdun.app.domain.algorithm.DallaManModel
@@ -28,6 +28,8 @@ class FoodAssistantHelper(private val context: Context) {
 
     private val settingsManager = SettingsManager(context)
     private val foodAi = FoodNutritionAi(context)
+    // ★ v3.0.8: 改用 AIClient.simpleChat, 走 DeepSeek 思考模式 + 同款 OkHttp, 解决"推荐失败"问题
+    private val aiClient = AIClient(settingsManager)
 
     // ════════════════════════════════════════════════════════
     // 核心 1: "如果吃这个会怎样" 仿真预测
@@ -198,10 +200,9 @@ class FoodAssistantHelper(private val context: Context) {
         val prompt = promptLines.joinToString("\n")
 
         try {
-            val aiService = AiChatService(context)
-            val response = aiService.sendMessage(
-                listOf(com.tangdun.app.data.remote.ChatMessageDto("user", prompt))
-            )
+            // ★ v3.0.8: 改用 AIClient.simpleChat, 走 DeepSeek 思考模式
+            val systemPrompt = "你是糖尿病饮食顾问, 基于仿真结果给出温和专业的建议, 不要堆术语。"
+            val response = aiClient.simpleChat(systemPrompt, prompt)
             response.getOrNull() ?: "仿真完成, 但 AI 建议生成失败。"
         } catch (e: Exception) {
             Log.w(TAG, "AI 分析失败: ${e.message}")
@@ -236,13 +237,12 @@ class FoodAssistantHelper(private val context: Context) {
         val ctx = buildUserContext()
         val prompt = buildRecommendationPrompt(ctx)
 
-        val aiService = AiChatService(context)
-        val response = aiService.sendMessage(
-            listOf(com.tangdun.app.data.remote.ChatMessageDto("user", prompt))
-        )
+        // ★ v3.0.8: 走 AIClient.simpleChat (DeepSeek 思考模式 + 同款 OkHttp)
+        val systemPrompt = "你是糖尿病饮食顾问, 给出简洁实用的食物推荐, 控制在 250 字以内, 必须给出具体克数。"
+        val response = aiClient.simpleChat(systemPrompt, prompt)
 
         MealRecommendation(
-            aiText = response.getOrNull() ?: "推荐生成失败, 请检查 AI 服务配置",
+            aiText = response.getOrNull() ?: "推荐生成失败: ${response.exceptionOrNull()?.message ?: "请检查 AI 服务配置"}",
             userContext = ctx,
             success = response.isSuccess
         )
@@ -309,14 +309,13 @@ class FoodAssistantHelper(private val context: Context) {
 
         val prompt = buildRecipePrompt(foodName, ctx, nutrition, additionalContext)
 
-        val aiService = AiChatService(context)
-        val response = aiService.sendMessage(
-            listOf(com.tangdun.app.data.remote.ChatMessageDto("user", prompt))
-        )
+        // ★ v3.0.8: 走 AIClient.simpleChat (DeepSeek 思考模式 + 同款 OkHttp)
+        val systemPrompt = "你是糖尿病饮食顾问, 根据用户的血糖和体重数据, 给出适合的做法和具体克数。"
+        val response = aiClient.simpleChat(systemPrompt, prompt)
 
         MealRecipe(
             foodName = foodName,
-            aiText = response.getOrNull() ?: "做法生成失败, 请检查 AI 服务配置",
+            aiText = response.getOrNull() ?: "做法生成失败: ${response.exceptionOrNull()?.message ?: "请检查 AI 服务配置"}",
             userContext = ctx,
             nutrition = nutrition,
             success = response.isSuccess

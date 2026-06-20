@@ -153,42 +153,25 @@ fun MealScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 顶部标题
-        TopAppBar(
-            title = {
-                Text(
-                    text = "饮食记录",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            actions = {
-                // 食物搜索按钮
-                IconButton(onClick = { showFoodSearch = true }) {
-                    Icon(Icons.Default.Search, contentDescription = "搜索食物")
+        // ★ v3.0.8 去掉重复标题, 仅保留操作按钮
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = { showFoodSearch = true }) {
+                Icon(Icons.Default.Search, contentDescription = "搜索食物")
+            }
+            IconButton(onClick = {
+                if (hasCameraPermission) {
+                    photoUri = createImageUri()
+                    photoUri?.let { takePictureLauncher.launch(it) }
+                } else {
+                    permissionLauncher.launch(android.Manifest.permission.CAMERA)
                 }
-                // 拍照按钮
-                IconButton(onClick = {
-                    if (hasCameraPermission) {
-                        photoUri = createImageUri()
-                        photoUri?.let { takePictureLauncher.launch(it) }
-                    } else {
-                        permissionLauncher.launch(android.Manifest.permission.CAMERA)
-                    }
-                }) {
-                    Icon(Icons.Default.CameraAlt, contentDescription = "拍照")
-                }
-                // 手动添加按钮
-                IconButton(onClick = { showAddDialog = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "添加")
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                actionIconContentColor = MaterialTheme.colorScheme.onPrimary
-            )
-        )
+            }) {
+                Icon(Icons.Default.CameraAlt, contentDescription = "拍照")
+            }
+            IconButton(onClick = { showAddDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = "添加")
+            }
+        }
 
         // 今日统计
         TodayStatsCard(

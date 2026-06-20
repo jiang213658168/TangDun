@@ -477,6 +477,10 @@ class ChatViewModel @Inject constructor(
             // ★ v3.0.7 防爆: 限制 liveThinking 总长 600 字符, 避免 LazyColumn item 内 Int.MAX_VALUE 行崩溃
             val liveThinkingBuilder = StringBuilder()
             val liveToolCalls = mutableListOf<LiveToolCall>()
+            // ★ v3.0.8: 构造历史消息 (最近 10 条), 让 AI 知道上文
+            val history = _uiState.value.messages
+                .filter { it.role == ChatMessage.ROLE_USER || it.role == ChatMessage.ROLE_ASSISTANT }
+                .map { it.role to it.content }
             val agentResult = aiClient.runAgent(
                 userInput = content,
                 toolExecutor = { toolName, args -> agentExecutor.execute(toolName, args) },
@@ -504,7 +508,8 @@ class ChatViewModel @Inject constructor(
                         is ProgressEvent.Text -> {}
                         is ProgressEvent.Done -> {}
                     }
-                }
+                },
+                history = history
             )
             // 清空 live 状态
             _uiState.value = _uiState.value.copy(liveThinking = null, liveToolCalls = emptyList())

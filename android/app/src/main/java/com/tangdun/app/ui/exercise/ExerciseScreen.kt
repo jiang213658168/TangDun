@@ -55,25 +55,12 @@ fun ExerciseScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
     ) {
-        // 顶部标题
-        TopAppBar(
-            title = {
-                Text(
-                    text = "运动管理",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            actions = {
-                IconButton(onClick = { showAddDialog = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "添加运动", tint = MaterialTheme.colorScheme.onPrimary)
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                titleContentColor = MaterialTheme.colorScheme.onPrimary
-            )
-        )
+        // ★ v3.0.8 去掉重复标题, 仅保留操作按钮
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = { showAddDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = "添加运动")
+            }
+        }
 
         // 今日运动统计
         TodayExerciseStatsCard(

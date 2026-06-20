@@ -43,26 +43,12 @@ fun HealthScreen(
     val tabs = listOf("睡眠", "血压", "体重", "酮体", "口服药", "症状")
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 顶部标题
-        TopAppBar(
-            title = {
-                Text(
-                    text = "健康记录",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            actions = {
-                IconButton(onClick = { showAddDialog = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "添加")
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                actionIconContentColor = MaterialTheme.colorScheme.onPrimary
-            )
-        )
+        // ★ v3.0.8 去掉重复标题, 仅保留操作按钮
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = { showAddDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = "添加")
+            }
+        }
 
         // Tab选择
         ScrollableTabRow(
