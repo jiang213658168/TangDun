@@ -538,6 +538,8 @@ class EDOCCorrector(private val context: Context) {
         val paramDeltas = mutableMapOf<String, Double>()
         // ★ 等权归因: 简化模型梯度幅值不可靠(单位不一致), 用sign+等权
         //   RLS协方差矩阵自适应学习哪个参数真正重要
+        // ★ v3.0.10 修: 单参数时 (nActive=1) 等权公式退化为 1.0, 混合逻辑无意义
+        //   修复: nActive==1 时 attribution = 1.0 跳过混合; nActive>1 才走"等权+弹性"混合
         val nActive = effectiveIndices.size.coerceAtLeast(1)
         val equalAttr = 1.0 / nActive
 
@@ -548,7 +550,10 @@ class EDOCCorrector(private val context: Context) {
             // ★ 相对弹性归一化: (∂G/∂p) * (p/G) → 消除单位量级差异
             val paramBase = getBaseParam(baseParams, idx)
             val elasticity = abs(grad) * paramBase / abs(error.coerceIn(0.5, 10.0))
-            val attribution = if (elasticity > 1e-9) {
+            val attribution = if (nActive == 1) {
+                // 单参数场景 (例如 5min 时域只有 kStomach): 直接全权, 不混合
+                1.0
+            } else if (elasticity > 1e-9) {
                 equalAttr * 0.5 + elasticity / (elasticity + 1.0) * 0.5  // 等权+弹性混合
             } else {
                 equalAttr  // 弹性≈0 → 退化为等权
@@ -568,6 +573,13 @@ class EDOCCorrector(private val context: Context) {
                     sign(clampedDelta) * remainingDailyBudget
                 remainingDailyBudget <= 0 -> 0.0
                 else -> clampedDelta
+            }
+
+            // ★ v3.0.10 修: dailyChanges 撞上限时, 同步增大 P[idx][idx] 降低该参数的学习率
+            //   修复前: finalDelta=0 但 P[i][i] 没变 → RLS 仍认为该参数可学习 → 下次误差算时仍尝试修正
+            //   修复后: 撞上限时 P[i][i] × 1.5 (下次 delta 计算时分母更大, 学习率自然降低)
+            if (remainingDailyBudget <= 0 && abs(paramBase) > 0) {
+                P[idx][idx] = (P[idx][idx] * 1.5).coerceIn(0.01, 100.0)
             }
 
             deltas.add(idx, finalDelta)
@@ -648,15 +660,19 @@ class EDOCCorrector(private val context: Context) {
         }
     }
 
-    /**
-     * 上下文感知的灵敏度分析
-     *
-     * 根据患者生理状态决定每个参数是否参与修正:
-     *   - 空腹: kStomach/VmaxGastric灵敏度归零 (没食物→胃排空参数无关)
-     *   - 无胰岛素: VmX/kp3灵敏度归零 (没胰岛素→胰岛素效应参数无关)
-     *   - 用实际血糖而非固定7.0 (MM动力学的血糖依赖性)
-     *   - 用实际胃内容而非固定30g (反映真实消化状态)
-     */
+/**
+      * 上下文感知的灵敏度分析
+      *
+      * 根据患者生理状态决定每个参数是否参与修正:
+      *   - 空腹: kStomach/VmaxGastric灵敏度归零 (没食物→胃排空参数无关)
+      *   - 无胰岛素: VmX/kp3灵敏度归零 (没胰岛素→胰岛素效应参数无关)
+      *   - 用实际血糖而非固定7.0 (MM动力学的血糖依赖性)
+      *   - 用实际胃内容而非固定30g (反映真实消化状态)
+      *
+      * ★ v3.0.10 修: 之前用 applyDeltas(basePos) 跑 RK4 (含 EDOC 累积 delta)
+      *   → feedback loop: EDOC 算自己的 delta 对当前误差的"贡献度", 再更新 delta → 反馈震荡
+      *   修复: 微扰直接在 base 上, 不用 applyDeltas
+      */
     private fun computeSensitivities(
         baseParams: DallaManModel.Parameters, context: SnapContext
     ): DoubleArray {
@@ -687,13 +703,13 @@ class EDOCCorrector(private val context: Context) {
             val baseVal = getBaseParam(baseParams, i)
             val absEps = max(abs(baseVal) * eps, 1e-6)
 
+            // ★ v3.0.10: 微扰直接在 base 上 (不用 applyDeltas), 避免 EDOC 自己的 delta 反馈
+            //   灵敏度表示"参数本身对预测的影响", delta 是累积的偏移, 不应该被算进去
             val basePos = setBaseParamOnly(baseParams, i, baseVal * (1.0 + eps))
-            val effPos = applyDeltas(basePos)
-            val predPos = runOneStepRK4(effPos, g, assumedStomach, iob)
+            val predPos = runOneStepRK4(basePos, g, assumedStomach, iob)
 
             val baseNeg = setBaseParamOnly(baseParams, i, baseVal * (1.0 - eps))
-            val effNeg = applyDeltas(baseNeg)
-            val predNeg = runOneStepRK4(effNeg, g, assumedStomach, iob)
+            val predNeg = runOneStepRK4(baseNeg, g, assumedStomach, iob)
 
             sensitivities[i] = (predPos - predNeg) / (2.0 * absEps)
         }

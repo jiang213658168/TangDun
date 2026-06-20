@@ -1,6 +1,9 @@
 package com.tangdun.app.domain.algorithm
 
+import android.app.Activity
+import android.app.Application
 import android.content.Context
+import android.os.Bundle
 import android.util.Log
 import kotlinx.coroutines.*
 import kotlin.math.pow
@@ -119,7 +122,7 @@ class SelfLearningManager(private val context: Context) {
         }
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     val onlineLearner = OnlineLearner(context)
     val incrementalLearner = IncrementalLearner(context)
     val edocCorrector = EDOCCorrector(context)
@@ -127,6 +130,51 @@ class SelfLearningManager(private val context: Context) {
     private val tcnPredictor = TCNPredictor(context)
     private var tcnLoaded = false
     private var readingCount = 0
+    // ★ v3.0.10 修: 用 Application.ActivityLifecycleCallbacks 实现 ProcessLifecycle
+    //   (避免引入 lifecycle-process 依赖, Activity 计数 0→背景, 计数≥1→前台)
+    private val lifecycleCallback = object : Application.ActivityLifecycleCallbacks {
+        private var startedCount = 0  // 当前可见 Activity 数
+        override fun onActivityStarted(activity: Activity) {
+            startedCount++
+            if (startedCount == 1) {
+                // 第一个 Activity 启动 = App 进入前台
+                if (!scope.isActive) {
+                    scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+                    startCollectLoop()
+                    Log.i(TAG, "App 回前台, 重启学习协程")
+                }
+            }
+        }
+        override fun onActivityStopped(activity: Activity) {
+            startedCount--
+            if (startedCount <= 0) {
+                startedCount = 0
+                // 所有 Activity 都停了 = App 进入后台
+                if (scope.isActive) {
+                    scope.cancel()
+                    Log.i(TAG, "App 进后台, 取消学习协程")
+                }
+                // 清空 EDOC 预测缓存 (300 条 × 36 Float ≈ 4MB), 回前台后重新填充
+                try {
+                    edocCorrector.reset()
+                } catch (_: Exception) {}
+            }
+        }
+        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+        override fun onActivityResumed(activity: Activity) {}
+        override fun onActivityPaused(activity: Activity) {}
+        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+        override fun onActivityDestroyed(activity: Activity) {}
+    }
+
+    init {
+        // 注册 Activity 生命周期回调 (替代 ProcessLifecycleOwner)
+        try {
+            (context.applicationContext as Application).registerActivityLifecycleCallbacks(lifecycleCallback)
+        } catch (e: Exception) {
+            Log.w(TAG, "ActivityLifecycleCallbacks 注册失败: ${e.message}")
+        }
+    }
 
     // 当前DallaMan基础参数缓存 (由PredictionViewModel传入, 或自动创建)
     @Volatile var currentBaseParams: DallaManModel.Parameters? = null
@@ -161,17 +209,27 @@ class SelfLearningManager(private val context: Context) {
 
     private fun start() {
         Log.i(TAG, "自学习引擎启动 (含EDOC即时纠错)")
+        startCollectLoop()
+    }
 
+    /**
+     * 启动 collect 主循环 (可重复调用, 用于生命周期 ON_START 时重启)
+     * ★ v3.0.10 拆分出来, 让 ON_STOP 取消 + ON_START 重建协程都能正常工作
+     */
+    private fun startCollectLoop() {
         scope.launch {
-            delay(5000)
-            // ★ 加载 TCN 模型, 供 IncrementalLearner.periodicLearn 训练样本用真实 tcnParams
-            tcnLoaded = try {
-                tcnPredictor.loadModel()
-            } catch (e: Exception) {
-                Log.w(TAG, "TCN加载失败, IncrementalLearner 将使用零参降级: ${e.message}")
-                false
+            // 第一次启动延迟 5s 让其他服务就绪; 后续 ON_START 重启不需要延迟
+            if (readingCount == 0) delay(5000)
+            // ★ 每次重启协程都重新尝试加载 TCN (可能之前 loadModel 失败)
+            if (!tcnLoaded) {
+                tcnLoaded = try {
+                    tcnPredictor.loadModel()
+                } catch (e: Exception) {
+                    Log.w(TAG, "TCN加载失败, IncrementalLearner 将使用零参降级: ${e.message}")
+                    false
+                }
+                Log.i(TAG, "TCN ${if (tcnLoaded) "已加载" else "未加载"}")
             }
-            Log.i(TAG, "TCN ${if (tcnLoaded) "已加载" else "未加载"}")
 
             val db = com.tangdun.app.TangDunApp.getDatabase(context)
             val dao = db.glucoseDao()

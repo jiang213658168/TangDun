@@ -129,11 +129,13 @@ class PredictionViewModel @Inject constructor(
                 // Dalla Man 生理模型: 24h进食 + 24h胰岛素
                 val weight = settings.getWeightKg().toDouble()
 
-                // 饮食输入: 最小消化10分钟确保Ra>Uid
+                // 饮食输入: 直接用真实过去分钟数 (避免 clamp 强行消耗胃内容物)
+                // ★ v3.0.10 修: 之前 rawMinutes<15 时 maxOf(rawMinutes, 10.0), 把 3 分钟前的饭当 10 分钟前
+                //   强行消耗胃内容物导致 DallaMan 低估当前实际胃里的食物量 → 餐后立即预测偏低
+                //   现在: 直接用 rawMinutes, 1 分钟前就传 1 分钟前
                 val mealInputs = meals24h.takeLast(5).map {
-                    val rawMinutes = (now - it.timestamp) / 60000.0
-                    val effectiveMinutes = if (rawMinutes < 15.0) maxOf(rawMinutes, 10.0) else rawMinutes
-                    DallaManModel.MealInput(effectiveMinutes, it.totalCarbs, it.avgGi)
+                    val rawMinutes = ((now - it.timestamp) / 60000.0).coerceIn(0.0, 240.0)
+                    DallaManModel.MealInput(rawMinutes, it.totalCarbs, it.avgGi)
                 }
                 // 胃排空速率按加权GI调整 (高GI→快排空, 低GI/高脂→慢排空)
                 val avgGi = if (mealInputs.isNotEmpty()) mealInputs.map { it.gi }.average() else 50.0
