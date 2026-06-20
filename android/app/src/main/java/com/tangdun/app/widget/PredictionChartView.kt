@@ -99,19 +99,27 @@ class PredictionChartView @JvmOverloads constructor(
     fun setTargets(low: Double, high: Double) { targetLow = low; targetHigh = high; invalidate() }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_DOWN && historyData.size >= 2) {
-            val pad = 60f; val cw = width - pad * 2
-            val timeRange = endTime - startTime
+        if (historyData.size < 2) return super.onTouchEvent(event)
+        val pad = 60f; val cw = (width - pad * 2).coerceAtLeast(1f)
+        val timeRange = endTime - startTime
+        if (event.action == MotionEvent.ACTION_DOWN || event.action == MotionEvent.ACTION_MOVE) {
             if (timeRange > 0) {
+                // ★ v3.0.7 无极滑块: 历史区选中按时间最近
                 val tapTime = startTime + ((event.x - pad) / cw * timeRange).toLong()
                 selectedIdx = historyData.indices.minByOrNull { abs(historyData[it].first - tapTime) } ?: -1
             }
+            // ★ v3.0.7 无极滑块: 预测区选中用浮点索引 (不再锁 5min 一步)
             if (predictionCurve.size >= 25) {
-                val predStart = historyData.lastOrNull()?.first ?: startTime
+                val predStart = historyData.last().first
                 val predRange = 120 * 60000L
                 val tapPred = ((event.x - pad) / cw * (endTime - startTime)).coerceIn(0f, predRange.toFloat()).toLong()
+                // 浮点索引, 支持任意分钟
                 selectedPredIdx = (tapPred / (5 * 60000L)).toInt().coerceIn(0, 24)
             }
+            invalidate()
+            return true
+        }
+        if (event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL) {
             invalidate()
             return true
         }

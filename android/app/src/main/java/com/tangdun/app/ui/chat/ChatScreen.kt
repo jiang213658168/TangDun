@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -1005,11 +1006,15 @@ fun AgentWorkingBubble(
     }
 }
 
-/** 思考过程卡片 (Claude Code 风格) */
+/** 思考过程卡片 (Claude Code 风格) - v3.0.7 安全版 */
 @Composable
 private fun ThinkingCard(content: String) {
     var expanded by remember { mutableStateOf(false) }
-    val preview = if (content.length > 80) content.take(80) + "..." else content
+    // ★ 清理: 去控制字符 + 截断到 800 字 (防止 LazyColumn 内 Int.MAX_VALUE 行导致 measure 循环崩溃)
+    val safe = remember(content) { sanitizeThinking(content) }
+    val preview = remember(safe) {
+        if (safe.length > 60) safe.take(60) + "…" else safe
+    }
 
     Card(
         modifier = Modifier
@@ -1026,7 +1031,7 @@ private fun ThinkingCard(content: String) {
                 Text(text = "💭", style = MaterialTheme.typography.bodySmall)
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = if (expanded) "思考过程" else "思考过程 (点击展开)",
+                    text = if (expanded) "思考过程 (点击收起)" else "思考过程 (点击展开)",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary
@@ -1034,13 +1039,25 @@ private fun ThinkingCard(content: String) {
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = if (expanded) content else preview,
+                text = if (expanded) safe else preview,
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary,
-                maxLines = if (expanded) Int.MAX_VALUE else 3
+                maxLines = if (expanded) 20 else 2,  // ★ 关键: 不再用 Int.MAX_VALUE, 折叠态 2 行预览, 展开态封顶 20 行
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
+}
+
+/** 清理思考内容: 去控制字符 + 合并空行 + 截断超长内容 */
+private fun sanitizeThinking(raw: String): String {
+    if (raw.isEmpty()) return ""
+    // 去控制字符 (\u0000-\u001F, \u007F) 防止字体渲染崩溃
+    val cleaned = raw.replace(Regex("[\\p{Cntrl}]"), " ")
+        .replace(Regex("[ \\t]+"), " ")
+        .replace(Regex("\\n{3,}"), "\n\n")
+        .trim()
+    return if (cleaned.length > 800) cleaned.take(800) + "…(已截断)" else cleaned
 }
 
 /** 工具调用卡片 (Claude Code 风格) */

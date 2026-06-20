@@ -36,12 +36,23 @@ class GlucoseChartView @JvmOverloads constructor(
 
     // 触摸
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDown(e: MotionEvent): Boolean {
+            // ★ v3.0.7 无极滑块: 按下立即选中
+            findNearest(e.x, e.y)
+            return true
+        }
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             findNearest(e.x, e.y)
             return true
         }
+        override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
+            // ★ v3.0.7 无极滑块: 拖动时持续更新选中点
+            findNearest(e2.x, e2.y)
+            return true
+        }
     })
     private var selectedIndex = -1  // 选中的数据点
+    private var isDragging = false  // 是否正在拖动
 
     // 画笔
     private val bgPaint = Paint().apply { color = Color.parseColor("#F2F5F7"); style = Paint.Style.FILL }
@@ -92,16 +103,20 @@ class GlucoseChartView @JvmOverloads constructor(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         gestureDetector.onTouchEvent(event)
-        if (event.action == MotionEvent.ACTION_DOWN) { findNearest(event.x, event.y); return true }
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> { isDragging = true; findNearest(event.x, event.y); return true }
+            MotionEvent.ACTION_MOVE -> { findNearest(event.x, event.y); return true }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { isDragging = false; invalidate(); return true }
+        }
         return super.onTouchEvent(event)
     }
 
     private fun findNearest(x: Float, y: Float) {
-        if (dataPoints.size < 2) return
-        val pad = 60f; val cw = width - pad * 2
+        if (dataPoints.size < 2) { selectedIndex = -1; invalidate(); return }
+        val pad = 60f; val cw = (width - pad * 2).coerceAtLeast(1f)
         val startTime = dataPoints.first().first; val timeRange = dataPoints.last().first - startTime
-        if (timeRange == 0L) return
-        val tapTime = startTime + ((x - pad) / cw * timeRange).toLong()
+        if (timeRange == 0L) { selectedIndex = 0; invalidate(); return }
+        val tapTime = (startTime + ((x - pad) / cw * timeRange).toLong()).coerceIn(startTime, dataPoints.last().first)
         selectedIndex = dataPoints.indices.minByOrNull { abs(dataPoints[it].first - tapTime) } ?: -1
         invalidate()
     }

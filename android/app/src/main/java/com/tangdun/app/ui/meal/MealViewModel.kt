@@ -17,7 +17,8 @@ data class MealUiState(
     val meals: List<MealRecord> = emptyList(),
     val todayCarbs: Double = 0.0,
     val todayCalories: Double = 0.0,
-    val error: String? = null
+    val error: String? = null,
+    val selectedDate: Long = System.currentTimeMillis()  // ★ v3.0.7: 查看日期
 )
 
 @HiltViewModel
@@ -34,6 +35,20 @@ class MealViewModel @Inject constructor(
 
     fun refresh() {
         loadMeals()
+    }
+
+    /** ★ v3.0.7: 切换到指定日期的记录 */
+    fun goToDate(dateMillis: Long) {
+        _uiState.value = _uiState.value.copy(selectedDate = dateMillis)
+        loadMeals()
+    }
+
+    fun goToToday() = goToDate(System.currentTimeMillis())
+
+    fun shiftDate(delta: Int) {
+        val cal = Calendar.getInstance().apply { timeInMillis = _uiState.value.selectedDate; add(Calendar.DAY_OF_MONTH, delta) }
+        if (cal.timeInMillis > System.currentTimeMillis()) return
+        goToDate(cal.timeInMillis)
     }
 
     fun addMeal(mealType: String, foodName: String, carbs: Double, calories: Double, gi: Double,
@@ -100,24 +115,30 @@ class MealViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             try {
-                // 获取今日开始时间
-                val calendar = Calendar.getInstance().apply {
+                // ★ v3.0.7: 按 selectedDate 当天 [00:00, 24:00) 过滤
+                val cal = Calendar.getInstance().apply {
+                    timeInMillis = _uiState.value.selectedDate
                     set(Calendar.HOUR_OF_DAY, 0)
                     set(Calendar.MINUTE, 0)
                     set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
                 }
-                val todayStart = calendar.timeInMillis
+                val dayStart = cal.timeInMillis
+                cal.add(Calendar.DAY_OF_MONTH, 1)
+                val dayEnd = cal.timeInMillis
 
-                // 获取今日饮食记录
-                val meals = mealDao.getTodayRecords(todayStart)
+                val meals = mealDao.getByTimeRange(dayStart, dayEnd - 1)
 
-                // 获取今日总碳水和热量
+                // 今日统计用今天 (历史日期的碳水/热量当卡片显示)
+                val todayCal = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                }
+                val todayStart = todayCal.timeInMillis
                 val totalCarbs = mealDao.getTodayTotalCarbs(todayStart) ?: 0.0
                 val totalCalories = mealDao.getTodayTotalCalories(todayStart) ?: 0.0
 
-                // 食物营养信息现由大模型查询，不再使用本地数据库
-                _uiState.value = MealUiState(
+                _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     meals = meals,
                     todayCarbs = totalCarbs,

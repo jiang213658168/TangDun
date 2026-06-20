@@ -23,7 +23,9 @@ data class ExerciseUiState(
     val recommendedIntensity: String = "中等",
     val expectedGlucoseDrop: Double = 0.5,
     val prescriptionNotes: String = "",
-    val error: String? = null
+    val error: String? = null,
+    val selectedDate: Long = System.currentTimeMillis(),  // ★ v3.0.7
+    val records: List<com.tangdun.app.data.local.entity.ExerciseRecord> = emptyList()  // ★ v3.0.7
 )
 
 @HiltViewModel
@@ -41,6 +43,20 @@ class ExerciseViewModel @Inject constructor(
 
     fun refresh() {
         loadData()
+    }
+
+    /** ★ v3.0.7: 切换到指定日期的记录 */
+    fun goToDate(dateMillis: Long) {
+        _uiState.value = _uiState.value.copy(selectedDate = dateMillis)
+        loadData()
+    }
+
+    fun goToToday() = goToDate(System.currentTimeMillis())
+
+    fun shiftDate(delta: Int) {
+        val cal = Calendar.getInstance().apply { timeInMillis = _uiState.value.selectedDate; add(Calendar.DAY_OF_MONTH, delta) }
+        if (cal.timeInMillis > System.currentTimeMillis()) return
+        goToDate(cal.timeInMillis)
     }
 
     /**
@@ -88,26 +104,36 @@ class ExerciseViewModel @Inject constructor(
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
             try {
-                // 获取今日开始时间
-                val calendar = Calendar.getInstance().apply {
+                // ★ v3.0.7: 按 selectedDate 当天 [00:00, 24:00) 过滤
+                val cal = Calendar.getInstance().apply {
+                    timeInMillis = _uiState.value.selectedDate
                     set(Calendar.HOUR_OF_DAY, 0)
                     set(Calendar.MINUTE, 0)
                     set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
                 }
-                val todayStart = calendar.timeInMillis
+                val dayStart = cal.timeInMillis
+                cal.add(Calendar.DAY_OF_MONTH, 1)
+                val dayEnd = cal.timeInMillis
 
-                // 获取今日运动统计
+                val records = exerciseDao.getByTimeRange(dayStart, dayEnd - 1)
+
+                // 今日统计 = 今日 (用 todayStart 计算)
+                val todayCal = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                }
+                val todayStart = todayCal.timeInMillis
+
                 val totalDuration = exerciseDao.getTodayTotalDuration(todayStart) ?: 0
                 val totalSteps = exerciseDao.getTodayTotalSteps(todayStart) ?: 0
                 val totalCalories = exerciseDao.getTodayTotalCalories(todayStart) ?: 0.0
                 val exerciseCount = exerciseDao.getTodayExerciseCount(todayStart)
 
-                // 根据当前血糖生成运动处方
                 val latestGlucose = glucoseDao.getLatest()
                 val prescription = generatePrescription(latestGlucose?.value)
 
-                _uiState.value = ExerciseUiState(
+                _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     todayDuration = totalDuration,
                     todaySteps = totalSteps,
@@ -117,7 +143,8 @@ class ExerciseViewModel @Inject constructor(
                     recommendedDuration = prescription.duration,
                     recommendedIntensity = prescription.intensity,
                     expectedGlucoseDrop = prescription.expectedDrop,
-                    prescriptionNotes = prescription.notes
+                    prescriptionNotes = prescription.notes,
+                    records = records
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(

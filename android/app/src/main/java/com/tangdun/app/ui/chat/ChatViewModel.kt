@@ -474,6 +474,7 @@ class ChatViewModel @Inject constructor(
 
             Log.i("ChatVM", "[Agent 模式] 调用 AI: $content")
             // ★ v3.0 实时进度: AI 思考 / 工具调用每步都推到 UI
+            // ★ v3.0.7 防爆: 限制 liveThinking 总长 600 字符, 避免 LazyColumn item 内 Int.MAX_VALUE 行崩溃
             val liveThinkingBuilder = StringBuilder()
             val liveToolCalls = mutableListOf<LiveToolCall>()
             val agentResult = aiClient.runAgent(
@@ -482,8 +483,14 @@ class ChatViewModel @Inject constructor(
                 onProgress = { event ->
                     when (event) {
                         is ProgressEvent.Thinking -> {
-                            liveThinkingBuilder.append(event.content).append("\n\n")
-                            _uiState.value = _uiState.value.copy(liveThinking = liveThinkingBuilder.toString())
+                            // 去控制字符 + 限长 600 字符 (超过就丢弃, 避免滚雪球)
+                            val safeChunk = event.content
+                                .replace(Regex("[\\p{Cntrl}]"), " ")
+                                .replace(Regex("[ \\t]+"), " ")
+                            liveThinkingBuilder.append(safeChunk)
+                            val raw = liveThinkingBuilder.toString().trim()
+                            val capped = if (raw.length > 600) raw.take(600) + "…(思考中, 已截断)" else raw
+                            _uiState.value = _uiState.value.copy(liveThinking = capped)
                         }
                         is ProgressEvent.ToolCallStart -> {
                             liveToolCalls.add(LiveToolCall(event.name, event.arguments, null))

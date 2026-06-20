@@ -100,6 +100,12 @@ class HomeViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(selectedDate = d)
         loadData(d)  // ★ 传参防竞态: 不读可变状态
     }
+    /** ★ v3.0.7: 跳到任意历史日期 (DatePicker 选中回调) */
+    fun goToDate(dateMillis: Long) {
+        if (dateMillis > System.currentTimeMillis() + 24L * 3600_000L) return
+        _uiState.value = _uiState.value.copy(selectedDate = dateMillis)
+        loadData(dateMillis)
+    }
 
     /** 导入欧态CGM xlsx文件 */
     fun importXlsx(uri: android.net.Uri) {

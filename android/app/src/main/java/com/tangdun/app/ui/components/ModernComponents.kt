@@ -306,19 +306,11 @@ private fun TargetRangeIndicator(
     modifier: Modifier = Modifier
 ) {
     val range = (high - low).coerceAtLeast(0.1)
-    // ★ v3.0.4 修绿块位置: 进度条分 3 段 (低 20% / 正常 60% / 高 20%)
-    //   低区: low 到 low + range*0.2 → 0~0.2
-    //   正常区: low + range*0.2 到 low + range*0.8 → 0.2~0.8
-    //   高区: low + range*0.8 到 high → 0.8~1.0
-    //   越界: 强制 0 或 1
+    // ★ v3.0.7 修绿块位置: 直接按当前值在 [low, high] 区间的比例定位
+    //   之前用 padding(start=X.dp) 在 dp 单位下定位, 会变成固定像素值不随父宽度缩放 → 永远偏左
     val currentRatio = current?.let { v ->
-        when {
-            v <= low -> 0f
-            v >= high -> 1f
-            v <= low + range * 0.2 -> ((v - low) / (range * 0.2) * 0.2).toFloat()
-            v <= low + range * 0.8 -> (0.2f + ((v - low - range * 0.2) / (range * 0.6) * 0.6).toFloat())
-            else -> (0.8f + ((v - low - range * 0.8) / (range * 0.2) * 0.2).toFloat())
-        }.coerceIn(0f, 1f)
+        val ratio = ((v - low) / range).toFloat()
+        ratio.coerceIn(0f, 1f)
     }
 
     Column(modifier = modifier) {
@@ -341,26 +333,30 @@ private fun TargetRangeIndicator(
         Spacer(Modifier.height(6.dp))
 
         // 进度条: 3 段 (低/正常/高), 当前值用圆点标记
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(8.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
+            val barWidth = maxWidth
+            // 3 段背景 (按目标范围分段, low-high 之间均分)
             Row(modifier = Modifier.fillMaxSize()) {
                 Box(modifier = Modifier.weight(0.2f).fillMaxHeight().background(GlucoseLow.copy(alpha = 0.3f)))
                 Box(modifier = Modifier.weight(0.6f).fillMaxHeight().background(GlucoseNormal.copy(alpha = 0.4f)))
                 Box(modifier = Modifier.weight(0.2f).fillMaxHeight().background(GlucoseHigh.copy(alpha = 0.3f)))
             }
-            // 当前值标记
-            if (currentRatio != null) {
-                val targetColor = glucoseColor(current ?: 0.0, low, high)
+            // 当前值标记 (thumb 按比例定位, 居中在 currentRatio 处)
+            if (currentRatio != null && current != null) {
+                val targetColor = glucoseColor(current, low, high)
+                val thumbSize = 16.dp
+                // 让 thumb 中心对齐 currentRatio, 减去 thumb 宽度一半
+                val offsetX = (barWidth - thumbSize) * currentRatio
                 Box(
                     modifier = Modifier
-                        .padding(start = (currentRatio * 100).dp.coerceAtLeast(0.dp))
-                        .size(16.dp)
-                        .offset(y = (-4).dp)
+                        .offset(x = offsetX, y = (-4).dp)
+                        .size(thumbSize)
                         .clip(CircleShape)
                         .background(targetColor)
                         .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
