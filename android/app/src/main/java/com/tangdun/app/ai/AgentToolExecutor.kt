@@ -114,6 +114,29 @@ class AgentToolExecutor(
     }
 
     /**
+     * ★ v3.0.5 智能时间戳: 优先 timestamp 绝对时间, 再 time_offset_min 偏移, 最后当前
+     */
+    private fun resolveTimestamp(args: JSONObject): Long {
+        // 1. 直接传了 timestamp 绝对时间
+        if (args.has("timestamp")) {
+            val ts = args.opt("timestamp")
+            return when (ts) {
+                is Long -> ts
+                is Number -> ts.toLong()
+                is String -> ts.toLongOrNull() ?: System.currentTimeMillis()
+                else -> System.currentTimeMillis()
+            }
+        }
+        // 2. 用 time_offset_min 偏移
+        if (args.has("time_offset_min")) {
+            val offset = args.optInt("time_offset_min", 0)
+            return timestampFromOffset(offset)
+        }
+        // 3. fallback 当前
+        return System.currentTimeMillis()
+    }
+
+    /**
      * 快速构造 CREATE intent 的 helper
      */
     private fun createIntent(target: String, params: Map<String, Any>, desc: String): AIIntent =
@@ -129,7 +152,7 @@ class AgentToolExecutor(
         val value = args.optDouble("value", Double.NaN)
         if (value.isNaN()) return fail("血糖值不能为空")
         val scene = args.optString("scene", "other")
-        val ts = timestampFromOffset(args.optInt("time_offset_min", 0))
+        val ts = resolveTimestamp(args)
         return executeIntentAndReturn(createIntent(
             target = AITarget.GLUCOSE,
             params = mapOf("value" to value, "scene" to scene, "timestamp" to ts),
@@ -141,7 +164,7 @@ class AgentToolExecutor(
         val dose = args.optDouble("dose", Double.NaN)
         if (dose.isNaN()) return fail("胰岛素剂量不能为空")
         val doseType = args.optString("dose_type", "rapid")
-        val ts = timestampFromOffset(args.optInt("time_offset_min", 0))
+        val ts = resolveTimestamp(args)
         return executeIntentAndReturn(createIntent(
             target = AITarget.INSULIN,
             params = mapOf("dose" to dose, "dose_type" to doseType, "timestamp" to ts),
@@ -153,7 +176,7 @@ class AgentToolExecutor(
         val food = args.optString("food_name", "")
         if (food.isEmpty()) return fail("食物名称不能为空")
         val portion = args.optDouble("portion_grams", 100.0)
-        val ts = timestampFromOffset(args.optInt("time_offset_min", 0))
+        val ts = resolveTimestamp(args)
         val mealType = args.optString("meal_type", "snack")
 
         val (carbs, calories, gi) = FoodNutrition.estimate(food, portion)
@@ -173,7 +196,7 @@ class AgentToolExecutor(
         if (duration <= 0) return fail("运动时长不能为空")
         val type = args.optString("exercise_type", "other")
         val intensity = args.optString("intensity", "medium")
-        val ts = timestampFromOffset(args.optInt("time_offset_min", 0))
+        val ts = resolveTimestamp(args)
         return executeIntentAndReturn(createIntent(
             target = AITarget.EXERCISE,
             params = mapOf("exercise_type" to type, "duration_min" to duration, "intensity" to intensity, "timestamp" to ts),
@@ -184,7 +207,7 @@ class AgentToolExecutor(
     private suspend fun toolRecordSleep(args: JSONObject): String {
         val mins = args.optInt("duration_minutes", 0)
         if (mins <= 0) return fail("睡眠时长不能为空")
-        val ts = timestampFromOffset(args.optInt("time_offset_min", 0))
+        val ts = resolveTimestamp(args)
         return executeIntentAndReturn(createIntent(
             target = AITarget.SLEEP,
             params = mapOf("duration_minutes" to mins, "timestamp" to ts),
@@ -196,7 +219,7 @@ class AgentToolExecutor(
         val sys = args.optInt("systolic", 0)
         val dia = args.optInt("diastolic", 0)
         if (sys <= 0 || dia <= 0) return fail("血压值不能为空")
-        val ts = timestampFromOffset(args.optInt("time_offset_min", 0))
+        val ts = resolveTimestamp(args)
         return executeIntentAndReturn(createIntent(
             target = AITarget.BP,
             params = mapOf("systolic" to sys, "diastolic" to dia, "timestamp" to ts),
@@ -207,7 +230,7 @@ class AgentToolExecutor(
     private suspend fun toolRecordWeight(args: JSONObject): String {
         val kg = args.optDouble("weight_kg", Double.NaN)
         if (kg.isNaN()) return fail("体重不能为空")
-        val ts = timestampFromOffset(args.optInt("time_offset_min", 0))
+        val ts = resolveTimestamp(args)
         return executeIntentAndReturn(createIntent(
             target = AITarget.WEIGHT,
             params = mapOf("weight_kg" to kg, "timestamp" to ts),
@@ -218,7 +241,7 @@ class AgentToolExecutor(
     private suspend fun toolRecordKetone(args: JSONObject): String {
         val k = args.optDouble("ketone_level", Double.NaN)
         if (k.isNaN()) return fail("酮体值不能为空")
-        val ts = timestampFromOffset(args.optInt("time_offset_min", 0))
+        val ts = resolveTimestamp(args)
         return executeIntentAndReturn(createIntent(
             target = AITarget.KETONE,
             params = mapOf("ketone_level" to k, "timestamp" to ts),
@@ -230,7 +253,7 @@ class AgentToolExecutor(
         val name = args.optString("medication_name", "")
         if (name.isEmpty()) return fail("药品名称不能为空")
         val dose = args.optString("dose", "")
-        val ts = timestampFromOffset(args.optInt("time_offset_min", 0))
+        val ts = resolveTimestamp(args)
         return executeIntentAndReturn(createIntent(
             target = AITarget.MEDICATION,
             params = mapOf("medication_name" to name, "dose" to dose, "timestamp" to ts),
@@ -241,7 +264,7 @@ class AgentToolExecutor(
     private suspend fun toolRecordSymptoms(args: JSONObject): String {
         val symptoms = args.optString("symptoms", "")
         if (symptoms.isEmpty()) return fail("症状不能为空")
-        val ts = timestampFromOffset(args.optInt("time_offset_min", 0))
+        val ts = resolveTimestamp(args)
         return executeIntentAndReturn(createIntent(
             target = AITarget.SYMPTOM,
             params = mapOf("symptoms" to symptoms, "timestamp" to ts),
@@ -392,7 +415,7 @@ class AgentToolExecutor(
     private suspend fun toolBatchRecordMeals(args: JSONObject): String {
         val foodsArr = args.optJSONArray("foods") ?: return fail("foods 数组必填")
         val mealType = args.optString("meal_type", "snack")
-        val ts = timestampFromOffset(args.optInt("time_offset_min", 0))
+        val ts = resolveTimestamp(args)
         val results = mutableListOf<String>()
         var totalCarbs = 0.0
         for (i in 0 until foodsArr.length()) {

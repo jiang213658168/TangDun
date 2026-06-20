@@ -445,7 +445,8 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
             JSONObject().apply {
                 put("value", JSONObject().apply { put("type", "number"); put("description", "血糖值 (mmol/L)") })
                 put("scene", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("fasting", "before_meal", "after_meal", "bedtime", "other"))); put("description", "测量场景") })
-                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "相对当前时间的分钟偏移, 负数=过去") })
+                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "相对当前时间的分钟偏移, 负数=过去") });
+                put("timestamp", JSONObject().apply { put("type", "integer"); put("description", "★ 绝对毫秒时间戳 (直接传时间, 比如 1718850000000 表示 2024-06-15 10:00). 与 time_offset_min 二选一") })
             },
             listOf("value")
         ))
@@ -457,7 +458,8 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
             JSONObject().apply {
                 put("dose", JSONObject().apply { put("type", "number"); put("description", "剂量 (单位)") })
                 put("dose_type", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("rapid", "short", "long", "mixed", "basal"))); put("description", "胰岛素类型") })
-                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") })
+                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") });
+                put("timestamp", JSONObject().apply { put("type", "integer"); put("description", "★ 绝对毫秒时间戳 (直接传时间, 比如 1718850000000 表示 2024-06-15 10:00). 与 time_offset_min 二选一") })
             },
             listOf("dose")
         ))
@@ -469,7 +471,8 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
             JSONObject().apply {
                 put("food_name", JSONObject().apply { put("type", "string"); put("description", "食物名称") })
                 put("portion_grams", JSONObject().apply { put("type", "number"); put("description", "份量 (克)") })
-                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") })
+                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") });
+                put("timestamp", JSONObject().apply { put("type", "integer"); put("description", "★ 绝对毫秒时间戳 (直接传时间, 比如 1718850000000 表示 2024-06-15 10:00). 与 time_offset_min 二选一") })
                 put("meal_type", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("breakfast", "lunch", "dinner", "snack"))); put("description", "餐次") })
             },
             listOf("food_name")
@@ -483,7 +486,8 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
                 put("exercise_type", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("running", "walking", "cycling", "swimming", "strength", "yoga", "jumping_rope", "hiking", "ball_sports", "other"))); put("description", "运动类型") })
                 put("duration_min", JSONObject().apply { put("type", "integer"); put("description", "持续分钟") })
                 put("intensity", JSONObject().apply { put("type", "string"); put("enum", JSONArray(listOf("low", "medium", "high"))); put("description", "强度") })
-                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") })
+                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") });
+                put("timestamp", JSONObject().apply { put("type", "integer"); put("description", "★ 绝对毫秒时间戳 (直接传时间, 比如 1718850000000 表示 2024-06-15 10:00). 与 time_offset_min 二选一") })
             },
             listOf("duration_min")
         ))
@@ -494,7 +498,8 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
             "记录睡眠时长",
             JSONObject().apply {
                 put("duration_minutes", JSONObject().apply { put("type", "integer"); put("description", "睡眠总分钟数") })
-                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") })
+                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") });
+                put("timestamp", JSONObject().apply { put("type", "integer"); put("description", "★ 绝对毫秒时间戳 (直接传时间, 比如 1718850000000 表示 2024-06-15 10:00). 与 time_offset_min 二选一") })
             },
             listOf("duration_minutes")
         ))
@@ -506,7 +511,8 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
             JSONObject().apply {
                 put("systolic", JSONObject().apply { put("type", "integer"); put("description", "收缩压 (高压)") })
                 put("diastolic", JSONObject().apply { put("type", "integer"); put("description", "舒张压 (低压)") })
-                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") })
+                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") });
+                put("timestamp", JSONObject().apply { put("type", "integer"); put("description", "★ 绝对毫秒时间戳 (直接传时间, 比如 1718850000000 表示 2024-06-15 10:00). 与 time_offset_min 二选一") })
             },
             listOf("systolic", "diastolic")
         ))
@@ -517,7 +523,8 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
             "记录体重",
             JSONObject().apply {
                 put("weight_kg", JSONObject().apply { put("type", "number"); put("description", "体重 (kg)") })
-                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") })
+                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") });
+                put("timestamp", JSONObject().apply { put("type", "integer"); put("description", "★ 绝对毫秒时间戳 (直接传时间, 比如 1718850000000 表示 2024-06-15 10:00). 与 time_offset_min 二选一") })
             },
             listOf("weight_kg")
         ))
@@ -528,7 +535,8 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
             "记录血酮",
             JSONObject().apply {
                 put("ketone_level", JSONObject().apply { put("type", "number"); put("description", "酮体值 (mmol/L)") })
-                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") })
+                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") });
+                put("timestamp", JSONObject().apply { put("type", "integer"); put("description", "★ 绝对毫秒时间戳 (直接传时间, 比如 1718850000000 表示 2024-06-15 10:00). 与 time_offset_min 二选一") })
             },
             listOf("ketone_level")
         ))
@@ -540,7 +548,8 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
             JSONObject().apply {
                 put("medication_name", JSONObject().apply { put("type", "string"); put("description", "药品名称") })
                 put("dose", JSONObject().apply { put("type", "string"); put("description", "剂量 如 '500mg' / '1片'") })
-                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") })
+                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") });
+                put("timestamp", JSONObject().apply { put("type", "integer"); put("description", "★ 绝对毫秒时间戳 (直接传时间, 比如 1718850000000 表示 2024-06-15 10:00). 与 time_offset_min 二选一") })
             },
             listOf("medication_name")
         ))
@@ -551,7 +560,8 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
             "记录症状 (可多个)",
             JSONObject().apply {
                 put("symptoms", JSONObject().apply { put("type", "string"); put("description", "症状列表, 逗号分隔, 如 '心慌,手抖,出汗'") })
-                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") })
+                put("time_offset_min", JSONObject().apply { put("type", "integer"); put("description", "时间偏移") });
+                put("timestamp", JSONObject().apply { put("type", "integer"); put("description", "★ 绝对毫秒时间戳 (直接传时间, 比如 1718850000000 表示 2024-06-15 10:00). 与 time_offset_min 二选一") })
             },
             listOf("symptoms")
         ))

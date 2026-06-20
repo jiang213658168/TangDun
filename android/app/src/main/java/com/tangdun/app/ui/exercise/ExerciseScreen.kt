@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tangdun.app.data.local.entity.ExerciseRecord
+import com.tangdun.app.ui.components.DateTimePickerDialog
 import com.tangdun.app.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -226,12 +227,12 @@ fun AddExerciseDialog(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
 
-                OutlinedButton(onClick = { showTimePicker = true }, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = { showTimePicker = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) {
                     Icon(Icons.Default.AccessTime, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    val cal = java.util.Calendar.getInstance().apply { timeInMillis = selectedTime }
-                    val md = String.format("%02d-%02d", cal.get(java.util.Calendar.MONTH) + 1, cal.get(java.util.Calendar.DAY_OF_MONTH))
-                    Text("$md ${String.format("%02d:%02d", hour, minute)}", style = MaterialTheme.typography.bodyLarge)
+                    // ★ v3.0.5 显示完整日期+时间
+                    val dateTimeFmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                    Text(dateTimeFmt.format(selectedTime), style = MaterialTheme.typography.bodyLarge)
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))
@@ -251,22 +252,15 @@ fun AddExerciseDialog(
     }
 
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState(initialHour = hour, initialMinute = minute)
-        AlertDialog(
-            onDismissRequest = { showTimePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    val c = java.util.Calendar.getInstance().apply {
-                        timeInMillis = selectedTime
-                        set(java.util.Calendar.HOUR_OF_DAY, timePickerState.hour)
-                        set(java.util.Calendar.MINUTE, timePickerState.minute)
-                    }
-                    selectedTime = c.timeInMillis
-                    showTimePicker = false
-                }) { Text("确定") }
-            },
-            dismissButton = { TextButton(onClick = { showTimePicker = false }) { Text("取消") } },
-            text = { TimePicker(state = timePickerState) }
+        // ★ v3.0.5 完整日期时间选择器 (替换纯 TimePicker)
+        DateTimePickerDialog(
+            initialTime = selectedTime,
+            title = "选择运动时间",
+            onDismiss = { showTimePicker = false },
+            onConfirm = { picked ->
+                selectedTime = picked
+                showTimePicker = false
+            }
         )
     }
 }

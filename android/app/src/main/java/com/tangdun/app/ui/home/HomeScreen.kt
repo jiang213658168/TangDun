@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.tangdun.app.sync.CGMNotificationListener
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.tangdun.app.ui.components.DateTimePickerDialog
 import com.tangdun.app.ui.components.HeroGlucoseCard
 import com.tangdun.app.ui.components.InsightStatCard
 import com.tangdun.app.ui.components.ModernTopBar
@@ -852,13 +853,14 @@ fun GlucoseRecordItem(
 
                     OutlinedButton(
                         onClick = { showTimePicker = true },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
                         Icon(Icons.Default.AccessTime, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        val monthDay = String.format("%02d-%02d", editCal.get(Calendar.MONTH) + 1, editCal.get(Calendar.DAY_OF_MONTH))
+                        val dateTimeFmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
                         Text(
-                            text = "$monthDay ${String.format("%02d:%02d", editHour, editMinute)}",
+                            text = dateTimeFmt.format(editTime),
                             style = MaterialTheme.typography.bodyLarge
                         )
                     }
@@ -884,25 +886,15 @@ fun GlucoseRecordItem(
         }
 
         if (showTimePicker) {
-            val timePickerState = rememberTimePickerState(
-                initialHour = editHour,
-                initialMinute = editMinute
-            )
-            AlertDialog(
-                onDismissRequest = { showTimePicker = false },
-                confirmButton = {
-                    TextButton(onClick = {
-                        val c = Calendar.getInstance().apply {
-                            timeInMillis = editTime
-                            set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                            set(Calendar.MINUTE, timePickerState.minute)
-                        }
-                        editTime = c.timeInMillis
-                        showTimePicker = false
-                    }) { Text("确定") }
-                },
-                dismissButton = { TextButton(onClick = { showTimePicker = false }) { Text("取消") } },
-                text = { TimePicker(state = timePickerState) }
+            // ★ v3.0.5 完整日期时间选择器
+            DateTimePickerDialog(
+                initialTime = editTime,
+                title = "编辑血糖时间",
+                onDismiss = { showTimePicker = false },
+                onConfirm = { picked ->
+                    editTime = picked
+                    showTimePicker = false
+                }
             )
         }
     }
@@ -1036,15 +1028,15 @@ fun AddGlucoseDialog(
 
                 OutlinedButton(
                     onClick = { showTimePicker = true },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
                     Icon(Icons.Default.AccessTime, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    // ★ 显示完整日期+时间, 用户能看清选了哪一天
-                    val dateCal = Calendar.getInstance().apply { timeInMillis = selectedDate }
-                    val monthDay = String.format("%02d-%02d", dateCal.get(Calendar.MONTH) + 1, dateCal.get(Calendar.DAY_OF_MONTH))
+                    // ★ v3.0.5 显示完整日期+时间 yyyy-MM-dd HH:mm
+                    val dateTimeFmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
                     Text(
-                        text = "$monthDay ${String.format("%02d:%02d", hour, minute)}",
+                        text = dateTimeFmt.format(selectedDate),
                         style = MaterialTheme.typography.bodyLarge
                     )
                 }
@@ -1145,34 +1137,15 @@ fun AddGlucoseDialog(
         }
     }
 
-    // 时间选择器
+    // ★ v3.0.5 完整日期时间选择器
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState(
-            initialHour = hour,
-            initialMinute = minute
-        )
-        AlertDialog(
-            onDismissRequest = { showTimePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    val newCalendar = Calendar.getInstance().apply {
-                        timeInMillis = selectedDate
-                        set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                        set(Calendar.MINUTE, timePickerState.minute)
-                    }
-                    selectedDate = newCalendar.timeInMillis
-                    showTimePicker = false
-                }) {
-                    Text("确定")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTimePicker = false }) {
-                    Text("取消")
-                }
-            },
-            text = {
-                TimePicker(state = timePickerState)
+        DateTimePickerDialog(
+            initialTime = selectedDate,
+            title = "选择血糖测量时间",
+            onDismiss = { showTimePicker = false },
+            onConfirm = { picked ->
+                selectedDate = picked
+                showTimePicker = false
             }
         )
     }

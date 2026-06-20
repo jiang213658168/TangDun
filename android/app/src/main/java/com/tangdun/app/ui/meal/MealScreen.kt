@@ -24,6 +24,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tangdun.app.data.local.entity.MealRecord
+import com.tangdun.app.ui.components.DateTimePickerDialog
 import com.tangdun.app.ui.theme.*
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -376,12 +377,14 @@ fun AddMealDialog(
                 Spacer(modifier = Modifier.height(6.dp))
                 OutlinedButton(
                     onClick = { showTimePicker = true },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
                     Icon(Icons.Default.AccessTime, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    val md = String.format("%02d-%02d", calendar.get(Calendar.MONTH) + 1, calendar.get(Calendar.DAY_OF_MONTH))
-                    Text("$md ${String.format("%02d:%02d", hour, minute)}")
+                    // ★ v3.0.5 完整日期+时间
+                    val dateTimeFmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                    Text(dateTimeFmt.format(selectedTime))
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -490,34 +493,15 @@ fun AddMealDialog(
         }
     }
 
-    // 时间选择器
+    // ★ v3.0.5 完整日期时间选择器 (替换纯 TimePicker)
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState(
-            initialHour = hour,
-            initialMinute = minute
-        )
-        AlertDialog(
-            onDismissRequest = { showTimePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    val newCalendar = Calendar.getInstance().apply {
-                        timeInMillis = selectedTime
-                        set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                        set(Calendar.MINUTE, timePickerState.minute)
-                    }
-                    selectedTime = newCalendar.timeInMillis
-                    showTimePicker = false
-                }) {
-                    Text("确定")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTimePicker = false }) {
-                    Text("取消")
-                }
-            },
-            text = {
-                TimePicker(state = timePickerState)
+        DateTimePickerDialog(
+            initialTime = selectedTime,
+            title = "选择用餐时间",
+            onDismiss = { showTimePicker = false },
+            onConfirm = { picked ->
+                selectedTime = picked
+                showTimePicker = false
             }
         )
     }

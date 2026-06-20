@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tangdun.app.data.local.entity.InsulinRecord
+import com.tangdun.app.ui.components.DateTimePickerDialog
 import com.tangdun.app.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -390,27 +391,16 @@ fun InsulinCard(
             }
         }
 
-        // 时间选择器
+        // ★ v3.0.5 完整日期时间选择器 (替换纯 TimePicker)
         if (showTimePicker) {
-            val timePickerState = rememberTimePickerState(
-                initialHour = editHour,
-                initialMinute = editMinute
-            )
-            AlertDialog(
-                onDismissRequest = { showTimePicker = false },
-                confirmButton = {
-                    TextButton(onClick = {
-                        val c = Calendar.getInstance().apply {
-                            timeInMillis = editTime
-                            set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                            set(Calendar.MINUTE, timePickerState.minute)
-                        }
-                        editTime = c.timeInMillis
-                        showTimePicker = false
-                    }) { Text("确定") }
-                },
-                dismissButton = { TextButton(onClick = { showTimePicker = false }) { Text("取消") } },
-                text = { TimePicker(state = timePickerState) }
+            DateTimePickerDialog(
+                initialTime = editTime,
+                title = "编辑胰岛素时间",
+                onDismiss = { showTimePicker = false },
+                onConfirm = { picked ->
+                    editTime = picked
+                    showTimePicker = false
+                }
             )
         }
     }
@@ -508,7 +498,7 @@ fun AddInsulinDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // 注射时间
+                // ★ v3.0.5 注射时间 - 完整日期时间选择器
                 Text(
                     text = "注射时间",
                     style = MaterialTheme.typography.bodyMedium,
@@ -517,11 +507,51 @@ fun AddInsulinDialog(
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = { showTimePicker = true },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
                     Icon(Icons.Default.AccessTime, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(String.format("%02d:%02d", hour, minute))
+                    val dateFmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                    Text(dateFmt.format(selectedTime), style = MaterialTheme.typography.bodyMedium)
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                // 快捷日期按钮
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(
+                        "现在" to 0L,
+                        "1小时前" to -60L * 60_000L,
+                        "今早8点" to (Calendar.getInstance().apply {
+                            set(Calendar.HOUR_OF_DAY, 8); set(Calendar.MINUTE, 0)
+                            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                        }.timeInMillis),
+                        "昨天同时" to (-24L * 60L * 60_000L),
+                        "前天同时" to (-48L * 60L * 60_000L),
+                        "上周同时" to (-7L * 24L * 60L * 60_000L)
+                    ).forEach { (label, offset) ->
+                        FilterChip(
+                            selected = false,
+                            onClick = {
+                                if (offset >= -24L * 60L * 60_000L && offset > -2L * 24L * 60L * 60_000L) {
+                                    // 简单偏移
+                                    selectedTime = System.currentTimeMillis() + offset
+                                } else {
+                                    // 整点对齐 (今早8点 / 昨天同时 / 前天同时 / 上周同时)
+                                    val nowCal = Calendar.getInstance()
+                                    val target = Calendar.getInstance().apply {
+                                        timeInMillis = offset
+                                        set(Calendar.HOUR_OF_DAY, nowCal.get(Calendar.HOUR_OF_DAY))
+                                        set(Calendar.MINUTE, nowCal.get(Calendar.MINUTE))
+                                    }
+                                    selectedTime = target.timeInMillis
+                                }
+                            },
+                            label = { Text(label, style = MaterialTheme.typography.bodySmall) }
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -606,34 +636,15 @@ fun AddInsulinDialog(
         }
     }
 
-    // 时间选择器
+    // ★ v3.0.5 完整日期时间选择器
     if (showTimePicker) {
-        val timePickerState = rememberTimePickerState(
-            initialHour = hour,
-            initialMinute = minute
-        )
-        AlertDialog(
-            onDismissRequest = { showTimePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    val newCalendar = Calendar.getInstance().apply {
-                        timeInMillis = selectedTime
-                        set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-                        set(Calendar.MINUTE, timePickerState.minute)
-                    }
-                    selectedTime = newCalendar.timeInMillis
-                    showTimePicker = false
-                }) {
-                    Text("确定")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTimePicker = false }) {
-                    Text("取消")
-                }
-            },
-            text = {
-                TimePicker(state = timePickerState)
+        DateTimePickerDialog(
+            initialTime = selectedTime,
+            title = "选择胰岛素注射时间",
+            onDismiss = { showTimePicker = false },
+            onConfirm = { picked ->
+                selectedTime = picked
+                showTimePicker = false
             }
         )
     }
