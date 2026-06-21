@@ -386,7 +386,8 @@ class AIClient(private val settingsManager: SettingsManager) {
                     } else {
                         // 没有工具调用 → 最终回复
                         if (finishReason == "stop" || finishReason.isEmpty() || finishReason == "length") {
-                            finalAnswer = content
+                            // ★ v3.0.12 防 null 乱码: final answer 也走 sanitize
+                            finalAnswer = sanitizeFinal(content)
                             if (finishReason == "length") {
                                 lastError = "AI 回复因长度限制被截断 (可能需要调高 max_tokens)"
                             }
@@ -394,7 +395,7 @@ class AIClient(private val settingsManager: SettingsManager) {
                             onProgress?.invoke(ProgressEvent.Done(finalAnswer))
                         } else {
                             lastError = "AI 回复异常: $finishReason"
-                            if (content.isNotEmpty()) finalAnswer = content
+                            if (content.isNotEmpty()) finalAnswer = sanitizeFinal(content)
                         }
                         done = true
                     }
@@ -1159,6 +1160,27 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
         // 3. 截断
         val out = cleaned.toString()
         return if (out.length > 4000) out.take(4000) + "...(已截断)" else out
+    }
+
+    /**
+     * ★ v3.0.12 final answer 清洗
+     * - 去控制字符 (防字体渲染崩溃)
+     * - 去连续 "null" 字面量 (DeepSeek reasoning_content 有时输出 "null" 反复成百上千次)
+     * - 去 "key": null 残留 JSON 字段
+     */
+    private fun sanitizeFinal(raw: String): String {
+        if (raw.isEmpty()) return ""
+        var s = raw
+        // 去控制字符
+        s = s.replace(Regex("[\\p{Cntrl}]"), " ")
+        // 连续 3+ 个 "null" 替换成占位
+        s = s.replace(Regex("(?i)(?:null[,\\s]*){3,}"), "[数据异常已隐藏]")
+        // 去掉 "key": null 这种残留 JSON
+        s = s.replace(Regex("\"[A-Za-z_][A-Za-z0-9_]*\"\\s*:\\s*null\\s*[,]?"), "")
+        // 合并空白
+        s = s.replace(Regex("[ \\t]{2,}"), " ").trim()
+        // 截断超长
+        return if (s.length > 8000) s.take(8000) + "\n\n…(回复过长已截断)" else s
     }
 
     private fun stripNulls(obj: Any?): Any? {

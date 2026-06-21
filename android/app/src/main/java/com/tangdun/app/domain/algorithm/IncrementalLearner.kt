@@ -67,7 +67,7 @@ class IncrementalLearner(private val context: Context) {
         totalLoss = prefs.getFloat("total_loss", 0f).toDouble()
         lastLoss = prefs.getFloat("last_loss", 0f).toDouble()
         // 检测权重污染: 损失异常大→完全重置
-        val corrupted = lastLoss > 1000.0 || totalLoss > 100000.0
+        val corrupted = lastLoss > 50.0 || totalLoss > 5000.0  // ★ v3.0.12: MSE 范围 0-10 算正常, > 50 是旧 SSE 数据
         if (corrupted) {
             Log.w(TAG, "检测到异常损失, 完全重置: last=$lastLoss total=$totalLoss")
             updateCount = 0; totalLoss = 0.0; lastLoss = 0.0
@@ -151,14 +151,17 @@ class IncrementalLearner(private val context: Context) {
             output[j] = sum
         }
 
-        // ── Loss: MSE + L2正则 ──
-        var loss = 0f
+        // ── Loss: MSE (Mean Squared Error per sample, 4个维度平均) + L2正则 ──
+        // ★ v3.0.12 修: 之前是 SSE (4个维度求和没除以 N), 正常 err~0.5→ loss=1; 大误差 err~4 → loss=65 异常爆炸
+        //   改 MSE 后: 正常 loss ∈ [0.01, 2.0], 大误差 loss ∈ [2.0, 10.0], 不再误以为模型坏掉
+        var sumSq = 0f
         val dOutput = FloatArray(OUTPUT_DIM)
         for (j in 0 until OUTPUT_DIM) {
             val err = output[j] - residual[j]
-            dOutput[j] = 2f * err  // dL/dy
-            loss += err * err
+            dOutput[j] = 2f * err / OUTPUT_DIM  // ★ 关键: 平均梯度, 否则大尺度时梯度爆炸
+            sumSq += err * err
         }
+        val loss = sumSq / OUTPUT_DIM  // MSE per sample (≈ 0.01-2.0 正常范围)
         // L2 正则化项（不计入 loss，只用于梯度）
         val l2Reg = WEIGHT_DECAY
 

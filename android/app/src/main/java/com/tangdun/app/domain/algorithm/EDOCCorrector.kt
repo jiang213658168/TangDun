@@ -621,12 +621,15 @@ class EDOCCorrector(private val context: Context) {
     // 辅助方法
     // ═══════════════════════════════════════════
 
-    /** 在缓存中找到最匹配的预测 (±30秒容差) */
+    /** 在缓存中找到最匹配的预测 (容差 90 分钟, 覆盖 5min/30min/60min 三个时域)
+     * ★ v3.0.12 修复: 之前 30秒容差 → onNewReading(now-5min) 永远查不到 (差 5min > 30s)
+     * → fallback return null → 即时纠错永远不触发
+     */
     private fun findNearestPrediction(targetTime: Long): CachedPrediction? {
         return predictionCache[targetTime]
             ?: predictionCache.entries
                 .minByOrNull { abs(it.key - targetTime) }
-                ?.takeIf { abs(it.key - targetTime) < 30_000 }  // 30秒容差
+                ?.takeIf { abs(it.key - targetTime) < 90 * 60_000L }  // 90分钟容差
                 ?.value
     }
 

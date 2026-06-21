@@ -229,8 +229,18 @@ class PredictionViewModel @Inject constructor(
                             val dataCompleteness = onlineLearner.getPersonalParams().dataCompleteness
                             personalizationW = (0.05 + 0.05 * (incUpdates / 100.0) + 0.10 * dataCompleteness).coerceIn(0.05, 0.30)
 
+                            // ★ v3.0.12 方向冲突检测: 当 TCN 和 DallaMan 在 30min 处趋势相反
+                            //   → TCN 看到的是历史平均 (50% 餐后高峰样本), DallaMan 实时看到本次 meal/insulin
+                            //   → 实时感知更准, 强制把 tcnRatio 降到 0.15 (基本信任生理)
+                            val horizon30 = 6  // 30min = 6 个 5min 步长
+                            val tcnDelta = if (nPoints > horizon30) alignedTcn[horizon30] - g else 0.0
+                            val physioDelta = if (physioCurve.size > horizon30) physioCurve[horizon30] - g else 0.0
+                            val directionConflict = (tcnDelta * physioDelta < -0.5) &&
+                                kotlin.math.abs(tcnDelta - physioDelta) > 1.5  // 差 1.5+ mmol 且方向相反
+
                             // TCN + DallaMan 在剩余 (1 - personalizationW) 中按数据量分配
-                            val tcnRatio = (0.3 + 0.4 * totalRecords / 288.0).coerceIn(0.3, 0.7)
+                            val baseTcnRatio = (0.3 + 0.4 * totalRecords / 288.0).coerceIn(0.3, 0.7)
+                            val tcnRatio = if (directionConflict) 0.15 else baseTcnRatio  // ★ 冲突时降到 0.15
                             val remain = 1.0 - personalizationW
                             tcnW = tcnRatio * remain
 
@@ -238,7 +248,15 @@ class PredictionViewModel @Inject constructor(
                                 ((1.0 - personalizationW) * (tcnRatio * alignedTcn[i] + (1.0 - tcnRatio) * physioCurve[i])).coerceIn(1.0, 30.0)
                             }
                             // 个性化层后续通过 applyPersonalization 叠加
-                            modelLabel = "TCN+DallaMan+个性化(${(personalizationW*100).toInt()}% ${mealInputs.size}餐 ${insulinInputs.size}针)"
+                            modelLabel = if (directionConflict) {
+                                "⚠️TCN冲突${"%.1f".format(tcnDelta)}/生${"%.1f".format(physioDelta)}→信任生理"
+                            } else {
+                                "TCN+DallaMan+个性化(${(personalizationW*100).toInt()}% ${mealInputs.size}餐 ${insulinInputs.size}针)"
+                            }
+                            if (directionConflict) {
+                                Log.w(TAG, "TCN-DallaMan 方向冲突: TCN Δ30min=${"%.2f".format(tcnDelta)}, " +
+                                    "DallaMan Δ30min=${"%.2f".format(physioDelta)}, 强制 tcnRatio=0.15")
+                            }
                         }
                     } catch (e: Exception) { Log.w(TAG, "TCN异常: ${e.message}") }
                 }
