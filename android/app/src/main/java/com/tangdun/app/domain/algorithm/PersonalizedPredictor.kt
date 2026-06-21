@@ -53,6 +53,29 @@ class PersonalizedPredictor(private val context: Context) {
     }
 
     /**
+     * ★ v3.0.14 修复 TCN vs 生理底层冲突
+     *
+     * 之前的 bug:
+     *   - Path A (主) 跑 DallaMan 用 finalParams (用户真实体重/ISF/CR)
+     *   - Path B (TCN对比) 跑 DallaMan 用 Parameters.forUser() 默认 (65kg/ISF 1.5)
+     *   - 两套参数 → 两条 DallaMan 曲线不同 → TCN 看到的"参考基线"跟 Path A 不一致
+     *   → 看起来"TCN 和生理方向冲突"，实际是 Path B 的生理基线本身错了
+     *
+     * 现在:
+     *   - Path A 算出的 physioCurve 直接传入, Path B 不再重复算 DallaMan
+     *   - TCN 拿到的对比基线 100% 跟 Path A 一致
+     *   - 真正反映"TCN vs 真实生理"的方向差
+     */
+    fun predictWithTCNBaseline(
+        glucoseHistory: DoubleArray, currentGlucose: Double,
+        physioBaseline: List<Double>,
+        bolusHistory: DoubleArray? = null, carbHistory: DoubleArray? = null
+    ): Pair<List<Double>?, List<Double>> {
+        val tcnCurve = predictTCNOnly(glucoseHistory, currentGlucose, bolusHistory, carbHistory)
+        return Pair(tcnCurve, physioBaseline)
+    }
+
+    /**
      * 对给定基础曲线叠加个性化 + 增量残差修正
      *
      * @param baseCurve 基础曲线 (通常是 Path A 的 DallaMan 生理曲线, 已带 EDOC 修正)

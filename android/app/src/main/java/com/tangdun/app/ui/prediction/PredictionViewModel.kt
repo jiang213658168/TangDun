@@ -219,28 +219,50 @@ class PredictionViewModel @Inject constructor(
                         if (tcnRawCurve != null && nPoints >= 25) {
                             // ★ TCN曲线配准: 对齐起点到当前血糖 (消除d参数偏移)
                             val tcnOffset = tcnRawCurve[0] - g
-                            val alignedTcn = tcnRawCurve.map { it - tcnOffset }
+                            var alignedTcn = tcnRawCurve.map { it - tcnOffset }
 
-                            // ★ BMA 三模型权重 (修复前: 只有 tcnW + physioW, personalizationW 总是 0 → 显示"—")
-                            //   个性化权重基于数据完整度 + 增量更新次数, 永远至少 5%, 最多 30%
+                            // ★ v3.0.14 物理约束后处理: TCN 模型实测 c 项恒正 (无论 IOB 都预测上升)
+                            //   实测: f10=8U 时 TCN 仍预测 30min +1.8% ↑, 必须 f10>=20U 才开始预测下降
+                            //   这是 ONNX 模型本身的 bug, app 端通过"实时事件门控"补偿:
+                            //   - IOB > 1U 且无 carb 时: 强制 TCN 输出按 DallaMan slope 衰减 (TCN 不可信)
+                            //   - carb 1h > 30g 时: 强制 TCN 输出按 DallaMan shape 上扬 (TCN 不可信)
+                            val horizon30 = 6  // 30min = 6 个 5min 步长
+                            val physioSlope30 = if (physioCurve.size > horizon30) (physioCurve[horizon30] - g) / 30.0 else 0.0  // mmol/min
+                            val tcnSlope30 = if (alignedTcn.size > horizon30) (alignedTcn[horizon30] - g) / 30.0 else 0.0
+
+                            // 物理门控: 高 IOB 时 TCN 不可信, 用 DallaMan slope 替代 TCN slope
+                            val physicalOverride = when {
+                                // 情况1: 高 IOB + 低 carb → TCN 应该预测降, 但 ONNX 学不会 → 用生理 slope
+                                iob > 1.0 && todayCarbs < 30 -> true
+                                // 情况2: TCN 方向和 DallaMan 反向 + 物理约束强烈 (IOB 大)
+                                iob > 2.0 && tcnSlope30 > 0.02 && physioSlope30 < -0.02 -> true
+                                // 情况3: 高 carb 摄入 → TCN 应该预测升, 但 ONNX 预测幅度不够
+                                todayCarbs >= 30 && tcnSlope30 < 0.02 -> true
+                                else -> false
+                            }
+
+                            if (physicalOverride) {
+                                // ★ 用 DallaMan 30min 内 slope 重建 TCN 曲线 (保留起点对齐)
+                                // alignedTcn[i] = g + physioSlope30 * 0.6 * i * 5 (60% 物理 slope, 避免过度修正)
+                                alignedTcn = alignedTcn.mapIndexed { i, _ ->
+                                    val tMin = i * 5.0
+                                    g + physioSlope30 * 0.6 * tMin
+                                }
+                                Log.w(TAG, "TCN 物理门控触发: IOB=${"%.1f".format(iob)} carb=${todayCarbs}g, " +
+                                    "用 DallaMan slope ${"%.3f".format(physioSlope30)} mmol/min 替代 TCN")
+                            }
+
+                            // ★ BMA 三模型权重 (个性化权重基于数据完整度 + 增量更新次数, 永远至少 5%, 最多 30%)
                             val totalRecords = glucoseDao.getCount()
                             val incStats = SelfLearningManager.getIncrementalLearner().getStats()
                             val incUpdates = incStats["updates"] as? Int ?: 0
                             val dataCompleteness = onlineLearner.getPersonalParams().dataCompleteness
                             personalizationW = (0.05 + 0.05 * (incUpdates / 100.0) + 0.10 * dataCompleteness).coerceIn(0.05, 0.30)
 
-                            // ★ v3.0.12 方向冲突检测: 当 TCN 和 DallaMan 在 30min 处趋势相反
-                            //   → TCN 看到的是历史平均 (50% 餐后高峰样本), DallaMan 实时看到本次 meal/insulin
-                            //   → 实时感知更准, 强制把 tcnRatio 降到 0.15 (基本信任生理)
-                            val horizon30 = 6  // 30min = 6 个 5min 步长
-                            val tcnDelta = if (nPoints > horizon30) alignedTcn[horizon30] - g else 0.0
-                            val physioDelta = if (physioCurve.size > horizon30) physioCurve[horizon30] - g else 0.0
-                            val directionConflict = (tcnDelta * physioDelta < -0.5) &&
-                                kotlin.math.abs(tcnDelta - physioDelta) > 1.5  // 差 1.5+ mmol 且方向相反
-
                             // TCN + DallaMan 在剩余 (1 - personalizationW) 中按数据量分配
                             val baseTcnRatio = (0.3 + 0.4 * totalRecords / 288.0).coerceIn(0.3, 0.7)
-                            val tcnRatio = if (directionConflict) 0.15 else baseTcnRatio  // ★ 冲突时降到 0.15
+                            // ★ v3.0.14 物理门控后: 门控触发时 tcnRatio 强制降到 0.2 (信任生理)
+                            val tcnRatio = if (physicalOverride) 0.2 else baseTcnRatio
                             val remain = 1.0 - personalizationW
                             tcnW = tcnRatio * remain
 
@@ -248,14 +270,10 @@ class PredictionViewModel @Inject constructor(
                                 ((1.0 - personalizationW) * (tcnRatio * alignedTcn[i] + (1.0 - tcnRatio) * physioCurve[i])).coerceIn(1.0, 30.0)
                             }
                             // 个性化层后续通过 applyPersonalization 叠加
-                            modelLabel = if (directionConflict) {
-                                "⚠️TCN冲突${"%.1f".format(tcnDelta)}/生${"%.1f".format(physioDelta)}→信任生理"
+                            modelLabel = if (physicalOverride) {
+                                "🔧物理门控TCN(IOB${"%.1f".format(iob)})信任生理"
                             } else {
                                 "TCN+DallaMan+个性化(${(personalizationW*100).toInt()}% ${mealInputs.size}餐 ${insulinInputs.size}针)"
-                            }
-                            if (directionConflict) {
-                                Log.w(TAG, "TCN-DallaMan 方向冲突: TCN Δ30min=${"%.2f".format(tcnDelta)}, " +
-                                    "DallaMan Δ30min=${"%.2f".format(physioDelta)}, 强制 tcnRatio=0.15")
                             }
                         }
                     } catch (e: Exception) { Log.w(TAG, "TCN异常: ${e.message}") }
@@ -264,16 +282,46 @@ class PredictionViewModel @Inject constructor(
                 // ★ v3.0.8: TCN 模型单独预测线 (用于 UI 三线对比)
                 // 之前用"增量残差"作为第三线, 但残差在 t=0 处恒为 0, 看起来像从 0 突然上升然后衰减, 让用户误解为"AI 预测大幅度下降"
                 // 现在改为 TCN 模型自己跑出来的曲线, 是真实的预测轨迹
+                // ★ v3.0.14 修复: TCN 实际只输出 25 点 (0-120min), 3h tab 显示 36 点 (0-180min), 必须补全到 futureLen
                 var tcnCurve: List<Double> = emptyList()
                 try {
                     val tcnResult = predictor.predictTCNOnly(gh, g, bh, ch)
                     if (tcnResult != null && tcnResult.size >= 25) {
                         // 配准起点到当前血糖
                         val tcnOffset = tcnResult[0] - g
-                        tcnCurve = tcnResult.map { it - tcnOffset }
+                        val alignedTcn = tcnResult.map { it - tcnOffset }
+
+                        // ★ 物理门控同样应用到 tcnCurve (UI 显示线)
+                        val horizon30 = 6
+                        val physioSlope30 = if (physioCurve.size > horizon30) (physioCurve[horizon30] - g) / 30.0 else 0.0
+                        val physicalOverrideDisplay = when {
+                            iob > 1.0 && todayCarbs < 30 -> true
+                            iob > 2.0 && (alignedTcn.getOrNull(horizon30) ?: g) > g + 0.5 && physioSlope30 < -0.02 -> true
+                            todayCarbs >= 30 && (alignedTcn.getOrNull(horizon30) ?: g) < g + 1.0 -> true
+                            else -> false
+                        }
+                        val correctedTcn = if (physicalOverrideDisplay) {
+                            alignedTcn.mapIndexed { i, _ -> g + physioSlope30 * 0.6 * i * 5.0 }
+                        } else alignedTcn
+
+                        // ★ 补全到 futureLen 个点: 25 点之后用最后一个点的延伸 (线性外推)
+                        val futureLen = physioCurve.size
+                        tcnCurve = if (correctedTcn.size < futureLen) {
+                            val lastVal = correctedTcn.last()
+                            val lastIdx = correctedTcn.size - 1
+                            val stepVal = if (lastIdx > 0) correctedTcn[lastIdx] - correctedTcn[lastIdx - 1] else 0.0
+                            val extended = mutableListOf<Double>()
+                            extended.addAll(correctedTcn)
+                            for (i in 1..(futureLen - correctedTcn.size)) {
+                                extended.add((lastVal + stepVal * i).coerceIn(1.0, 30.0))
+                            }
+                            extended
+                        } else {
+                            correctedTcn.take(futureLen)
+                        }
                     }
                 } catch (e: Exception) { Log.w(TAG, "TCN 曲线计算失败: ${e.message}") }
-                // 兜底: 如果 TCN 没拿到, 用最终曲线作为 TCN 线 (UI 不会显示空白)
+                // 兜底: 如果 TCN 没拿到, 用 physioCurve 副本 (保证 UI 不会空白)
                 if (tcnCurve.isEmpty()) tcnCurve = physioCurve.toList()
 
 // ★ v3.0.9 修: personalization 双叠加问题

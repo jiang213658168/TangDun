@@ -14,11 +14,15 @@ import kotlin.math.pow
  * 架构:
  *   TangDunApp.onCreate() → start() → 常驻Application Scope
  *   ↓
- *   四层学习:
- *     Layer 0 (EDOC):   每条误差→即时参数纠正 (新, ~30ms)
- *     Layer 1 (统计):   每条新血糖→OnlineLearner (轻量, ~100ms)
- *     Layer 2 (增量):   每12条→IncrementalLearner SGD (较重, ~500ms)
- *     Layer 3 (梯度):   DallaMan参数缓慢在线梯度 (~200ms, 低频)
+ *   四层学习 (★ v3.0.14 全部按数据量触发, 不再按时间):
+ *     Layer 0 (EDOC):   每条数据 → 即时纠错 (~30ms) — 数据量 = 1
+ *     Layer 1 (统计):   每条数据 → OnlineLearner (~100ms) — 数据量 = 1
+ *     Layer 2 (增量):   累积 50 条新数据 → IncrementalLearner SGD (~500ms)
+ *     Layer 3 (完整度): 累积 100 条新数据 → 检查数据完整度
+ *
+ * xlsx 导入流程:
+ *   importXlsx() → 批量插入 N 条 → processBatchImport(N条) 跑 EDOC
+ *   → notifyBatchImported(N) → 把 N 加到 pendingNewReadings → 达到阈值触发增量
  *
  * 数据质量系统:
  *   诚实查询mealDao/insulinDao判断数据完整度
@@ -33,6 +37,10 @@ class SelfLearningManager(private val context: Context) {
         @Volatile private var instance: SelfLearningManager? = null
         // ★ 修复 Smell 3: 单例初始化锁, 防止并发 init 导致 start() 被调用 2 次
         private val initLock = Any()
+
+        // ★ v3.0.14: 按数据量阈值
+        const val INCREMENTAL_BATCH_SIZE = 50      // 累积 50 条新数据 → 触发增量学习
+        const val COMPLETENESS_BATCH_SIZE = 100    // 累积 100 条新数据 → 触发完整度检查
 
         fun init(appContext: Context) {
             if (instance == null) {
@@ -120,6 +128,33 @@ class SelfLearningManager(private val context: Context) {
                 }
             }
         }
+
+        /**
+         * ★ v3.0.14: xlsx/csv 批量导入完成通知 — 把 N 条新数据计入按数据量触发的计数器
+         *   - 立即触发 EDOC 逐条纠错 (按数据量, 不靠 getLatestFlow 单条)
+         *   - 把 pendingNewReadings += count → 达到 50 触发 IncrementalLearner
+         *   - 把 pendingCompletenessChecks += count → 达到 100 触发完整度检查
+         */
+        fun notifyBatchImported(count: Int) {
+            instance?.let { inst ->
+                inst.pendingNewReadings += count
+                inst.pendingCompletenessChecks += count
+                inst.scope.launch {
+                    try {
+                        Log.i(TAG, "批量导入 ${count}条, pending增量=${inst.pendingNewReadings}, pending完整度=${inst.pendingCompletenessChecks}")
+                        // 立即触发一次完整度检查
+                        val (hasMeals, hasInsulin) = inst.checkDataCompleteness()
+                        inst.onlineLearner.updateDataCompleteness(hasMeals, hasInsulin)
+                        // 触发增量学习 (即使没攒够 50, 导入 N>=10 也强制跑一次)
+                        if (count >= 10) {
+                            inst.runIncrementalLearn()
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "批量导入学习失败: ${e.message}")
+                    }
+                }
+            }
+        }
     }
 
     private var scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -129,7 +164,11 @@ class SelfLearningManager(private val context: Context) {
     // ★ 修复 Bug 4: IncrementalLearner 需要真实 TCN 推理结果做训练样本
     private val tcnPredictor = TCNPredictor(context)
     private var tcnLoaded = false
+
+    // ★ v3.0.14: 按数据量触发增量学习, 不再按 readingCount % N 定时
     private var readingCount = 0
+    @Volatile private var pendingNewReadings = 0  // 累积的新读数, 达到 INCREMENTAL_BATCH_SIZE 触发增量学习
+    @Volatile private var pendingCompletenessChecks = 0  // 累积的新读数, 达到 COMPLETENESS_BATCH_SIZE 触发完整度检查
     // ★ v3.0.10 修: 用 Application.ActivityLifecycleCallbacks 实现 ProcessLifecycle
     //   (避免引入 lifecycle-process 依赖, Activity 计数 0→背景, 计数≥1→前台)
     private val lifecycleCallback = object : Application.ActivityLifecycleCallbacks {
@@ -240,7 +279,7 @@ class SelfLearningManager(private val context: Context) {
                 try {
                     readingCount++
 
-                    // ══════ L0: EDOC即时纠错 ══════
+                    // ══════ L0: EDOC即时纠错 — 每条数据触发 ══════
                     val baseParams = ensureBaseParams()
                     val quality = when (latest.source) {
                         "finger" -> 0.95
@@ -277,54 +316,70 @@ class SelfLearningManager(private val context: Context) {
                     val action = edocCorrector.onNewReading(
                         latest.value, quality, baseParams, edocCtx
                     )
-                    if (action != null && readingCount % 6 == 0) {  // 每30分钟打印一次
+                    // ★ v3.0.14: 按数据量打印 (每 10 条) — 不再按时间
+                    if (action != null && readingCount % 10 == 0) {
                         Log.d(TAG, "EDOC: ${action.timeHorizon} e=${String.format("%.1f", action.error)} " +
-                            "${action.errorType} → ${action.paramDeltas.size}参数已修正")
+                            "${action.errorType} → ${action.paramDeltas.size}参数已修正 (累计${edocCorrector.getStatus().totalCorrections}次)")
                     }
 
-                    // ══════ L1: 统计学习 ══════
-                    if (onlineLearner.learn(dao)) {
-                        if (readingCount % 12 == 0) {
-                            val (hasMeals, hasInsulin) = checkDataCompleteness()
-                            onlineLearner.updateDataCompleteness(hasMeals, hasInsulin)
-                        }
-                    }
+                    // ══════ L1: 统计学习 — 每条数据触发 ══════
+                    onlineLearner.learn(dao)
 
-                    // ══════ L2+L3: 增量SGD + 数据质量检查 ══════
-                    if (readingCount % 12 == 0) {
-                        val (hasMeals, hasInsulin) = checkDataCompleteness()
-                        onlineLearner.updateDataCompleteness(hasMeals, hasInsulin)
-                        // ★ 修复 Bug 4: 传入真实 TCN 推理回调, 让 IncrementalLearner 拿到真的 tcnParams
-                        // ★ v3.0.9 修: 传入 24h 饮食/胰岛素 288 点稀疏数组, 让残差学习器看到饮食事件
-                        val now2 = System.currentTimeMillis()
-                        val bhArr = DoubleArray(288) { 0.0 }
-                        val chArr = DoubleArray(288) { 0.0 }
-                        val recentInsulin = db.insulinDao().getSince(now2 - 24 * 3600_000)
-                        val recentMeals = db.mealDao().getByTimeRange(now2 - 24 * 3600_000, now2)
-                        for (r in recentInsulin) {
-                            val i = (287 - ((now2 - r.timestamp) / 300000).toInt())
-                            if (i in 0..287) bhArr[i] += r.doseUnits
-                        }
-                        for (m in recentMeals) {
-                            val i = (287 - ((now2 - m.timestamp) / 300000).toInt())
-                            if (i in 0..287) chArr[i] += m.totalCarbs
-                        }
-                        incrementalLearner.periodicLearn(
-                            dao,
-                            { features, currentGlucose ->
-                                if (tcnLoaded) tcnPredictor.predict(features) else null
-                            },
-                            bhArr,
-                            chArr
-                        )
-                        Log.d(TAG, "增量学习@${readingCount}条 | " +
+                    // ══════ 按数据量触发增量学习 + 完整度检查 (v3.0.14) ══════
+                    pendingNewReadings++
+                    pendingCompletenessChecks++
+                    if (pendingNewReadings >= INCREMENTAL_BATCH_SIZE) {
+                        pendingNewReadings = 0
+                        runIncrementalLearn()
+                        Log.d(TAG, "增量学习@累计${readingCount}条 | " +
                             "EDOC:${edocCorrector.getStatus().totalCorrections}次 | " +
                             "C:${String.format("%.1f", onlineLearner.getPersonalParams().dataCompleteness)}")
+                    }
+                    if (pendingCompletenessChecks >= COMPLETENESS_BATCH_SIZE) {
+                        pendingCompletenessChecks = 0
+                        val (hasMeals, hasInsulin) = checkDataCompleteness()
+                        onlineLearner.updateDataCompleteness(hasMeals, hasInsulin)
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "学习失败: ${e.message}")
                 }
             }
+        }
+    }
+
+    /**
+     * 增量学习内部函数 — 同时被 collect loop 和 notifyBatchImported 调用
+     * 构造 24h 饮食/胰岛素 288 点稀疏数组 → 调 IncrementalLearner.periodicLearn
+     */
+    private suspend fun runIncrementalLearn() {
+        try {
+            val db = com.tangdun.app.TangDunApp.getDatabase(context)
+            val dao = db.glucoseDao()
+            val now = System.currentTimeMillis()
+            val bhArr = DoubleArray(288) { 0.0 }
+            val chArr = DoubleArray(288) { 0.0 }
+            val recentInsulin = db.insulinDao().getSince(now - 24 * 3600_000)
+            val recentMeals = db.mealDao().getByTimeRange(now - 24 * 3600_000, now)
+            for (r in recentInsulin) {
+                val i = (287 - ((now - r.timestamp) / 300000).toInt())
+                if (i in 0..287) bhArr[i] += r.doseUnits
+            }
+            for (m in recentMeals) {
+                val i = (287 - ((now - m.timestamp) / 300000).toInt())
+                if (i in 0..287) chArr[i] += m.totalCarbs
+            }
+            incrementalLearner.periodicLearn(
+                dao,
+                { features, currentGlucose ->
+                    if (tcnLoaded) tcnPredictor.predict(features) else null
+                },
+                bhArr,
+                chArr
+            )
+            Log.d(TAG, "增量学习@触发 | EDOC:${edocCorrector.getStatus().totalCorrections}次 | " +
+                "C:${String.format("%.1f", onlineLearner.getPersonalParams().dataCompleteness)}")
+        } catch (e: Exception) {
+            Log.w(TAG, "runIncrementalLearn失败: ${e.message}")
         }
     }
 

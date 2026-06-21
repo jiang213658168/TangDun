@@ -81,7 +81,9 @@ class FusionPredictor(private val context: Context) {
         bolusHistory: DoubleArray? = null,
         carbHistory: DoubleArray? = null,
         heartRateHistory: DoubleArray? = null,
-        stepHistory: DoubleArray? = null
+        stepHistory: DoubleArray? = null,
+        iob: Double = 10.0,
+        params: DallaManModel.Parameters = DallaManModel.Parameters.forUser()
     ): FusionResult {
         // 1. 计算动态权重
         val (tcnWeight, physioWeight) = calculateWeights(glucoseHistory.size)
@@ -92,9 +94,14 @@ class FusionPredictor(private val context: Context) {
             bolusHistory, carbHistory, heartRateHistory, stepHistory
         )
 
-        // 3. DallaMan生理模型预测（从288点数组近似提取进食/注射事件）
+        // 3. DallaMan生理模型预测（用真实参数, 跟 Path A 一致）
         val physioCurve = predictWithDallaMan(
-            currentGlucose, carbHistory, bolusHistory
+            currentGlucose = currentGlucose,
+            carbHistory = carbHistory,
+            bolusHistory = bolusHistory,
+            iob = iob,
+            params = params,
+            horizonMinutes = 180
         )
 
         // 4. BMA融合
@@ -192,11 +199,19 @@ class FusionPredictor(private val context: Context) {
      *
      * 从288点稀疏数组中提取进食和胰岛素事件，
      * 转换为DallaManModel的MealInput/InsulinInput格式
+     *
+     * ★ v3.0.14 修复: 之前硬编码 currentInsulin=10.0 / horizonMinutes=120 / params=默认 65kg
+     *   → 与 PredictionViewModel 主路径的真实参数 (用户实际体重/ISF/IOB/horizon=180min) 不一致
+     *   → TCN 看到的"参考基线"跟 Path A 的 DallaMan 完全两套 → 方向冲突假象
+     *   → 现在接收真实 params + iob + horizonMinutes, 三路径用同一份基线
      */
     private fun predictWithDallaMan(
         currentGlucose: Double,
         carbHistory: DoubleArray?,
-        bolusHistory: DoubleArray?
+        bolusHistory: DoubleArray?,
+        iob: Double = 10.0,                  // ★ 真实 IOB (来自 SelfLearningManager)
+        params: DallaManModel.Parameters = DallaManModel.Parameters.forUser(),  // ★ 真实用户参数
+        horizonMinutes: Int = 180            // ★ 跟 Path A 一致 (180min @ 5min = 36 点)
     ): List<Double> {
         return try {
             // 从carbHistory提取进食事件（非零点簇 → 进食时刻和碳水克数）
@@ -234,17 +249,18 @@ class FusionPredictor(private val context: Context) {
                 }
             }
 
+            // ★ v3.0.14: currentInsulin 用真实 IOB, params 用真实用户参数, horizon 跟主路径一致
             val curve = physiological.predict(
                 currentGlucose = currentGlucose,
-                currentInsulin = 10.0,
+                currentInsulin = iob,           // ★ 之前硬编码 10.0
                 meals = meals,
                 insulins = insulins,
-                horizonMinutes = 120,
+                horizonMinutes = horizonMinutes, // ★ 之前硬编码 120, 跟主路径 180 不一致
                 stepMinutes = 5,
-                params = DallaManModel.Parameters.forUser()
+                params = params                  // ★ 之前用默认 forUser() = 65kg/ISF 1.5
             )
 
-            Log.d(TAG, "DallaMan预测: ${meals.size}餐 ${insulins.size}针 → ${curve.size}点")
+            Log.d(TAG, "DallaMan预测: ${meals.size}餐 ${insulins.size}针 → ${curve.size}点 (iob=${"%.1f".format(iob)}, bw=${"%.1f".format(params.bodyWeight)})")
             curve
         } catch (e: Exception) {
             Log.e(TAG, "DallaMan预测异常: ${e.message}")

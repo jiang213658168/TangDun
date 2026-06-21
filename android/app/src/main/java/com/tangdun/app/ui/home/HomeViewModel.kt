@@ -133,6 +133,9 @@ class HomeViewModel @Inject constructor(
                         Log.i("HomeVM", "导入后统计学习: ${learner.getStageDescription()}")
                     } catch (e: Exception) { Log.w("HomeVM", "导入后学习失败: ${e.message}") }
 
+                    // ★ v3.0.14: 通知 SelfLearningManager 批量导入 — 触发 EDOC 逐条 + 按数据量触发增量学习
+                    com.tangdun.app.domain.algorithm.SelfLearningManager.notifyBatchImported(result.imported.toInt())
+
                     // ★ EDOC批量处理: 对导入数据逐条模拟即时纠错
                     _uiState.value = _uiState.value.copy(error = "即时纠错中...")
                     try {
