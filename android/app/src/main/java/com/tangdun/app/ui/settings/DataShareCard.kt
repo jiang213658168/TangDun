@@ -192,7 +192,9 @@ private fun nDaysAgoStartMs(n: Int): Long {
 private suspend fun generateTodayReport(context: Context): String = withContext(Dispatchers.IO) {
     val df = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
     val db = TangDunApp.getDatabase(context)
+    val settings = com.tangdun.app.util.SettingsManager(context)
     val dayStart = todayStartMs()
+    val userName = settings.getUserName().ifBlank { "用户" }
 
     val glucoseRecords = db.glucoseDao().getTodayRecords(dayStart)
     val mealRecords = db.mealDao().getTodayRecords(dayStart)
@@ -202,6 +204,7 @@ private suspend fun generateTodayReport(context: Context): String = withContext(
     val sb = StringBuilder()
     sb.appendLine("═══════════════════════════════")
     sb.appendLine("       糖盾 - 今日血糖报告")
+    sb.appendLine("报告人: $userName")
     sb.appendLine("生成时间: ${df.format(Date())}")
     sb.appendLine("═══════════════════════════════")
     sb.appendLine()
@@ -270,8 +273,11 @@ private suspend fun generateWeekReport(context: Context): String = withContext(D
     val exercise = db.exerciseDao().getByTimeRange(weekStart, now)
 
     val sb = StringBuilder()
+    val settings = com.tangdun.app.util.SettingsManager(context)
+    val userName = settings.getUserName().ifBlank { "用户" }
     sb.appendLine("═══════════════════════════════")
     sb.appendLine("       糖盾 - 本周血糖报告")
+    sb.appendLine("报告人: $userName")
     sb.appendLine("时间范围: ${df.format(Date(weekStart))} 至 ${df.format(Date(now))}")
     sb.appendLine("═══════════════════════════════")
     sb.appendLine()
@@ -323,12 +329,15 @@ private suspend fun generateWeekReport(context: Context): String = withContext(D
 private suspend fun generateDoctorReport(context: Context): String = withContext(Dispatchers.IO) {
     val df = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     val db = TangDunApp.getDatabase(context)
+    val settings = com.tangdun.app.util.SettingsManager(context)
+    val userName = settings.getUserName().ifBlank { "用户" }
     val start = nDaysAgoStartMs(30)
     val now = System.currentTimeMillis()
 
     val sb = StringBuilder()
     sb.appendLine("═══════════════════════════════════════════════")
     sb.appendLine("       糖盾 - 30天临床摘要")
+    sb.appendLine("报告人: $userName")
     sb.appendLine("时间范围: ${df.format(Date(start))} 至 ${df.format(Date(now))}")
     sb.appendLine("═══════════════════════════════════════════════")
     sb.appendLine()

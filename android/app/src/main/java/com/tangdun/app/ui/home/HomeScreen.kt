@@ -41,6 +41,9 @@ import com.tangdun.app.ui.components.ModernTopBar
 import com.tangdun.app.ui.components.SectionHeader
 import com.tangdun.app.ui.components.QuickActionRow
 import com.tangdun.app.ui.components.QuickAction
+import com.tangdun.app.ui.components.rememberGlucoseFormatter
+import com.tangdun.app.ui.components.rememberWeightFormatter
+import com.tangdun.app.ui.components.rememberGlucoseUnitLabel
 import com.tangdun.app.ui.theme.*
 import java.util.Calendar
 
@@ -88,6 +91,16 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showAddGlucoseDialog by remember { mutableStateOf(false) }
+    // ★ v3.0.11: 把 getGlucoseUnit / getHeightCm 真正生效 (血糖按设置切换单位)
+    val gFmt = rememberGlucoseFormatter()
+    val gUnit = rememberGlucoseUnitLabel()
+    val wFmt = rememberWeightFormatter()
+    // ★ v3.0.11: getUserName 真用 — AppBar 问候
+    val homeCtx = LocalContext.current
+    val settingsMgr = remember(homeCtx) { com.tangdun.app.util.SettingsManager(homeCtx) }
+    val userName = remember(settingsMgr) { settingsMgr.getUserName() }
+    // ★ v3.0.11: getEmergencyContact / SOS 拨号
+    val emergencyContact = settingsMgr.getEmergencyContactPhone()
 
     Column(
         modifier = Modifier
@@ -101,7 +114,7 @@ fun HomeScreen(
         val isToday = selStr == todayStr
 
         ModernTopBar(
-            title = "糖盾",
+            title = if (userName.isNotBlank()) "糖盾 · $userName" else "糖盾",
             subtitle = if (isToday) "今天 $selStr · 守护血糖" else "$selStr · 历史数据",
             actions = {
                 IconButton(onClick = { navController?.navigate("chat") }) {
@@ -115,6 +128,56 @@ fun HomeScreen(
                 }
             }
         )
+
+        // ★ v3.0.11: SOS 紧急拨号 (把 getEmergencyContactPhone 真用上)
+        //   没配联系人时按钮隐藏, 配了显示紧急联系人在哪里
+        if (emergencyContact.isNotBlank()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFFFFEBEE))
+                    .clickable {
+                        // ★ v3.0.11 真用: ACTION_DIAL 直接拨打电话 (需要用户在拨号界面点拨打)
+                        val intent = android.content.Intent(android.content.Intent.ACTION_DIAL).apply {
+                            data = android.net.Uri.parse("tel:$emergencyContact")
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        try {
+                            homeCtx.startActivity(intent)
+                        } catch (_: Exception) {}
+                    }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Phone,
+                    contentDescription = null,
+                    tint = Color(0xFFD32F2F),
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "紧急呼叫 (长按直接拨打)",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFD32F2F)
+                    )
+                    Text(
+                        emergencyContact,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF666666)
+                    )
+                }
+                Icon(
+                    Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = Color(0xFFD32F2F)
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -225,8 +288,7 @@ fun HomeScreen(
             InsightStatCard(
                 icon = Icons.Default.Analytics,
                 label = "平均血糖",
-                value = String.format("%.1f", uiState.avgGlucose ?: 0.0),
-                unit = "mmol/L",
+                value = gFmt(uiState.avgGlucose ?: 0.0),
                 accentColor = glucoseColor(uiState.avgGlucose ?: 5.0),
                 modifier = Modifier.weight(1f)
             )
@@ -239,6 +301,27 @@ fun HomeScreen(
                 modifier = Modifier.weight(1f)
             )
         }
+
+        // ★ v3.0.11: BMI 卡片 (把 getHeightCm 真用上)
+        Spacer(modifier = Modifier.height(8.dp))
+        val heightCm = remember(settingsMgr) { settingsMgr.getHeightCm() }
+        val weightKg = settingsMgr.getWeightKg().toDouble()
+        val bmi = com.tangdun.app.ui.components.calcBMI(weightKg, heightCm)
+        val bmiCat = com.tangdun.app.ui.components.bmiCategory(bmi)
+        InsightStatCard(
+            icon = Icons.Default.MonitorWeight,
+            label = "BMI ($bmiCat)",
+            value = String.format("%.1f", bmi),
+            unit = "kg/m²",
+            accentColor = when (bmiCat) {
+                "正常" -> Success
+                "偏瘦" -> MaterialTheme.colorScheme.tertiary
+                else -> Warning
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+        )
 
         Spacer(modifier = Modifier.height(20.dp))
 
@@ -600,6 +683,7 @@ fun TodayStatsCard(
     tir: Double?,
     recordCount: Int
 ) {
+    val gFmt = rememberGlucoseFormatter()
     com.tangdun.app.ui.components.TangDunCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -621,8 +705,8 @@ fun TodayStatsCard(
             ) {
                 StatItem(
                     label = "平均血糖",
-                    value = if (avgGlucose != null) String.format("%.1f", avgGlucose) else "--",
-                    unit = "mmol/L"
+                    value = if (avgGlucose != null) gFmt(avgGlucose) else "--",
+                    unit = null  // gFmt 已含单位
                 )
                 StatItem(
                     label = "TIR",
@@ -713,6 +797,8 @@ fun GlucoseRecordItem(
     onDelete: () -> Unit,
     onEdit: (Double, Long) -> Unit
 ) {
+    val gFmt = rememberGlucoseFormatter()
+    val gUnit = rememberGlucoseUnitLabel()
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showEditDialog by remember { mutableStateOf(false) }
 
@@ -743,7 +829,7 @@ fun GlucoseRecordItem(
 
         // 血糖值
         Text(
-            text = String.format("%.1f", record.value),
+            text = gFmt(record.value),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = when {
@@ -751,11 +837,6 @@ fun GlucoseRecordItem(
                 record.value > 10.0 -> GlucoseHigh
                 else -> GlucoseNormal
             }
-        )
-        Text(
-            text = " mmol/L",
-            style = MaterialTheme.typography.bodySmall,
-            color = TextSecondary
         )
 
         // 场景
@@ -846,7 +927,7 @@ fun GlucoseRecordItem(
                     OutlinedTextField(
                         value = newValue,
                         onValueChange = { newValue = it },
-                        label = { Text("血糖值 (mmol/L)") },
+                        label = { Text("血糖值 ($gUnit)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -928,7 +1009,7 @@ fun GlucoseRecordItem(
 }
 
 @Composable
-fun StatItem(label: String, value: String, unit: String) {
+fun StatItem(label: String, value: String, unit: String? = null) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
@@ -936,11 +1017,13 @@ fun StatItem(label: String, value: String, unit: String) {
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
         )
-        Text(
-            text = unit,
-            style = MaterialTheme.typography.bodySmall,
-            color = TextHint
-        )
+        if (unit != null) {
+            Text(
+                text = unit,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextHint
+            )
+        }
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
@@ -955,6 +1038,8 @@ fun AddGlucoseDialog(
     onDismiss: () -> Unit,
     onConfirm: (value: Double, source: String, timestamp: Long, scene: String) -> Unit
 ) {
+    val gFmt = rememberGlucoseFormatter()
+    val gUnit = rememberGlucoseUnitLabel()
     var glucoseValue by remember { mutableStateOf("") }
     var source by remember { mutableStateOf("finger") }
     var scene by remember { mutableStateOf("other") }
@@ -996,8 +1081,8 @@ fun AddGlucoseDialog(
                 OutlinedTextField(
                     value = glucoseValue,
                     onValueChange = { glucoseValue = it },
-                    label = { Text("血糖值 (mmol/L)") },
-                    placeholder = { Text("例如: 6.5") },
+                    label = { Text("血糖值 ($gUnit)") },
+                    placeholder = { Text(if (gUnit == "mg/dL") "例如: 117" else "例如: 6.5") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -1132,7 +1217,7 @@ fun AddGlucoseDialog(
 
                 // 参考范围
                 Text(
-                    text = "正常范围: 3.9-10.0 mmol/L",
+                    text = "正常范围: ${gFmt(3.9)} - ${gFmt(10.0)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextHint
                 )

@@ -201,7 +201,8 @@ class FoodAssistantHelper(private val context: Context) {
 
         try {
             // ★ v3.0.8: 改用 AIClient.simpleChat, 走 DeepSeek 思考模式
-            val systemPrompt = "你是糖尿病饮食顾问, 基于仿真结果给出温和专业的建议, 不要堆术语。"
+            val systemPrompt = "你是糖尿病饮食顾问, 基于仿真结果给出温和专业的建议, 不要堆术语。" +
+                nameSuffix()
             val response = aiClient.simpleChat(systemPrompt, prompt)
             response.getOrNull() ?: "仿真完成, 但 AI 建议生成失败。"
         } catch (e: Exception) {
@@ -238,7 +239,8 @@ class FoodAssistantHelper(private val context: Context) {
         val prompt = buildRecommendationPrompt(ctx)
 
         // ★ v3.0.8: 走 AIClient.simpleChat (DeepSeek 思考模式 + 同款 OkHttp)
-        val systemPrompt = "你是糖尿病饮食顾问, 给出简洁实用的食物推荐, 控制在 250 字以内, 必须给出具体克数。"
+        val systemPrompt = "你是糖尿病饮食顾问, 给出简洁实用的食物推荐, 控制在 250 字以内, 必须给出具体克数。" +
+                nameSuffix()
         val response = aiClient.simpleChat(systemPrompt, prompt)
 
         MealRecommendation(
@@ -310,7 +312,8 @@ class FoodAssistantHelper(private val context: Context) {
         val prompt = buildRecipePrompt(foodName, ctx, nutrition, additionalContext)
 
         // ★ v3.0.8: 走 AIClient.simpleChat (DeepSeek 思考模式 + 同款 OkHttp)
-        val systemPrompt = "你是糖尿病饮食顾问, 根据用户的血糖和体重数据, 给出适合的做法和具体克数。"
+        val systemPrompt = "你是糖尿病饮食顾问, 根据用户的血糖和体重数据, 给出适合的做法和具体克数。" +
+                nameSuffix()
         val response = aiClient.simpleChat(systemPrompt, prompt)
 
         MealRecipe(
@@ -417,6 +420,14 @@ class FoodAssistantHelper(private val context: Context) {
             carbRatio = carbRatio,
             activityLevel = 0.5
         )
+    }
+
+    /**
+     * ★ v3.0.11: 在 systemPrompt 末尾加用户姓名 (让 AI 称呼用户)
+     */
+    private fun nameSuffix(): String {
+        val name = settingsManager.getUserName()
+        return if (name.isNotBlank()) " 用户称呼: \"$name\"" else ""
     }
 }
 

@@ -439,10 +439,23 @@ class AIClient(private val settingsManager: SettingsManager) {
 
     // ============== System Prompt ==============
 
-    private fun buildSystemPrompt(): String = """
+    private fun buildSystemPrompt(): String {
+        val userName = settingsManager.getUserName()
+        val weight = settingsManager.getWeightKg()
+        val diabetesType = settingsManager.getDiabetesType()  // 1=T1DM, 2=T2DM
+        val userContext = if (userName.isNotBlank()) {
+            """
+            ## 用户信息
+            - 姓名: $userName (请在回复中称呼用户姓名, 提升亲切感)
+            - 体重: $weight kg
+            - 糖尿病类型: ${if (diabetesType == 1) "1 型 (T1DM, 内源胰岛素 = 0)" else "2 型 (T2DM)"}
+            """
+        } else ""
+
+        return """
 你是「糖盾 TangDun」糖尿病管理 App 的 AI 助手 - 一个真正的 Agent。
 你能调用工具来代替用户操作 App。用户能做的所有事情, 你都能做。
-
+$userContext
 ## 核心原则
 1. **必须调用工具**: 当用户说"记录血糖7.5" / "打开预测" / "今天吃了什么" 等, 必须调用对应工具, 不能只回答文字
 2. **多次调用**: 一个用户输入可能包含多个动作, 调用多个工具
@@ -501,6 +514,7 @@ ${java.util.Date()} (epoch ms = ${System.currentTimeMillis()})
 - 保持简洁 (1-3 句话), 不要冗长
 - 涉及隐私/敏感信息保持专业
 """.trimIndent()
+    }
 
     // ============== Tools Schema ==============
 

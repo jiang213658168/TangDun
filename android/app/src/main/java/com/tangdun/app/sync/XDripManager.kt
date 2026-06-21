@@ -3,6 +3,7 @@ package com.tangdun.app.sync
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import com.tangdun.app.util.SettingsManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -197,6 +198,18 @@ class XDripManager(private val context: Context) {
     }
 
     /**
+     * 解析 REST API URL — 优先读设置里的 CGM 设备地址
+     */
+    private fun resolveApiUrl(): String {
+        return try {
+            val settings = SettingsManager(context)
+            settings.getCgmDeviceAddress().ifBlank { DEFAULT_API_URL }
+        } catch (e: Exception) {
+            DEFAULT_API_URL
+        }
+    }
+
+    /**
      * 自动检测并获取最新血糖
      *
      * 按优先级尝试：
@@ -211,8 +224,10 @@ class XDripManager(private val context: Context) {
             return fromProvider
         }
 
-        // 尝试REST API
-        val fromApi = getLatestFromApi()
+        // 尝试REST API (URL 优先读设置, 否则用默认 localhost:17580)
+        val apiUrl = resolveApiUrl()
+        Log.d(TAG, "尝试 REST API: $apiUrl")
+        val fromApi = getLatestFromApi(apiUrl)
         if (fromApi != null) {
             Log.d(TAG, "从REST API获取血糖: ${fromApi.valueMmol} mmol/L")
             return fromApi
@@ -233,8 +248,9 @@ class XDripManager(private val context: Context) {
             return fromProvider
         }
 
-        // 尝试REST API
-        val fromApi = getHistoryFromApi(hours = hours)
+        // 尝试REST API (URL 优先读设置)
+        val apiUrl = resolveApiUrl()
+        val fromApi = getHistoryFromApi(apiUrl = apiUrl, hours = hours)
         if (fromApi.isNotEmpty()) {
             Log.d(TAG, "从REST API获取${fromApi.size}条历史数据")
             return fromApi
@@ -258,9 +274,10 @@ class XDripManager(private val context: Context) {
             // Content Provider不可用
         }
 
-        // 检查REST API
+        // 检查REST API (URL 优先读设置)
+        val apiUrl = resolveApiUrl()
         try {
-            val url = URL("$DEFAULT_API_URL/sgv.json?count=1")
+            val url = URL("$apiUrl/sgv.json?count=1")
             val connection = url.openConnection() as HttpURLConnection
             connection.connectTimeout = 3000
             connection.readTimeout = 3000

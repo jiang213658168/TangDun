@@ -68,7 +68,13 @@ class SettingsManager(private val context: Context) {
 
     fun setGlucoseUnit(unit: String) {
         sharedPref.edit().putString("glucose_unit", unit).apply()
+        // ★ v3.0.11: 通知所有 collect 这个 Flow 的 Composable 自动刷新
+        _glucoseUnitFlow.value = unit
     }
+
+    // ★ v3.0.11: 响应式血糖单位, Composable 可订阅变化自动刷新
+    private val _glucoseUnitFlow = MutableStateFlow(getGlucoseUnit())
+    val glucoseUnitFlow: StateFlow<String> = _glucoseUnitFlow
 
     /** mmol/L 转 mg/dL */
     fun mmolToMgdl(mmol: Double): Double = mmol * 18.0

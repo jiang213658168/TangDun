@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tangdun.app.domain.algorithm.ReportGenerator
+import com.tangdun.app.ui.components.rememberGlucoseFormatter
 import com.tangdun.app.ui.theme.*
 
 /**
@@ -27,6 +28,8 @@ fun ReportScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(0) }
+    // ★ v3.0.11: 把 getGlucoseUnit 真用上 (报告里的血糖按用户单位显示)
+    val gFmt = rememberGlucoseFormatter()
 
     Column(modifier = Modifier.fillMaxSize()) {
         // 顶部标题
@@ -68,6 +71,7 @@ fun ReportScreen(
 
 @Composable
 fun DailyReportContent(report: ReportGenerator.DailyReport?) {
+    val gFmt = rememberGlucoseFormatter()
     if (report == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("暂无数据", color = TextHint)
@@ -83,10 +87,10 @@ fun DailyReportContent(report: ReportGenerator.DailyReport?) {
     ) {
         // 血糖统计
         ReportCard("血糖统计") {
-            ReportRow("平均血糖", "${String.format("%.1f", report.avgGlucose)} mmol/L")
-            ReportRow("最低血糖", "${String.format("%.1f", report.minGlucose)} mmol/L")
-            ReportRow("最高血糖", "${String.format("%.1f", report.maxGlucose)} mmol/L")
-            ReportRow("血糖标准差", "${String.format("%.2f", report.stdGlucose)} mmol/L")
+            ReportRow("平均血糖", gFmt(report.avgGlucose))
+            ReportRow("最低血糖", gFmt(report.minGlucose))
+            ReportRow("最高血糖", gFmt(report.maxGlucose))
+            ReportRow("血糖标准差", "${String.format("%.2f", report.stdGlucose * if (gFmt(1.0).contains("mg")) 18.0 else 1.0)}" + if (gFmt(1.0).contains("mg")) " mg/dL" else " mmol/L")
             ReportRow("HbA1c估算", "${String.format("%.1f", report.hba1cEstimate)}%")
         }
 
@@ -141,6 +145,7 @@ fun DailyReportContent(report: ReportGenerator.DailyReport?) {
 
 @Composable
 fun WeeklyReportContent(report: ReportGenerator.WeeklyReport?) {
+    val gFmt = rememberGlucoseFormatter()
     if (report == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("暂无数据", color = TextHint)
@@ -156,7 +161,7 @@ fun WeeklyReportContent(report: ReportGenerator.WeeklyReport?) {
     ) {
         ReportCard("本周概览") {
             ReportRow("平均TIR", "${String.format("%.1f", report.avgTir)}%")
-            ReportRow("平均血糖", "${String.format("%.1f", report.avgGlucose)} mmol/L")
+            ReportRow("平均血糖", gFmt(report.avgGlucose))
             ReportRow("血糖变异性", "${String.format("%.2f", report.glucoseVariability)}")
         }
 
@@ -179,6 +184,7 @@ fun WeeklyReportContent(report: ReportGenerator.WeeklyReport?) {
 
 @Composable
 fun MonthlyReportContent(report: ReportGenerator.MonthlyReport?) {
+    val gFmt = rememberGlucoseFormatter()
     if (report == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("暂无数据", color = TextHint)
@@ -194,7 +200,7 @@ fun MonthlyReportContent(report: ReportGenerator.MonthlyReport?) {
     ) {
         ReportCard("${report.year}年${report.month}月报告") {
             ReportRow("平均TIR", "${String.format("%.1f", report.avgTir)}%")
-            ReportRow("平均血糖", "${String.format("%.1f", report.avgGlucose)} mmol/L")
+            ReportRow("平均血糖", gFmt(report.avgGlucose))
             ReportRow("HbA1c估算", "${String.format("%.1f", report.hba1cEstimate)}%")
         }
 

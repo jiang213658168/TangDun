@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tangdun.app.ui.components.*
+import com.tangdun.app.ui.components.rememberGlucoseFormatter
 import com.tangdun.app.ui.theme.*
 
 /**
@@ -42,6 +43,8 @@ fun PredictionScreen(
     viewModel: PredictionViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    // ★ v3.0.11: 把 getGlucoseUnit 真用上 (按用户设置切 mmol/L / mg/dL)
+    val gFmt = rememberGlucoseFormatter()
 
     Column(
         modifier = Modifier
@@ -238,6 +241,7 @@ private fun LegendDot(color: androidx.compose.ui.graphics.Color, label: String) 
 
 @Composable
 private fun PeakInfoCard(peakValue: Double, peakMinute: Int, predicted120min: Double?) {
+    val gFmt = rememberGlucoseFormatter()
     val color = when {
         peakValue > 13.9 -> GlucoseSevereHigh
         peakValue > 10.0 -> GlucoseHigh
@@ -277,21 +281,14 @@ private fun PeakInfoCard(peakValue: Double, peakMinute: Int, predicted120min: Do
                 )
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
-                        text = String.format("%.1f", peakValue),
+                        text = gFmt(peakValue),
                         style = MaterialTheme.typography.headlineMedium,
                         color = color,
                         fontWeight = FontWeight.Bold
                     )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        text = "mmol/L",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    )
                 }
                 Text(
-                    text = "$peakMinute 分钟后 · 2h 后: ${predicted120min?.let { String.format("%.1f", it) } ?: "--"} mmol/L",
+                    text = "$peakMinute 分钟后 · 2h 后: ${predicted120min?.let { gFmt(it) } ?: "--"}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

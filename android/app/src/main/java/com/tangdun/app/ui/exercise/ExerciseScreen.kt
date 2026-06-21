@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tangdun.app.data.local.entity.ExerciseRecord
 import com.tangdun.app.ui.components.DateTimePickerDialog
+import com.tangdun.app.ui.components.rememberGlucoseFormatter
 import com.tangdun.app.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -38,6 +39,8 @@ fun ExerciseScreen(
     viewModel: ExerciseViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    // ★ v3.0.11: getGlucoseUnit 真用
+    val gFmt = rememberGlucoseFormatter()
     var showAddDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val exerciseDao = remember(context) {
@@ -406,6 +409,7 @@ fun ExercisePrescriptionCard(
     expectedDrop: Double,
     notes: String
 ) {
+    val gFmt = rememberGlucoseFormatter()
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -459,7 +463,7 @@ fun ExercisePrescriptionCard(
 
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = String.format("预计血糖下降 %.1f mmol/L", expectedDrop),
+                text = "预计血糖下降 ${gFmt(expectedDrop)}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary
             )
