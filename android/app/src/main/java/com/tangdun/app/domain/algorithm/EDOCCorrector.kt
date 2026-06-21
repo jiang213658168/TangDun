@@ -42,7 +42,9 @@ class EDOCCorrector(private val context: Context) {
         private const val MAX_DAILY_RATIO = 0.10    // 一天最多变10%
 
         // 误差门槛
-        private const val NOISE_FLOOR    = 0.3    // mmol/L, 最小噪声
+        // ★ v3.0.13 修: NOISE_FLOOR 0.3 → 0.15 (CGM 真实 MARD 9% 在 8mmol 是 0.72, 阈值 0.39 太严,
+        //   正常 0.3-0.5 mmol 误差全被拒 → totalCorrections 永远是 0)
+        private const val NOISE_FLOOR    = 0.15   // mmol/L, 最小噪声
         private const val MAX_ERROR      = 8.0    // mmol/L, 异常大误差
         private const val SENSOR_MARD    = 0.09   // CGM传感器典型MARD
 
@@ -171,6 +173,11 @@ class EDOCCorrector(private val context: Context) {
     // 方向追踪器 (记录最近8次修正的符号)
     private val directionTracker = mutableListOf<Int>()
 
+    // ★ v3.0.13: 上次实际读数 — 用于没有预测缓存时线性外推生成伪预测
+    //   即使用户从未打开过预测页面, EDOC 也能每条数据都纠一次
+    @Volatile private var lastReadingValue: Double = Double.NaN
+    @Volatile private var lastReadingTime: Long = 0L
+
     // ★ 线程安全锁: errorHistory和directionTracker同时在IO(写)和UI(读)访问
     private val trackerLock = Any()
 
@@ -264,7 +271,7 @@ class EDOCCorrector(private val context: Context) {
             dailyResetDay = todayDay
         }
 
-        // 检查三个时域的预测缓存
+        // 检查三个时域的预测缓存 — 每个时域单独查自己时段的预测 (容差 90 分钟)
         val results = mutableListOf<CorrectionAction?>()
         results.add(checkAndCorrect(now - 5 * 60_000,  currentGlucose, qualityScore, baseParams, context, "5min",  1))
         results.add(checkAndCorrect(now - 30 * 60_000, currentGlucose, qualityScore, baseParams, context, "30min", 6))
@@ -272,6 +279,13 @@ class EDOCCorrector(private val context: Context) {
 
         // 返回最近一次有效修正
         val validResults = results.filterNotNull()
+
+        // ★ v3.0.13: 记录本次读数, 供下次 fallback 时线性外推用
+        if (currentGlucose in 1.0..30.0) {
+            lastReadingValue = currentGlucose
+            lastReadingTime = now
+        }
+
         if (validResults.isNotEmpty()) {
             lastAction = validResults.last()
             persistState()
@@ -450,8 +464,8 @@ class EDOCCorrector(private val context: Context) {
     /**
      * 对单个时域做误差检查和参数修正 (实时模式：查预测缓存)
      *
-     * 如果缓存为空(PredictionScreen从未打开过)→用单步模型生成伪预测作为回退
-     * 确保EDOC即使用户只使用HomeScreen也能工作
+     * 如果缓存为空(PredictionScreen从未打开过)→用上次读数线性外推作为回退
+     * 确保EDOC即使用户只使用HomeScreen也能"每条数据纠一次"
      */
     private fun checkAndCorrect(
         predictTime: Long, actualValue: Double, quality: Double,
@@ -461,19 +475,37 @@ class EDOCCorrector(private val context: Context) {
         val cached = synchronized(predictionCache) { findNearestPrediction(predictTime) }
 
         val error = if (cached != null) {
+            // 有真实预测: 误差 = 实际 - 预测
             actualValue - cached.atStep(step)
         } else {
-            // ★ v3.0.9 修: 之前用 actualValue 当起点跑 5min 一步 → syntheticPred ≈ actualValue → error ≈ 0 → 永远学不到东西
-            //   现在 fallback 时按 step 实际推对应时长 (step=1→5min, step=6→30min, step=12→60min)
-            //   起点改为: 5min 前 = currentGlucose 的 t-(step*5) 分钟前的近似值 (无法拿到, 用 currentGlucose 本身)
-            //   真实可改进: 把 prevReading 缓存进 EDOC state, 此处用 actualValue 已是当前, 误差评估仍近似 0
-            //   → 折中方案: fallback 时直接 return null (没预测缓存就没法评估, 别瞎猜)
-            if (step > 12) return null
-            return null  // fallback 路径不强行修正, 避免噪声当信号
+            // ★ v3.0.13: 没有预测缓存 → fallback 路径
+            //   策略: 用上次读数 → 当前读数的变化率 slope, 算出"线性外推的预测值"
+            //   5min 时域: 预测 = lastVal + slope * (dtMin - 5), 误差 = currentGlucose - 预测
+            //   30min 时域: dtMin < 30 → 跳过 (没足够信息评估长期趋势)
+            //   60min 时域: dtMin < 60 → 跳过
+            //   → 确保 fallback 路径只在"有足够历史"时触发, 不会瞎纠
+            val lastVal = lastReadingValue
+            val lastTime = lastReadingTime
+            if (lastVal.isNaN() || lastTime == 0L) return null  // 真没历史, 没法算
+            val dtMs = nowSafe() - lastTime
+            if (dtMs < 60_000) return null  // 至少 1 分钟间隔
+            val dtMin = (dtMs / 60_000.0)
+            val stepMinutes = step * 5
+            if (dtMin < stepMinutes.toDouble()) return null  // 历史不够长, 跳过该时域
+            val slope = (actualValue - lastVal) / dtMin  // mmol/L per min
+            // 假设 glucose 匀速变化: 上次读数 → 当前读数
+            // 5min 时域的"预测" = lastVal + slope * (dtMin - 5)
+            //   但实际上 dtMin 通常就是 5min, (dtMin - 5) ≈ 0, 所以预测 ≈ lastVal
+            //   error = currentGlucose - lastVal = slope * dtMin
+            // 简化为: error = slope * stepMinutes (反映 step 时长内应有的变化幅度)
+            slope * stepMinutes
         }
 
         return applyCorrection(error, actualValue, quality, baseParams, context, label)
     }
+
+    /** 线程安全的当前时间 (兼容测试) */
+    private fun nowSafe(): Long = System.currentTimeMillis()
 
     /**
      * 应用修正 (核心逻辑, 被实时模式和批量模式共用)
