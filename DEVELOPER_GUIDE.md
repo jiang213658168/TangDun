@@ -218,7 +218,7 @@ D:\tangdun\
 │   // L1: 统计学习 (~100ms)                                   │
 │   onlineLearner.learn(dao)                                   │
 │                                                              │
-│   // L2: 增量残差学习 (每12条, ~500ms)                        │
+│   // L2: 增量残差学习 (累积50条, ~500ms)                        │
 │   if (pendingNewReadings >= 50)                                │
 │     incrementalLearner.periodicLearn(dao)                    │
 │ }                                                            │

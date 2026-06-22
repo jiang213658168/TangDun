@@ -40,7 +40,7 @@ Bergman等提出的最小模型[1]使用三状态ODE描述血糖动态。Dalla M
 
 ### 2.3 移动端AI部署
 
-ONNX Runtime[7]在移动设备上提供了高效的神经网络推理。xDrip+[8]提供了CGM数据采集的开源参考实现。然而，移动设备上的模型训练仍面临算力和框架支持的挑战。本系统通过轻量级304参数网络和每1小时触发一次的增量SGD策略，实现了可实际部署的移动端在线学习。
+ONNX Runtime[7]在移动设备上提供了高效的神经网络推理。xDrip+[8]提供了CGM数据采集的开源参考实现。然而，移动设备上的模型训练仍面临算力和框架支持的挑战。本系统通过轻量级304参数网络和累积50条触发一次的增量SGD策略，实现了可实际部署的移动端在线学习。
 
 ## 3 系统架构
 
@@ -104,7 +104,7 @@ ONNX Runtime[7]在移动设备上提供了高效的神经网络推理。xDrip+[8
 
 $$G(t) = G_0 \cdot (1 + a \cdot t^3 + b \cdot t^2 + c \cdot t + d)$$
 
-模型在OhioT1DM和HUPA数据集上训练，验证MAE为0.552 mmol/L，Clarke A区92.4%。使用PyTorch训练后导出为ONNX格式，在Android设备上通过ONNX Runtime 1.16.0进行推理。
+模型在OhioT1DM和HUPA数据集上训练，验证MAE为0.612 mmol/L，Clarke A区92.5%。使用PyTorch训练后导出为ONNX格式，在Android设备上通过ONNX Runtime 1.16.0进行推理。
 
 ### 4.3 Dalla Man七隔室生理模型
 
@@ -163,7 +163,7 @@ $$\Delta G_{hourly}(t) = \delta_{hour} \cdot e^{-t/60}$$
 
 **第4层 - 在线梯度下降**: 实际血糖到达后反推TCN预测误差，权重分配到4个曲线参数，单步SGD更新。
 
-自学习引擎由SelfLearningManager统一管理，常驻Application Scope，结合数据计数触发（每12条新血糖≈1h）和时间冷却防止批量导入时Flow洪水导致过拟合。
+自学习引擎由SelfLearningManager统一管理，常驻Application Scope，结合数据量触发（累积50条≈4h）和按量批量学习防止批量导入时只学1次。
 
 ## 5 系统功能
 
@@ -210,9 +210,9 @@ $$\Delta G_{hourly}(t) = \delta_{hour} \cdot e^{-t/60}$$
 
 | 指标 | 值 |
 |------|-----|
-| MAE | 0.552 mmol/L |
+| MAE | 0.612 mmol/L |
 | RMSE | 0.891 mmol/L |
-| Clarke A区 | 92.4% |
+| Clarke A区 | 92.5% |
 | Clarke A+B区 | 98.1% |
 | 预测时域 | 0-180分钟 |
 | 特征维度 | 15 |
