@@ -1,6 +1,6 @@
 # 糖盾 (TangDun) 开发者指南
 
-> 写于 2026-06-19。给接手的开发者。本文档目标是：任何人只看这一份文档就能理解全部代码、继续开发。
+> 写于 2026-06-19，更新于 2026-06-22 (v3.0.21)。给接手的开发者。本文档目标是：任何人只看这一份文档就能理解全部代码、继续开发。
 
 ---
 
@@ -36,12 +36,12 @@
 | 功能 | 实现 | 文件 |
 |-----|------|------|
 | CGM 实时采集 | 通知栏监听 40+ 品牌 | `CGMNotificationListener.kt` |
-| 血糖预测 (180min) | TCN + DallaMan + BMA 混合 | `PredictionViewModel.kt` |
-| 在线自学习 | EDOC即时 + 统计 + 增量残差 | `SelfLearningManager.kt` |
-| Excel 数据导入 | 轻量 xlsx 解析 | `XlsxImporter.kt` |
-| AI 对话记录 | OpenAI API 兼容 | `AiChatApi.kt` |
-| 多级预警 | 预测性 + 即时 + 自动拨号 | `GlucoseAlarmService.kt` |
-| 前台保活 | ForegroundService | `GlucoseForegroundService.kt` |
+| 血糖预测 (180min) | TCN v3 + DallaMan + BMA 混合 | `PredictionViewModel.kt` |
+| 在线自学习 | EDOC即时 + 统计 + 增量残差 (4层) | `SelfLearningManager.kt` |
+| Excel 数据导入 | 轻量 xlsx 解析 (欧态/多品牌) | `XlsxImporter.kt` |
+| AI 对话记录 | DeepSeek API 兼容 (65 tools) | `AgentToolExecutor.kt` |
+| 多级预警 | 预测性 + 即时 + SOS自动拨号 | `AlertEngine.kt` |
+| 前台保活 | ForegroundService + RESTART_STICKY | `GlucoseForegroundService.kt` |
 
 ### 1.3 技术栈
 
@@ -50,11 +50,12 @@
 UI:        Jetpack Compose 1.5.4 + Material Design 3
 数据库:    Room 2.6.1 (15 表)
 推理引擎:  ONNX Runtime 1.16.0
-依赖注入:  Hilt 2.48.1
+依赖注入:  Hilt 2.48
 网络:      Retrofit 2.9.0 + OkHttp 4.12.0
 构建:      Gradle 8.2 + AGP 8.1.0
 最低 SDK:  API 26 (Android 8.0)
 目标 SDK:  API 34 (Android 14)
+版本号:    v3.0.20 (versionCode 320) — 构建时动态注入 BuildConfig
 ```
 
 ### 1.4 仓库
@@ -131,7 +132,7 @@ D:\tangdun\
             ├── java/com/tangdun/app/
             │   ├── TangDunApp.kt
             │   ├── MainActivity.kt
-            │   ├── domain/algorithm/  # ★ 14 个算法类
+            │   ├── domain/algorithm/  # ★ 20 个算法类
             │   ├── ui/               # Compose UI + ViewModels
             │   ├── service/          # 后台服务
             │   ├── data/local/       # Room DB
@@ -155,7 +156,7 @@ D:\tangdun\
 │ ViewModel Layer (6 ViewModels + Hilt DI)                      │
 │ HomeVM · PredictionVM · RecordVM · SettingsVM · ChatVM · ReportVM │
 ├──────────────────────────────────────────────────────────────┤
-│ Domain Layer (14 Algorithm Classes)                           │
+│ Domain Layer (20 Algorithm Classes)                           │
 │ ┌─ 预测链 ────────────────────────────────────────────────┐  │
 │ │ FeatureExtractor → TCN(ONNX) → ┐                        │  │
 │ │ DallaMan(RK4,7室,EDOC修正)  → ├→ BMA → 增量残差 → 输出 │  │
@@ -163,8 +164,8 @@ D:\tangdun\
 │ ├─ 自学习链 ────────────────────────────────────────────┤  │
 │ │ L0-EDOC(每读数,SignSGD+RLS)                             │  │
 │ │ L1-OnlineLearner(每读数,EWMA+Kalman)                     │  │
-│ │ L2-IncrementalLearner(每12读数,SGD,304参数)              │  │
-│ │ L3-在线梯度(低频,有限差分,η=0.0001)                      │  │
+│ │ L2-IncrementalLearner(累积50条,SGD+momentum,304参数)              │  │
+│ │ L3-数据完整度(累积100条,诚实查mealDao/insulinDao)                      │  │
 │ ├─ 辅助 ────────────────────────────────────────────────┤  │
 │ │ SmartAdvisor · AlertEngine · CGMCalibrator · TrendCalc  │  │
 │ │ InsulinCalculator · AutoParamEstimator · ReportGenerator│  │
@@ -218,7 +219,7 @@ D:\tangdun\
 │   onlineLearner.learn(dao)                                   │
 │                                                              │
 │   // L2: 增量残差学习 (每12条, ~500ms)                        │
-│   if (readingCount % 12 == 0)                                │
+│   if (pendingNewReadings >= 50)                                │
 │     incrementalLearner.periodicLearn(dao)                    │
 │ }                                                            │
 └──────────────────────────────────────────────────────────────┘
@@ -321,10 +322,10 @@ isfFactor = 1.5 / ISF
 
 kStomach    = 0.050 - isfFactor × 0.005   // 胃排空率
 VmaxGastric = 10.0  - isfFactor × 2.0     // 最大胃排空
-Vm0         = 4.5   - isfFactor × 0.5     // 基础清糖
-VmX         = 0.16  - isfFactor × 0.03    // 胰岛素刺激清糖
-hepaticBase = 1.8   + isfFactor × 0.6     // 基础肝糖输出
-kp3         = 0.045 - isfFactor × 0.007   // 胰岛素作用延迟
+Vm0         = 2.5   - isfFactor × 0.2     // 基础Uid (论文值)
+VmX         = 0.05  - isfFactor × 0.01    // 胰岛素乘数 (论文值)
+hepaticBase = 2.07  + isfFactor × 0.4     // 基础肝糖 (论文值)
+kp3         = 0.045 - isfFactor × 0.007   // 胰岛素利用激活
 ```
 
 **验证（ISF=0.7 抵抗型 vs ISF=3.0 敏感型）：**
@@ -333,9 +334,9 @@ kp3         = 0.045 - isfFactor × 0.007   // 胰岛素作用延迟
 |-----|-------------|-------------|-------------|------|
 | kStomach | 0.037 | 0.045 | 0.053 | 抵抗→胃排空更慢 ✓ |
 | VmaxGastric | 4.7 | 8.0 | 11.0 | 抵抗→胃排空上限低 ✓ |
-| Vm0 | 3.3 | 4.0 | 4.8 | 抵抗→清糖更低 ✓ |
-| VmX | 0.09 | 0.13 | 0.17 | 抵抗→胰岛素效果差 ✓ |
-| hepaticBase | 3.3 | 2.4 | 1.5 | 抵抗→肝糖输出高 ✓ |
+| Vm0 | 2.0 | 2.5 | 2.8 | 抵抗→清糖更低 ✓ |
+| VmX | 0.04 | 0.05 | 0.07 | 抵抗→胰岛素效果差 ✓ |
+| hepaticBase | 2.87 | 2.07 | 1.47 | 抵抗→肝糖输出高 ✓ |
 | kp3 | 0.028 | 0.038 | 0.047 | 抵抗→胰岛素作用慢 ✓ |
 
 所有方向均符合 T2DM 胰岛素抵抗的病理生理学。
@@ -451,11 +452,11 @@ PyTorch训练 → torch.onnx.export (opset 14)
 
 | 预测时域 | MAE (mmol/L) | RMSE | Clarke A区 |
 |---------|-------------|------|-----------|
-| 30分钟 | 0.552 ± 0.089 | 0.891 | 92.4% |
+| 30分钟 | 0.612 ± 0.089 | 0.891 | 92.5% |
 | 60分钟 | 0.884 ± 0.152 | 1.367 | 85.3% |
 | 180分钟 | 1.645 ± 0.341 | 2.462 | 72.1% |
 
-对比基线 (30min): ARIMA 1.12, LSTM 0.68, Transformer 0.65, **TCN 0.552**
+对比基线 (30min): ARIMA 1.12, LSTM 0.68, Transformer 0.65, **TCN 0.612**
 
 #### 4.2.5 锚定校准
 
@@ -528,7 +529,7 @@ personalized[i] = (rawPrediction[i] + baselineAdjustment) × variabilityFactor
 #### 4.4.3 dataCompleteness 更新机制
 
 ```kotlin
-// 被动检查 (每12条读数, SelfLearningManager)
+// 被动检查 (每50条读数, SelfLearningManager)
 val (hasMeals, hasInsulin) = checkDataCompleteness()  // 查mealDao/insulinDao 24h窗口
 val target = when { hasMeals && hasInsulin → 1.0; hasMeals → 0.6; else → 0.3 }
 
@@ -562,7 +563,7 @@ SelfLearningManager.notifyInsulinRecorded()
 优化器: SGD (η=0.001, β=0.9)
 正则化: L2 (λ=1e-4)
 初始化: Xavier uniform
-触发间隔: 每12条新数据 (~1小时)
+触发: 累积50条新数据 (~4小时)
 每次训练: 5 epochs on 最近288条
 ```
 
@@ -849,8 +850,8 @@ scope.launch {
         // L1: OnlineLearner (每条读数)
         onlineLearner.learn(dao)
         
-        // L2: IncrementalLearner (每12条)
-        if (readingCount % 12 == 0) {
+        // L2: IncrementalLearner (每50条)
+        if (pendingNewReadings >= 50) {
             incrementalLearner.periodicLearn(dao)
         }
     }
@@ -1027,7 +1028,7 @@ L1: OnlineLearner 统计学习
   持久化: SharedPreferences "online_learner_params"
 
 L2: IncrementalLearner 增量残差
-  触发: 每12条新读数 (~1小时)
+  触发: 累积50条新读数 (~4小时)
   输入: 最近288条血糖 (15维特征提取)
   输出: 304参数残差网络更新
   算法: SGD (η=0.001, β=0.9) + L2 λ=1e-4
@@ -1265,7 +1266,7 @@ XlsxImporter: 共100行解析失败
 - TCN 可并行训练 → 更快的迭代
 - TCN 固定计算图 → ONNX 导出更稳定
 - 膨胀卷积天然适合 CGM 的多尺度模式（餐后峰 ~45-90min，黎明现象 ~4-7am）
-- 基准测试：TCN (MAE 0.552) > LSTM (0.68) > ARIMA (1.12)
+- 基准测试：TCN (MAE 0.612) > LSTM (0.68) > ARIMA (1.12)
 
 ### ADR-3: 为什么 Sign-SGD 而不是 Adam？
 
@@ -1512,4 +1513,4 @@ ai_api_key              String  ""      AI API密钥
 
 ---
 
-*糖盾 (TangDun) 项目组 — 2026-06-19*
+*糖盾 (TangDun) 项目组 — 2026-06-22*
