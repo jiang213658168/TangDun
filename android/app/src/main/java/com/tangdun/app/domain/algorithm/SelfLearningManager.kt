@@ -193,9 +193,11 @@ class SelfLearningManager(private val context: Context) {
                     scope.cancel()
                     Log.i(TAG, "App 进后台, 取消学习协程")
                 }
-                // 清空 EDOC 预测缓存 (300 条 × 36 Float ≈ 4MB), 回前台后重新填充
+                // ★ v3.0.18 修: 只清 EDOC 预测缓存 (回前台后重新填充), 不重置 deltas/totalCorrections
+                //   修复前: edocCorrector.reset() 会清掉所有累积 deltas → 用户每次后台再回前台预测回到 baseParams
+                //   修复后: 用新加的 clearPredictionCache() 只清缓存, 保留 deltas/totalCorrections/P 矩阵
                 try {
-                    edocCorrector.reset()
+                    edocCorrector.clearPredictionCache()
                 } catch (_: Exception) {}
             }
         }
@@ -297,7 +299,12 @@ class SelfLearningManager(private val context: Context) {
                     val iob = recentInsulin.filter { it.insulinType == "rapid" || it.insulinType == "short" }
                         .fold(0.0) { a, r ->
                             val m = (now - r.timestamp) / 60000.0
-                            if (m in 0.0..240.0) a + r.doseUnits * 0.5.pow(m / 55.0) else a
+                            // ★ v3.0.18 修: 区分 rapid (半衰 55min, 4h 范围) 和 short (半衰 90min, 6h 范围)
+                            when (r.insulinType) {
+                                "rapid" -> if (m in 0.0..240.0) a + r.doseUnits * 0.5.pow(m / 55.0) else a
+                                "short" -> if (m in 0.0..360.0) a + r.doseUnits * 0.5.pow(m / 90.0) else a
+                                else -> a
+                            }
                         }
                     val lastBolusMin = recentInsulin.filter { it.insulinType == "rapid" || it.insulinType == "short" }
                         .firstOrNull()?.let { (now - it.timestamp) / 60000.0 } ?: Double.MAX_VALUE

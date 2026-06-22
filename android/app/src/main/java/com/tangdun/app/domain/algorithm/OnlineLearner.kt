@@ -371,19 +371,23 @@ class OnlineLearner(private val context: Context) {
      * @param q 过程噪声 (模型不确定性, 越大越信任观测)
      * @param r 观测噪声 (传感器不确定性, 越大越信任模型预测)
      */
-    private var kalmanP: Double = 1.0  // 估计协方差, 在调用间保持
+    @Volatile private var kalmanP: Double = 1.0  // 估计协方差, 在调用间保持 (★ v3.0.18 加 @Volatile)
+    private val kalmanLock = Any()
     private fun kalmanSmooth(prevEstimate: Double, measurement: Double, q: Double, r: Double): Double {
-        // 预测步: P_pred = P + q
-        val pPred = kalmanP + q
-        // 更新步: 卡尔曼增益 K = P_pred / (P_pred + r)
-        val k = pPred / (pPred + r)
-        // 状态更新: x_new = x_prev + K * (z - x_prev)
-        val newEstimate = prevEstimate + k * (measurement - prevEstimate)
-        // 协方差更新: P_new = (1 - K) * P_pred
-        kalmanP = (1.0 - k) * pPred
-        // 防退化: 协方差不能太小 (学不动) 或太大 (不稳定)
-        kalmanP = kalmanP.coerceIn(1e-6, 1.0)
-        return newEstimate
+        // ★ v3.0.18 修: 加 synchronized 防止并发 learn() 互相覆盖 kalmanP
+        synchronized(kalmanLock) {
+            // 预测步: P_pred = P + q
+            val pPred = kalmanP + q
+            // 更新步: 卡尔曼增益 K = P_pred / (P_pred + r)
+            val k = pPred / (pPred + r)
+            // 状态更新: x_new = x_prev + K * (z - x_prev)
+            val newEstimate = prevEstimate + k * (measurement - prevEstimate)
+            // 协方差更新: P_new = (1 - K) * P_pred
+            kalmanP = (1.0 - k) * pPred
+            // 防退化: 协方差不能太小 (学不动) 或太大 (不稳定)
+            kalmanP = kalmanP.coerceIn(1e-6, 1.0)
+            return newEstimate
+        }
     }
 
     /**

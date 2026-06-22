@@ -79,11 +79,7 @@ class PersonalizedPredictor(private val context: Context) {
     //   PredictionViewModel:193 直接用 onlineLearner.applyPersonalization, 不走这里
     //   完整功能 (OnlineLearner + 时段模式 + 残差) 已由 PredictionViewModel.applyLightPersonalization 替代
 
-    suspend fun learn(glucoseDao: GlucoseDao): Boolean {
-        onlineLearner.learn(glucoseDao)
-        incrementalLearner.periodicLearn(glucoseDao)
-        return true
-    }
+    // ★ v3.0.18 删除: learn() 也是 dead code (全工程无 caller, SelfLearningManager 直接用 onlineLearner + incrementalLearner)
 
     fun getIncrementalStats() = incrementalLearner.getStats()
     fun getLearningStatus() = mapOf(

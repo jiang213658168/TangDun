@@ -265,8 +265,12 @@ class PredictionViewModel @Inject constructor(
 
                             // TCN + DallaMan 在剩余 (1 - personalizationW) 中按数据量分配
                             val baseTcnRatio = (0.3 + 0.4 * totalRecords / 288.0).coerceIn(0.3, 0.7)
-                            // ★ v3.0.14 物理门控后: 门控触发时 tcnRatio 强制降到 0.2 (信任生理)
-                            val tcnRatio = if (physicalOverride) 0.2 else baseTcnRatio
+                            // ★ v3.0.18 修: 物理门控触发时 tcnRatio 按 slope 强度衰减 (高 IOB 或 carb 极端 → 几乎不信 TCN)
+                            val tcnRatio = if (physicalOverride) {
+                                val slopeMag = kotlin.math.abs(physioSlope30)
+                                // slopeMag 越大 → 越不信 TCN; 0.5+ 直接降到 0.05
+                                (0.2 - 0.15 * (slopeMag / 0.5).coerceIn(0.0, 1.0)).coerceAtLeast(0.05)
+                            } else baseTcnRatio
                             val remain = 1.0 - personalizationW
                             tcnW = tcnRatio * remain
 
@@ -304,14 +308,17 @@ class PredictionViewModel @Inject constructor(
                         // ★ 物理门控同样应用到 tcnCurve (UI 显示线)
                         val horizon30 = 6
                         val physioSlope30 = if (physioCurve.size > horizon30) (physioCurve[horizon30] - g) / 30.0 else 0.0
+                        val tcnSlope30Display = if (alignedTcn.size > horizon30) (alignedTcn[horizon30] - g) / 30.0 else 0.0
+                        // ★ v3.0.18 修: UI 显示线物理门控阈值跟 merged 计算路径完全一致 (用 tcnSlope30 + 同一组阈值)
                         val physicalOverrideDisplay = when {
                             iob > 1.0 && recentCarbs2h < 30 -> true
-                            iob > 2.0 && (alignedTcn.getOrNull(horizon30) ?: g) > g + 0.5 && physioSlope30 < -0.02 -> true
-                            recentCarbs2h >= 30 && (alignedTcn.getOrNull(horizon30) ?: g) < g + 1.0 -> true
+                            iob > 2.0 && tcnSlope30Display > 0.02 && physioSlope30 < -0.02 -> true
+                            recentCarbs2h >= 30 && tcnSlope30Display < 0.02 -> true
                             else -> false
                         }
                         val correctedTcn = if (physicalOverrideDisplay) {
                             // ★ v3.0.17 修复: 加 coerceIn(1.0, 30.0) 防高 IOB 时 TCN 直线下降到负数 (截图 bug)
+                            // ★ v3.0.18 修: 物理门控阈值跟 merged 路径完全一致 (用 tcnSlope30 不再直接用 alignedTcn[6])
                             alignedTcn.mapIndexed { i, _ -> (g + physioSlope30 * 0.6 * i * 5.0).coerceIn(1.0, 30.0) }
                         } else alignedTcn
 

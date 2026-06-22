@@ -11,7 +11,7 @@ import java.util.*
  * TCN模型预测器
  *
  * 使用ONNX Runtime在本地运行TCN模型
- * 模型性能: MAE 0.552 mmol/L, Clarke A区 92.4%
+ * 模型性能: MAE 0.612 mmol/L, Clarke A区 92.5% (v3 训练结果)
  */
 class TCNPredictor(private val context: Context) {
 
@@ -68,14 +68,15 @@ class TCNPredictor(private val context: Context) {
                 longArrayOf(1, features.size.toLong())
             )
 
-            // 推理
+            // 推理 + 必须在 close() 前取出 value (ONNX 1.16 close 后 native buffer 失效)
             val results = session?.run(Collections.singletonMap("input", inputTensor))
             val output = results?.get(0)?.value as? Array<FloatArray>
+            val firstOut = output?.firstOrNull()  // ★ v3.0.18 修: 必须在 close 之前取出来
 
             inputTensor.close()
             results?.close()
 
-            output?.firstOrNull()
+            firstOut
         } catch (e: Exception) {
             android.util.Log.e("TCNPredictor", "ONNX推理失败: ${e.message}", e)
             null

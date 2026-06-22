@@ -464,6 +464,16 @@ class EDOCCorrector(private val context: Context) {
         Log.i(TAG, "EDOC已重置")
     }
 
+    /**
+     * ★ v3.0.18 新增: 仅清预测缓存, 保留 deltas/totalCorrections/P 矩阵
+     *   场景: App 进后台时调用 (回前台后 PredictionScreen 会重新填充缓存)
+     *   跟 reset() 的区别: reset() 还会清掉 deltas → 用户每次后台化预测都回到 baseParams
+     */
+    fun clearPredictionCache() {
+        synchronized(predictionCache) { predictionCache.clear() }
+        Log.i(TAG, "EDOC 预测缓存已清空 (deltas 保留)")
+    }
+
     // ═══════════════════════════════════════════
     // 核心算法
     // ═══════════════════════════════════════════
@@ -765,36 +775,41 @@ class EDOCCorrector(private val context: Context) {
 
     /**
      * 一步预测 (上下文感知)
+     *
+     * ★ v3.0.18 修: 量纲混乱 — 之前 ra/egp/uii 单位混用 (mg/min 和 mmol/L/min), 导致
+     *   5min 偏差 0.59 mmol/L, EDOC 批量学习把这个偏差当"DallaMan 系统误差"持续累积到 deltas.
+     *   修复: 全部项统一为 mmol/L/min (跟 DallaManModel.predict 完全一致).
      */
     private fun runOneStepRK4(
         params: DallaManModel.Parameters, glucose: Double,
         assumedStomach: Double, iob: Double,
-        dtMinutes: Double = 5.0  // ★ v3.0.9 修: 接受 dt, 默认 5min (实时模式), 批量导入传实际 dt
+        dtMinutes: Double = 5.0
     ): Double {
         val dt = dtMinutes
         val g = glucose.coerceIn(2.0, 35.0)
-        val Vg = params.Vg
+        val Vg = params.Vg  // dL
         val BW = params.bodyWeight
+        val VgDl18 = Vg * 18.0  // mg/dL per mmol/L 转换系数
 
-        // Ra: 只有非空腹时计算
-        val ra = if (assumedStomach > 0) {
+        // Ra (mmol/L/min): 肠道葡萄糖吸收入血
+        val raMmol = if (assumedStomach > 0) {
             val emptying = min(params.kStomach * assumedStomach, params.VmaxGastric * BW)
-            emptying * params.fCarbs / BW
+            emptying * params.fCarbs / VgDl18
         } else 0.0
 
-        // Uii
-        val uii = params.k1 * Vg * BW
+        // Uii (mmol/L/min): 非胰岛素依赖利用, 与血糖偏离基础值成正比
+        val uii = params.k1 * (g - params.Gb)
 
-        // Uid (MM + 胰岛素效应)
+        // Uid (mmol/L/min): 胰岛素依赖利用, MM 方程
         val G_mgdl = g * 18.0
         val vm = if (iob > 0.1) params.Vm0 + params.VmX * (iob / 10.0).coerceIn(0.0, 1.0)
                  else params.Vm0
-        val uid = vm * G_mgdl / (params.Km0 + G_mgdl) * BW / (Vg * 18.0)
+        val uid = vm * G_mgdl / (params.Km0 + G_mgdl) * BW / VgDl18
 
-        // EGP
-        val egp = params.hepaticBase * BW
+        // EGP (mmol/L/min): 肝糖内生产出 (基础值, 简化版不考虑 X_L 抑制)
+        val egp = params.hepaticBase * BW / VgDl18
 
-        val dg_dt = (ra + egp - uii - uid) / (Vg * BW)
+        val dg_dt = raMmol + egp - uii - uid
         return (g + dg_dt * dt).coerceIn(2.0, 35.0)
     }
 

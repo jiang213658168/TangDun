@@ -348,7 +348,7 @@ class IncrementalLearner(private val context: Context) {
         tcnPredictFn: ((features: FloatArray, currentGlucose: Double) -> FloatArray?)? = null,
         bolusHistory: DoubleArray? = null,
         carbHistory: DoubleArray? = null
-    ): Int = withContext(Dispatchers.IO) {
+    ): Int = withContext(Dispatchers.Default) {  // ★ v3.0.18 修: 用 Default 而不是 IO (ONNX 推理是 CPU 密集)
         var trainedCount = 0
         try {
             val records = glucoseDao.getRecent(1000)
