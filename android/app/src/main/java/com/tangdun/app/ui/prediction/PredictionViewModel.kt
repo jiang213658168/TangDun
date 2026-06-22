@@ -247,9 +247,10 @@ class PredictionViewModel @Inject constructor(
                             if (physicalOverride) {
                                 // ★ 用 DallaMan 30min 内 slope 重建 TCN 曲线 (保留起点对齐)
                                 // alignedTcn[i] = g + physioSlope30 * 0.6 * i * 5 (60% 物理 slope, 避免过度修正)
+                                // ★ v3.0.17 修复: 加 coerceIn(1.0, 30.0) 防高 IOB 时 TCN 直线下降到负数 (截图 bug)
                                 alignedTcn = alignedTcn.mapIndexed { i, _ ->
                                     val tMin = i * 5.0
-                                    g + physioSlope30 * 0.6 * tMin
+                                    (g + physioSlope30 * 0.6 * tMin).coerceIn(1.0, 30.0)
                                 }
                                 Log.w(TAG, "TCN 物理门控触发: IOB=${"%.1f".format(iob)} carb=${todayCarbs}g, " +
                                     "用 DallaMan slope ${"%.3f".format(physioSlope30)} mmol/min 替代 TCN")
@@ -310,7 +311,8 @@ class PredictionViewModel @Inject constructor(
                             else -> false
                         }
                         val correctedTcn = if (physicalOverrideDisplay) {
-                            alignedTcn.mapIndexed { i, _ -> g + physioSlope30 * 0.6 * i * 5.0 }
+                            // ★ v3.0.17 修复: 加 coerceIn(1.0, 30.0) 防高 IOB 时 TCN 直线下降到负数 (截图 bug)
+                            alignedTcn.mapIndexed { i, _ -> (g + physioSlope30 * 0.6 * i * 5.0).coerceIn(1.0, 30.0) }
                         } else alignedTcn
 
                         // ★ 补全到 futureLen 个点: 25 点之后用最后一个点的延伸 (线性外推)

@@ -145,9 +145,9 @@ class SelfLearningManager(private val context: Context) {
                         // 立即触发一次完整度检查
                         val (hasMeals, hasInsulin) = inst.checkDataCompleteness()
                         inst.onlineLearner.updateDataCompleteness(hasMeals, hasInsulin)
-                        // 触发增量学习 (即使没攒够 50, 导入 N>=10 也强制跑一次)
+                        // ★ v3.0.17: 按数据量批量学习 (导入 2592 条 → 学 ~432 个样本对, 不再只学 1 次)
                         if (count >= 10) {
-                            inst.runIncrementalLearn()
+                            inst.runIncrementalLearnByVolume()
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "批量导入学习失败: ${e.message}")
@@ -380,6 +380,43 @@ class SelfLearningManager(private val context: Context) {
                 "C:${String.format("%.1f", onlineLearner.getPersonalParams().dataCompleteness)}")
         } catch (e: Exception) {
             Log.w(TAG, "runIncrementalLearn失败: ${e.message}")
+        }
+    }
+
+    /**
+     * ★ v3.0.17 按数据量批量学习 — 解决"导入 N 条只学 1 次"问题
+     * 构造 24h 饮食/胰岛素 288 点稀疏数组 → 调 IncrementalLearner.batchLearnByVolume
+     */
+    private suspend fun runIncrementalLearnByVolume() {
+        try {
+            val db = com.tangdun.app.TangDunApp.getDatabase(context)
+            val dao = db.glucoseDao()
+            val now = System.currentTimeMillis()
+            val bhArr = DoubleArray(288) { 0.0 }
+            val chArr = DoubleArray(288) { 0.0 }
+            val recentInsulin = db.insulinDao().getSince(now - 24 * 3600_000)
+            val recentMeals = db.mealDao().getByTimeRange(now - 24 * 3600_000, now)
+            for (r in recentInsulin) {
+                val i = (287 - ((now - r.timestamp) / 300000).toInt())
+                if (i in 0..287) bhArr[i] += r.doseUnits
+            }
+            for (m in recentMeals) {
+                val i = (287 - ((now - m.timestamp) / 300000).toInt())
+                if (i in 0..287) chArr[i] += m.totalCarbs
+            }
+            val trained = incrementalLearner.batchLearnByVolume(
+                dao,
+                sampleStep = 6,  // 30min 间隔, 24h 288 点 → ~44 个样本对
+                { features, currentGlucose ->
+                    if (tcnLoaded) tcnPredictor.predict(features) else null
+                },
+                bhArr,
+                chArr
+            )
+            Log.d(TAG, "批量按量学习@触发 | 训练$trained 个样本对 | EDOC:${edocCorrector.getStatus().totalCorrections}次 | " +
+                "C:${String.format("%.1f", onlineLearner.getPersonalParams().dataCompleteness)}")
+        } catch (e: Exception) {
+            Log.w(TAG, "runIncrementalLearnByVolume失败: ${e.message}")
         }
     }
 

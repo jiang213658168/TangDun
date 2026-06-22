@@ -329,6 +329,78 @@ class IncrementalLearner(private val context: Context) {
         }
     }
 
+    /**
+     * ★ v3.0.17 按数据量批量学习 — 解决"导入 N 条只学 1 次"问题
+     *
+     * 之前: 批量导入 2592 条 (9天 CGM) 只触发 1 次 runIncrementalLearn → 只 +1 次更新
+     * 现在: 一次性循环 N/12 个样本对 (5min 步长), 跳过 invalid 数据点
+     *
+     * @param glucoseDao 数据库 DAO (拉取最近 1000 条)
+     * @param sampleStep 采样间隔 (默认 6 = 30min 间隔), 防止密集数据爆炸训练次数
+     * @param tcnPredictFn TCN 推理回调
+     * @param bolusHistory 24h 胰岛素稀疏数组
+     * @param carbHistory  24h 碳水稀疏数组
+     * @return 实际训练的样本数
+     */
+    suspend fun batchLearnByVolume(
+        glucoseDao: GlucoseDao,
+        sampleStep: Int = 6,
+        tcnPredictFn: ((features: FloatArray, currentGlucose: Double) -> FloatArray?)? = null,
+        bolusHistory: DoubleArray? = null,
+        carbHistory: DoubleArray? = null
+    ): Int = withContext(Dispatchers.IO) {
+        var trainedCount = 0
+        try {
+            val records = glucoseDao.getRecent(1000)
+            if (records.size < 20) return@withContext 0
+
+            // getRecent返回DESC(新→旧)→reversed()变时间序(旧→新)
+            val recent = records.takeLast(288).reversed()
+            if (recent.size < 50) return@withContext 0
+
+            val extractor = FeatureExtractor()
+            val glucoseHistory = recent.map { it.value }.toDoubleArray()
+            val n = glucoseHistory.size
+            if (n < 50) return@withContext 0
+
+            // 从 idx = 24 (2h 前) 开始, 每 step 一个样本, 直到 idx = n - 8 (留 40min 验证窗口)
+            var idx = 24
+            val maxIdx = n - 8
+            while (idx < maxIdx) {
+                val currentGlucose = glucoseHistory[idx]
+                val actualIdx = idx + 6  // 30min 后
+                if (actualIdx < n) {
+                    val actualGlucose = glucoseHistory[actualIdx]
+                    if (currentGlucose in 1.0..30.0 && actualGlucose in 1.0..30.0) {
+                        val features = extractor.extract(
+                            glucoseHistory, idx,
+                            bolusHistory = bolusHistory,
+                            carbHistory = carbHistory
+                        )
+                        val tcnParams: FloatArray = if (tcnPredictFn != null) {
+                            tcnPredictFn(features, currentGlucose) ?: floatArrayOf(0f, 0f, 0f, 0f)
+                        } else {
+                            floatArrayOf(0f, 0f, 0f, 0f)
+                        }
+                        learnFromActual(
+                            features = features,
+                            tcnParams = tcnParams,
+                            currentGlucose = currentGlucose,
+                            actualFutureGlucose = actualGlucose,
+                            minutesAhead = 30
+                        )
+                        trainedCount++
+                    }
+                }
+                idx += sampleStep
+            }
+            Log.i(TAG, "批量按量学习完成: $trainedCount 个样本对 (步长${sampleStep})")
+        } catch (e: Exception) {
+            Log.e(TAG, "批量按量学习失败: ${e.message}")
+        }
+        trainedCount
+    }
+
     /** Xavier 初始化 */
     private fun xavierInit(fanIn: Int, fanOut: Int): Float {
         val std = sqrt(2.0 / (fanIn + fanOut)).toFloat()

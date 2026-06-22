@@ -328,8 +328,8 @@ class EDOCCorrector(private val context: Context) {
                 val curr = historyRecords[i]
                 val dt = (curr.timestamp - prev.timestamp) / 60000.0  // 分钟
 
-                // 只在时间间隔合理时处理 (4-65分钟)
-                if (dt !in 4.0..65.0) continue
+                // ★ v3.0.17 修复: dt 范围放宽到 [2, 120], 适配 xlsx 导入的稀疏数据 (之前 4-65 太严格)
+                if (dt !in 2.0..120.0) continue
 
                 // ★ 批量导入: 用简单的上下文 (无meal/insulin信息)
                 val batchCtx = SnapContext(curr.value, 0.0, 0.0, Double.MAX_VALUE, 0.0, Double.MAX_VALUE, 0)
@@ -339,10 +339,12 @@ class EDOCCorrector(private val context: Context) {
                 val syntheticPred = runOneStepRK4(effectiveParams, prev.value, 0.0, 0.0, dtMinutes = dt)
                 val error = curr.value - syntheticPred
 
-                val quality = 0.7
+                // ★ v3.0.17 修复: 批量导入 quality 提到 0.95, 信任用户导入的历史数据
+                val quality = 0.95
                 val label = when { dt <= 10.0 -> "5min"; dt <= 35.0 -> "30min"; else -> "60min" }
 
-                val result = applyCorrection(error, curr.value, quality, baseParams, batchCtx, label)
+                // ★ v3.0.17 修复: forceApply=true 跳过白噪声检查 (导入数据在累积样本上易被误判白噪声)
+                val result = applyCorrection(error, curr.value, quality, baseParams, batchCtx, label, forceApply = true)
                 if (result != null) batchCorrections++
 
                 if (i % 50 == 0 || i == historyRecords.size - 1) {
@@ -353,6 +355,11 @@ class EDOCCorrector(private val context: Context) {
             eta5min = saved5min
             eta30min = saved30min
             eta60min = saved60min
+            // ★ v3.0.17 修复: 批量导入完成清空 errorHistory, 避免批量稀疏数据污染后续实时 ACF1 判白噪声
+            synchronized(trackerLock) {
+                errorHistory.clear()
+                directionTracker.clear()
+            }
         }
 
         // ★ 修复 Bug 6: import 完成后 dailyChanges 衰减, 避免当天剩余真实 CGM 触发被全部 clamp 到 0
@@ -512,7 +519,8 @@ class EDOCCorrector(private val context: Context) {
      */
     private fun applyCorrection(
         error: Double, actualGlucose: Double, quality: Double,
-        baseParams: DallaManModel.Parameters, context: SnapContext, label: String
+        baseParams: DallaManModel.Parameters, context: SnapContext, label: String,
+        forceApply: Boolean = false
     ): CorrectionAction? {
         // ── 噪声过滤 ──
         val noiseStd = max(SENSOR_MARD * actualGlucose / 100.0, NOISE_FLOOR)
@@ -531,7 +539,10 @@ class EDOCCorrector(private val context: Context) {
             while (errorHistory.size > ERROR_WINDOW) errorHistory.removeAt(0)
         }
         val errorType = classifyError(errorHistory)
-        if (errorType == "白噪声") return null
+        // ★ v3.0.17 修复: 批量导入时 (forceApply=true) 跳过白噪声检查
+        //   修复前: 导入 2592 条 → ACF1 在累积样本上算成白噪声 → 0 次修正
+        //   修复后: 信任批量导入数据, 即使 ACF1 < 0.3 也强制修正
+        if (errorType == "白噪声" && !forceApply) return null
 
         // ── 状态感知梯度 ──
         val gradValues = computeSensitivities(baseParams, context)
