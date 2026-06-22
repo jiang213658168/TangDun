@@ -98,6 +98,8 @@ class PredictionViewModel @Inject constructor(
                 val meals24h = mealDao.getByTimeRange(now - 24 * 3600 * 1000, now)
                 val insulin = insulinDao.getSince(now - 24 * 3600 * 1000)
                 val todayCarbs = meals24h.sumOf { it.totalCarbs }
+                // ★ v3.0.16 物理门控: 改用过去 2h 碳水 (不再用 24h 累计, 避免 4h 前吃过的饭误触发上扬门控)
+                val recentCarbs2h = meals24h.filter { it.timestamp >= now - 2 * 3600 * 1000 }.sumOf { it.totalCarbs }
                 // IOB: 速效(4h半衰55min) + 短效(6h半衰90min)
                 val iob = insulin.fold(0.0) { a, r ->
                     val m = (now - r.timestamp) / 60000.0
@@ -191,7 +193,8 @@ class PredictionViewModel @Inject constructor(
                 // 个性化校正
                 val olParams = onlineLearner.getPersonalParams()
                 val personalizedCurve = dmCurve.mapIndexed { i, v ->
-                    val personal = onlineLearner.applyPersonalization(v, g, i)
+                    // ★ v3.0.16 修: OnlineLearner.applyPersonalization 不再接收 currentGlucose (dead parameter)
+                    val personal = onlineLearner.applyPersonalization(v, i)
                     if (exerciseEffect > 0) personal - exerciseEffect * kotlin.math.exp(-i * 5.0 / 120.0)
                     else personal
                 }
@@ -233,11 +236,11 @@ class PredictionViewModel @Inject constructor(
                             // 物理门控: 高 IOB 时 TCN 不可信, 用 DallaMan slope 替代 TCN slope
                             val physicalOverride = when {
                                 // 情况1: 高 IOB + 低 carb → TCN 应该预测降, 但 ONNX 学不会 → 用生理 slope
-                                iob > 1.0 && todayCarbs < 30 -> true
+                                iob > 1.0 && recentCarbs2h < 30 -> true
                                 // 情况2: TCN 方向和 DallaMan 反向 + 物理约束强烈 (IOB 大)
                                 iob > 2.0 && tcnSlope30 > 0.02 && physioSlope30 < -0.02 -> true
                                 // 情况3: 高 carb 摄入 → TCN 应该预测升, 但 ONNX 预测幅度不够
-                                todayCarbs >= 30 && tcnSlope30 < 0.02 -> true
+                                recentCarbs2h >= 30 && tcnSlope30 < 0.02 -> true
                                 else -> false
                             }
 
@@ -266,8 +269,14 @@ class PredictionViewModel @Inject constructor(
                             val remain = 1.0 - personalizationW
                             tcnW = tcnRatio * remain
 
+                            // ★ v3.0.16 BMA 公式修复: 之前 (1-pw) 系数包了整段 baseBlend, pw 那部分完全没体现
+                            //   正确公式: pw*physio + (1-pw)*(tcnRatio*tcn + (1-tcnRatio)*physio)
+                            //           = (1-pw)*tcnRatio*tcn + ((1-pw)*(1-tcnRatio) + pw) * physio
+                            //           总系数 = 1.0 (跟注释 "TCN_w + DallaMan_w = 1.0" 对齐)
                             merged = (0 until nPoints).map { i ->
-                                ((1.0 - personalizationW) * (tcnRatio * alignedTcn[i] + (1.0 - tcnRatio) * physioCurve[i])).coerceIn(1.0, 30.0)
+                                val tcnPart = (1.0 - personalizationW) * tcnRatio
+                                val physioPart = 1.0 - tcnPart
+                                (tcnPart * alignedTcn[i] + physioPart * physioCurve[i]).coerceIn(1.0, 30.0)
                             }
                             // 个性化层后续通过 applyPersonalization 叠加
                             modelLabel = if (physicalOverride) {
@@ -295,9 +304,9 @@ class PredictionViewModel @Inject constructor(
                         val horizon30 = 6
                         val physioSlope30 = if (physioCurve.size > horizon30) (physioCurve[horizon30] - g) / 30.0 else 0.0
                         val physicalOverrideDisplay = when {
-                            iob > 1.0 && todayCarbs < 30 -> true
+                            iob > 1.0 && recentCarbs2h < 30 -> true
                             iob > 2.0 && (alignedTcn.getOrNull(horizon30) ?: g) > g + 0.5 && physioSlope30 < -0.02 -> true
-                            todayCarbs >= 30 && (alignedTcn.getOrNull(horizon30) ?: g) < g + 1.0 -> true
+                            recentCarbs2h >= 30 && (alignedTcn.getOrNull(horizon30) ?: g) < g + 1.0 -> true
                             else -> false
                         }
                         val correctedTcn = if (physicalOverrideDisplay) {

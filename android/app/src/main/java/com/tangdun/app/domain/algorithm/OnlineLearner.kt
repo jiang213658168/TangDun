@@ -242,8 +242,11 @@ class OnlineLearner(private val context: Context) {
 
     /**
      * 应用个性化到预测
+     *
+     * ★ v3.0.16 修: 删除 currentGlucose dead parameter (函数体内从未引用)
+     *   调整逻辑只基于 fastingBaseline 偏移 + timeIndex 渐进, 不依赖当前血糖
      */
-    fun applyPersonalization(basePrediction: Double, currentGlucose: Double, timeIndex: Int = 0): Double {
+    fun applyPersonalization(basePrediction: Double, timeIndex: Int = 0): Double {
         val params = getPersonalParams()
 
         // 数据质量加权: 完整数据→低修正(信模型), 纯血糖→高修正(信统计)

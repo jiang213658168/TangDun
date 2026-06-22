@@ -8,8 +8,8 @@ import kotlin.math.PI
 /**
  * 特征提取器
  *
- * 提取15维特征用于TCN模型预测
- * 与训练脚本 train_curve_v2.py 完全一致
+* 提取15维特征用于TCN模型预测
+     * 与训练脚本 train_curve_v3.py 完全一致 (v3.0.15 修复 f10/12/14/15 scale)
  *
  * 特征维度：
  * 1-9: 血糖动态特征
@@ -73,42 +73,42 @@ class FeatureExtractor {
         val f8 = ((recent.average() - mean) / std).toFloat()
         val f9 = (recent.std() / std).toFloat()
 
-        // === 胰岛素特征 (10-11) ===
+        // === 胰岛素特征 (10-11) — 严格按论文 §4.2 归一化, 训练/推理完全一致 ===
         val bolus = bolusHistory ?: DoubleArray(288) { 0.0 }
 
-        // 特征10: 最近4小时胰岛素总量
+        // ★ v3.0.15 修复: f10 = 4h bolus sum / 20 (训练端也是 /20, 不再 raw U)
         val bolusStart = maxOf(0, idx - 48)
-        val f10 = bolus.sliceArray(bolusStart..idx).sum().toFloat()
+        val f10 = (bolus.sliceArray(bolusStart..idx).sum() / 20.0).toFloat()
 
-        // 特征11: 最近注射时间（分钟, 上限120min, 归一化到[0,1]）
+        // f11: 距上次 bolus 分钟数 / 120, 无数据 = 1.0
         val bolusRecent = bolus.sliceArray(maxOf(0, idx - 144)..idx)
         val lastBolusIdx = bolusRecent.indexOfLast { it > 0 }
         val f11 = if (lastBolusIdx >= 0) {
             (((bolusRecent.size - lastBolusIdx) * 5).toFloat() / 120f).coerceIn(0f, 1f)
-        } else 1f  // 无数据=1(很久前/无), 非999
+        } else 1f  // ★ 无数据=1.0 (跟 v3 训练一致, v2 训练用 999 导致模型学废)
 
         // === 碳水特征 (12-13) ===
         val carbs = carbHistory ?: DoubleArray(288) { 0.0 }
 
-        // 特征12: 最近4小时碳水总量
+        // ★ v3.0.15 修复: f12 = 4h carbs sum / 100
         val carbStart = maxOf(0, idx - 48)
-        val f12 = carbs.sliceArray(carbStart..idx).sum().toFloat()
+        val f12 = (carbs.sliceArray(carbStart..idx).sum() / 100.0).toFloat()
 
-        // 特征13: 最近进食时间（分钟, 上限120min, 归一化到[0,1]）
+        // f13: 距上次 carb 分钟数 / 120, 无数据 = 1.0
         val carbRecent = carbs.sliceArray(maxOf(0, idx - 144)..idx)
         val lastCarbIdx = carbRecent.indexOfLast { it > 0 }
         val f13 = if (lastCarbIdx >= 0) {
             (((carbRecent.size - lastCarbIdx) * 5).toFloat() / 120f).coerceIn(0f, 1f)
         } else 1f
 
-        // === 心率特征 (14) ===
+        // === 心率特征 (14) — ★ v3.0.15 修复: 除以 100 ===
         val hr = heartRateHistory ?: DoubleArray(288) { 0.0 }
         val hrRecent = hr.sliceArray(maxOf(0, idx - 12)..idx).filter { it > 0 }
-        val f14 = if (hrRecent.isNotEmpty()) hrRecent.average().toFloat() else 0f
+        val f14 = if (hrRecent.isNotEmpty()) (hrRecent.average() / 100.0).toFloat() else 0f
 
-        // === 步数特征 (15) ===
+        // === 步数特征 (15) — ★ v3.0.15 修复: 除以 5000 ===
         val steps = stepHistory ?: DoubleArray(288) { 0.0 }
-        val f15 = steps.sliceArray(maxOf(0, idx - 12)..idx).sum().toFloat()
+        val f15 = (steps.sliceArray(maxOf(0, idx - 12)..idx).sum() / 5000.0).toFloat()
 
         return floatArrayOf(f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15)
     }
