@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 import javax.inject.Inject
+import kotlin.math.abs
 import kotlin.math.pow
 
 data class PredictionUiState(
@@ -224,13 +225,14 @@ class PredictionViewModel @Inject constructor(
                             val tcnOffset = tcnRawCurve[0] - g
                             var alignedTcn = tcnRawCurve.map { it - tcnOffset }
 
-                            // ★ v3.0.22 增强物理门控: TCN c项恒正 → 6条规则覆盖4场景
-                            //   R1: IOB>1 + 无碳水 → TCN不可信 (应下降但ONNX学不会)
-                            //   R2: IOB>0.5 + TCN↑+DM↓ → 方向冲突, 信DM
+                            // ★ v3.0.22 增强物理门控: TCN c项恒正 → 7条规则
+                            //   R1: IOB>1 + 无碳水 → TCN应降但ONNX学不会
+                            //   R2: IOB>0.5 + TCN↑+DM↓ → 方向冲突
                             //   R3: 有碳水 + TCN保守 + DM↓ → 信DM
-                            //   R4: TCN暴涨>3.0/30min → 生理不可能, 全用DM
+                            //   R4: TCN暴涨>2.5/30min → 生理不可能
                             //   R5: IOB>1 + 有碳水 + TCN涨 → 胰岛素主导
-                            //   R6: 仅碳水 + TCN暴涨>2.0 + 无IOB → TCN过激
+                            //   R6: 仅碳水 + TCN暴涨>2.0 → TCN过激
+                            //   R7: TCN方向与DM相反 + |Δ|>1.5 → TCN方向错误
                             val horizon30 = 6
                             val physioSlope30 = if (physioCurve.size > horizon30) (physioCurve[horizon30] - g) / 30.0 else 0.0
                             val tcnSlope30 = if (alignedTcn.size > horizon30) (alignedTcn[horizon30] - g) / 30.0 else 0.0
@@ -240,9 +242,10 @@ class PredictionViewModel @Inject constructor(
                                 iob > 1.0 && recentCarbs2h < 30 -> true                         // R1
                                 iob > 0.5 && tcnSlope30 > 0.01 && physioSlope30 < -0.01 -> true  // R2
                                 recentCarbs2h >= 30 && tcnSlope30 < 0.02 && physioSlope30 < 0 -> true  // R3
-                                tcnRise30 > 3.0 -> true                                          // R4
+                                abs(tcnRise30) > 2.5 -> true                                     // R4: |Δ|>2.5
                                 iob > 1.0 && recentCarbs2h >= 30 && tcnSlope30 > 0.015 -> true   // R5
                                 recentCarbs2h >= 30 && iob < 0.5 && tcnRise30 > 2.0 -> true      // R6
+                                physioSlope30 * tcnSlope30 < 0 && abs(tcnRise30) >= 0.6 -> true  // R7: 方向相反+|Δ|>=0.6
                                 else -> false
                             }
 
@@ -306,7 +309,7 @@ class PredictionViewModel @Inject constructor(
                         val tcnOffset = tcnResult[0] - g
                         val alignedTcn = tcnResult.map { it - tcnOffset }
 
-                        // ★ v3.0.22: UI显示线用同一套R1-R6门控+75%DM/25%TCN blend
+                        // ★ v3.0.22: UI显示线用同一套R1-R7门控+75%DM/25%TCN blend
                         val horizon30 = 6
                         val physioSlope30Disp = if (physioCurve.size > horizon30) (physioCurve[horizon30] - g) / 30.0 else 0.0
                         val tcnSlope30Disp = if (alignedTcn.size > horizon30) (alignedTcn[horizon30] - g) / 30.0 else 0.0
@@ -315,9 +318,10 @@ class PredictionViewModel @Inject constructor(
                             iob > 1.0 && recentCarbs2h < 30 -> true
                             iob > 0.5 && tcnSlope30Disp > 0.01 && physioSlope30Disp < -0.01 -> true
                             recentCarbs2h >= 30 && tcnSlope30Disp < 0.02 && physioSlope30Disp < 0 -> true
-                            tcnRise30Disp > 3.0 -> true
+                            abs(tcnRise30Disp) > 2.5 -> true
                             iob > 1.0 && recentCarbs2h >= 30 && tcnSlope30Disp > 0.015 -> true
                             recentCarbs2h >= 30 && iob < 0.5 && tcnRise30Disp > 2.0 -> true
+                            physioSlope30Disp * tcnSlope30Disp < 0 && abs(tcnRise30Disp) >= 0.6 -> true
                             else -> false
                         }
                         val correctedTcn = if (physicalOverrideDisplay) {
