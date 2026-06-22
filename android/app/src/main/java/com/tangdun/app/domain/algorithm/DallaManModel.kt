@@ -125,18 +125,20 @@ class DallaManModel {
                 kGut = 0.065, fCarbs = 0.9,
                 VmaxGastric = (10.0 - isfFactor * 2.0).coerceIn(5.0, 12.0),
                 sigma = sigma,
-                // 葡萄糖动力学: 全部个性化
+                // 葡萄糖动力学: 全部个性化 (★ v3.0.20 改: 改回 DallaMan 2007 论文原始值,
+                //   App 之前 Vm0=4.25 太激进 → 即使无输入血糖也持续下降到 ~6 (vs Gb=7),
+                //   让稳态 G 等于 Gb=7.0 (EGP = Uid + Uii 在 G=Gb 时平衡))
                 VgPerKg = (1.6 + (bodyWeight - 65.0) * 0.01).coerceIn(1.4, 2.0),
-                k1 = (0.040 + activityLevel * 0.030).coerceIn(0.035, 0.080),  // 运动多→利用高
-                Vm0 = (4.5 - isfFactor * 0.5 + activityLevel * 0.5).coerceIn(2.0, 5.0),
-                VmX = (0.16 - isfFactor * 0.03).coerceIn(0.04, 0.18),
-                Km0 = 25.0,
+                k1 = (0.060 + activityLevel * 0.030).coerceIn(0.040, 0.090),  // ★ 0.04→0.060 论文值, 让 Uii 对高血糖反应更敏感
+                Vm0 = (2.5 - isfFactor * 0.2 + activityLevel * 0.3).coerceIn(1.5, 4.0),  // ★ 4.5→2.5 论文值, 基础 Uid 合理
+                VmX = (0.05 - isfFactor * 0.01).coerceIn(0.02, 0.10),  // ★ 0.16→0.05 论文值
+                Km0 = 100.0,  // ★ 25→100 论文值 (mg/dL), 让 Uid 在 G 变化时更敏感, 不饱和
                 Gb = fastingGlucose,
                 Ib = basalInsulin.coerceIn(4.0, 30.0),
                 renalThreshold = (8.0 + fastingGlucose * 0.3).coerceIn(8.0, 12.0),
                 renalClearance = 0.005,
-                // 肝糖输出: ISF低(抵抗)→输出更高 (isfFactor大→抵抗)
-                hepaticBase = (1.8 + isfFactor * 0.6).coerceIn(1.5, 3.0),
+                // 肝糖输出: ★ 1.8→2.07 重新平衡让 Gb=7.0 是真正稳态 (Vm0↓ 必须 hepaticBase↑ 来补)
+                hepaticBase = (2.07 + isfFactor * 0.4).coerceIn(1.5, 3.0),
                 ka1 = 0.018, ka2 = 0.018, ke = 0.138, ViPerKg = 0.05,
                 // 胰岛素远端作用: ISF高(敏感, isfFactor小)→更快起效
                 kp3 = (0.045 - isfFactor * 0.007).coerceIn(0.020, 0.050),
