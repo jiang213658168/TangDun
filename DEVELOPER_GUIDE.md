@@ -430,13 +430,14 @@ Vm0_adapted = Vm0_base + max(0, activityLevel - 30) × 0.08
 
 | 项目 | 配置 |
 |-----|------|
-| 数据集 | OhioT1DM (12人×8周) + HUPA (30人×4周) |
+| 数据集 | IOBP2(440人) + OhioT1DM(12人) + CTR3(30人) + HUPA(25人) = 474人, 1610万行 |
+| 训练模型 | 2,058,214参数 (部署版ONNX仅4参数曲线输出, 590KB) |
 | 损失函数 | MSE + L2 λ=1e-4 |
 | 优化器 | Adam (lr=0.001, β₁=0.9, β₂=0.999) |
-| Batch Size | 64 |
-| Epochs | 100 (早停 patience=15) |
+| Batch Size | 2048-4096 (GPU CUDA) |
+| Epochs | 50-80 (早停 patience=15) |
 | 学习率调度 | ReduceLROnPlateau (factor=0.5, patience=5) |
-| 验证策略 | 留一患者交叉验证 (LOPO-CV) |
+| 验证策略 | 留一患者交叉验证 (LOPO-CV), 训练380人/验证94人 |
 
 #### 4.2.3 ONNX 部署
 

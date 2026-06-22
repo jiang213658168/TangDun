@@ -104,7 +104,7 @@ ONNX Runtime[7]在移动设备上提供了高效的神经网络推理。xDrip+[8
 
 $$G(t) = G_0 \cdot (1 + a \cdot t^3 + b \cdot t^2 + c \cdot t + d)$$
 
-模型在OhioT1DM和HUPA数据集上训练，验证MAE为0.612 mmol/L，Clarke A区92.5%。使用PyTorch训练后导出为ONNX格式，在Android设备上通过ONNX Runtime 1.16.0进行推理。
+模型在4个公开数据集上训练：OhioT1DM (12人×8周)、IOBP2 RCT (440人)、CTR3 (30人)、HUPA (25人)，合计474人、1,610万行CGM记录。训练模型2,058,214参数，留一患者验证(LOPO-CV) MAE 0.612 mmol/L，Clarke A区92.5%。训练后导出为ONNX格式（590KB），在Android设备上通过ONNX Runtime 1.16.0进行推理。
 
 ### 4.3 Dalla Man七隔室生理模型
 
