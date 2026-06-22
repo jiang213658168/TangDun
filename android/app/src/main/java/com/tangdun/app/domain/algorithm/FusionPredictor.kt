@@ -65,16 +65,10 @@ class FusionPredictor(private val context: Context) {
     }
 
     /**
-     * 执行融合预测
-     *
-     * @param glucoseHistory 血糖历史（至少288点 = 24小时）
-     * @param currentGlucose 当前血糖值
-     * @param bolusHistory 胰岛素历史（288点）
-     * @param carbHistory 碳水历史（288点）
-     * @param heartRateHistory 心率历史（288点）
-     * @param stepHistory 步数历史（288点）
-     * @return 融合预测结果
+     * 执行融合预测 — ★ v3.0.19 标记: 全工程无 caller, 实际预测逻辑由 PredictionViewModel 直接实现
+     *   保留类以便将来复用, 但不删除 (predictTCNDirect 仍有用)
      */
+    @Deprecated("全工程无 caller, 实际 BMA 在 PredictionViewModel 实现")
     fun predict(
         glucoseHistory: DoubleArray,
         currentGlucose: Double,
@@ -85,35 +79,13 @@ class FusionPredictor(private val context: Context) {
         iob: Double = 10.0,
         params: DallaManModel.Parameters = DallaManModel.Parameters.forUser()
     ): FusionResult {
-        // 1. 计算动态权重
         val (tcnWeight, physioWeight) = calculateWeights(glucoseHistory.size)
-
-        // 2. TCN预测（使用全部15维特征）
-        val tcnCurve = predictWithTCN(
-            glucoseHistory, currentGlucose,
-            bolusHistory, carbHistory, heartRateHistory, stepHistory
-        )
-
-        // 3. DallaMan生理模型预测（用真实参数, 跟 Path A 一致）
-        val physioCurve = predictWithDallaMan(
-            currentGlucose = currentGlucose,
-            carbHistory = carbHistory,
-            bolusHistory = bolusHistory,
-            iob = iob,
-            params = params,
-            horizonMinutes = 180
-        )
-
-        // 4. BMA融合
+        val tcnCurve = predictWithTCN(glucoseHistory, currentGlucose, bolusHistory, carbHistory, heartRateHistory, stepHistory)
+        val physioCurve = predictWithDallaMan(currentGlucose, carbHistory, bolusHistory, iob, params, 180)
         val fusedCurve = fuseCurves(tcnCurve, physioCurve, tcnWeight, physioWeight)
-
-        // 5. 提取关键时间点
         return FusionResult(
-            curve = fusedCurve,
-            tcnCurve = tcnCurve,
-            physioCurve = physioCurve,
-            tcnWeight = tcnWeight,
-            physioWeight = physioWeight,
+            curve = fusedCurve, tcnCurve = tcnCurve, physioCurve = physioCurve,
+            tcnWeight = tcnWeight, physioWeight = physioWeight,
             predicted5min = fusedCurve.getOrNull(1),
             predicted15min = fusedCurve.getOrNull(3),
             predicted30min = fusedCurve.getOrNull(6),

@@ -284,14 +284,17 @@ fun SelfLearningCard() {
 
             // ===== Layer 2: IncrementalLearner =====
             Spacer(Modifier.height(12.dp))
-            val incActive = (incStats["updates"] as? Int ?: 0) > 20
+            // ★ v3.0.19 调: 激活阈值从 >20 降到 >5 (用户要求"按量为单位学习", 批量导入 9天数据 → 432 次, 应该立即激活)
+            val incActive = (incStats["updates"] as? Int ?: 0) > 5
+            val incActiveThreshold = 5
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("🧠 增量学习", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-                Text(if (incActive) "✅ 已激活" else "⏳ ${incStats["updates"] ?: 0}/20", fontSize = 12.sp,
+                Text(if (incActive) "✅ 已激活" else "⏳ ${incStats["updates"] ?: 0}/$incActiveThreshold", fontSize = 12.sp,
                     color = if (incActive) AlertSuccess else TextHint, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(4.dp))
-            val incProg = minOf(((incStats["updates"] as? Int ?: 0).toFloat() / 300f), 1f)
+            // ★ v3.0.19 调: 进度条上限从 300 降到 100 (用户按量学习后, 一次批量导入可达 432 次, 300 满进度太慢)
+            val incProg = minOf(((incStats["updates"] as? Int ?: 0).toFloat() / 100f), 1f)
             LinearProgressIndicator(progress = incProg, modifier = Modifier.fillMaxWidth(),
                 color = if (incActive) AlertSuccess else AlertWarning, trackColor = MaterialTheme.colorScheme.surfaceVariant)
             Spacer(Modifier.height(6.dp))

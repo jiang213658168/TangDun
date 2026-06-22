@@ -39,6 +39,10 @@ data class HomeUiState(
     val targetLow: Float = 3.9f,
     val targetHigh: Float = 10.0f,
     val error: String? = null,
+    // ★ v3.0.19 新增: 批量导入后即时纠错统计 (避免页面切换后状态丢失)
+    val lastImportRecordCount: Int = 0,
+    val lastImportEDOCCorrections: Int = 0,
+    val lastImportIncrementalUpdates: Int = 0,
     // 指尖校准
     val calOffset: Double = 0.0,
     val calCount: Int = 0,
@@ -134,16 +138,18 @@ class HomeViewModel @Inject constructor(
                     } catch (e: Exception) { Log.w("HomeVM", "导入后学习失败: ${e.message}") }
 
                     // ★ v3.0.14: 通知 SelfLearningManager 批量导入 — 触发 EDOC 逐条 + 按数据量触发增量学习
-                    com.tangdun.app.domain.algorithm.SelfLearningManager.notifyBatchImported(result.imported.toInt())
+                    val importedCount = result.imported.toInt()
+                    com.tangdun.app.domain.algorithm.SelfLearningManager.notifyBatchImported(importedCount)
 
                     // ★ EDOC批量处理: 对导入数据逐条模拟即时纠错
                     _uiState.value = _uiState.value.copy(error = "即时纠错中...")
+                    var batchCorrections = 0
                     try {
                         val edoc = com.tangdun.app.domain.algorithm.SelfLearningManager.getEDOCCorrector()
-                        val importedRecords = glucoseDao.getRecent(result.imported.toInt()).reversed()
+                        val importedRecords = glucoseDao.getRecent(importedCount).reversed()
                         val baseParams = com.tangdun.app.domain.algorithm.SelfLearningManager.getBaseParams()
                         if (importedRecords.isNotEmpty()) {
-                            val batchCorrections = edoc.processBatchImport(
+                            batchCorrections = edoc.processBatchImport(
                                 importedRecords, baseParams
                             ) { processed, total, corrections ->
                                 _uiState.value = _uiState.value.copy(
@@ -152,9 +158,23 @@ class HomeViewModel @Inject constructor(
                             }
                             Log.i("HomeVM", "EDOC批量处理完成: ${importedRecords.size}条 → $batchCorrections 次修正")
                         }
-                        // 恢复显示最终结果
-                        _uiState.value = _uiState.value.copy(error = detailMsg)
                     } catch (e: Exception) { Log.w("HomeVM", "EDOC批量处理失败: ${e.message}") }
+
+                    // ★ v3.0.19: 等 SelfLearningManager 异步完成, 读取最终增量更新数
+                    val finalIncUpdates = try {
+                        com.tangdun.app.domain.algorithm.SelfLearningManager.getIncrementalLearner()
+                            .getStats()["updates"] as? Int ?: 0
+                    } catch (e: Exception) { 0 }
+
+                    // ★ v3.0.19 修复: 导入结果保留到 state 字段, 切走再回来仍能看到 EDOC/增量统计
+                    val finalMsg = "[导入] ${importedCount}条 | EDOC ${batchCorrections}次修正 | 增量学习 ${finalIncUpdates}次 | ${detailMsg}"
+                    _uiState.value = _uiState.value.copy(
+                        error = finalMsg,
+                        lastImportRecordCount = importedCount,
+                        lastImportEDOCCorrections = batchCorrections,
+                        lastImportIncrementalUpdates = finalIncUpdates
+                    )
+                    Log.i("HomeVM", finalMsg)
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(error = "导入失败: ${e.message}")
