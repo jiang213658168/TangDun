@@ -239,7 +239,11 @@ class DallaManModel {
         var X = max(0.0, (I - Ib) / Ib).coerceIn(0.0, 5.0)
         var X_L = max(0.0, (I - Ib) / Ib).coerceIn(0.0, 5.0)
 
-        // 胃肠道：从过去的进食预计算残留
+        // ★ v3.0.23 双相胃排空: 进食<15min → 20%直接入肠 (模拟液体/混合食物快速相)
+        //   修复 "记录饮食无胰岛素 → DM先下降再上升" 问题
+        //   根因: 旧模型胃→肠→血延迟~30min, 高血糖时Uii清糖快于碳水吸收
+        val RAPID_FRACTION = 0.20   // 20% 快速直接入肠
+        val RAPID_WINDOW = 15.0     // 15min 窗口
         var stomach = 0.0
         var gut = 0.0
         for (meal in meals) {
@@ -248,12 +252,25 @@ class DallaManModel {
             val mg = meal.carbsGrams * 1000.0 * params.fCarbs
             val kS = params.kStomach
             val kG = params.kGut
-            // 一阶胃排空 + 一阶肠吸收 → 双指数求解
-            stomach += mg * exp(-kS * T)
-            if (abs(kG - kS) > 1e-6) {
-                gut += mg * kS / (kG - kS) * (exp(-kS * T) - exp(-kG * T))
+            if (T < RAPID_WINDOW) {
+                // 双相: 20%已入肠(也在被吸收) + 80%在胃(慢相)
+                val rapidGut = mg * RAPID_FRACTION * exp(-kG * T)  // 快速入肠部分
+                val slowStomach = mg * (1.0 - RAPID_FRACTION) * exp(-kS * T)  // 慢相仍在胃
+                val slowGut = if (abs(kG - kS) > 1e-6) {
+                    mg * (1.0 - RAPID_FRACTION) * kS / (kG - kS) * (exp(-kS * T) - exp(-kG * T))
+                } else {
+                    mg * (1.0 - RAPID_FRACTION) * kS * T * exp(-kS * T)
+                }
+                stomach += slowStomach
+                gut += rapidGut + slowGut
             } else {
-                gut += mg * kS * T * exp(-kS * T)  // kG≈kS 极限情况
+                // >15min: 标准单相胃排空
+                stomach += mg * exp(-kS * T)
+                if (abs(kG - kS) > 1e-6) {
+                    gut += mg * kS / (kG - kS) * (exp(-kS * T) - exp(-kG * T))
+                } else {
+                    gut += mg * kS * T * exp(-kS * T)
+                }
             }
         }
 
