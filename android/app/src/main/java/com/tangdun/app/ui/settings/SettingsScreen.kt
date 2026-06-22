@@ -22,6 +22,7 @@ import com.tangdun.app.ui.theme.*
 import com.tangdun.app.util.ActivationManager
 import com.tangdun.app.ui.settings.DataShareCard
 import com.tangdun.app.util.SettingsManager
+import com.tangdun.app.BuildConfig  // ★ v3.0.21: 读取 versionName/buildTime
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -1183,9 +1184,9 @@ fun SystemInfoCard() {
             }
             Spacer(modifier = Modifier.height(12.dp))
             InfoItem("应用名称", "糖盾")
-            InfoItem("版本", "1.0.0")
-            InfoItem("预测模型", "TCN v2")
-            InfoItem("模型性能", "MAE 0.552, Clarke A 92.4%")
+            InfoItem("版本", BuildConfig.VERSION_NAME)  // ★ v3.0.21: 动态读
+            InfoItem("预测模型", BuildConfig.MODEL_NAME)  // ★ v3.0.21
+            InfoItem("模型性能", "MAE ${BuildConfig.MODEL_MAE.removeSuffix(" mmol/L")}, Clarke A ${BuildConfig.MODEL_CLARKE}")  // ★ v3.0.21
             InfoItem("数据来源", "OhioT1DM + HUPA")
         }
     }
@@ -1451,7 +1452,7 @@ fun DataBackupCard() {
                         val gson = com.google.gson.GsonBuilder().setPrettyPrinting().create()
                         val data = mapOf(
                             "backup_time" to java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date()),
-                            "app_version" to "1.0.0",
+                            "app_version" to BuildConfig.VERSION_NAME,  // ★ v3.0.21: 动态读
                             "note" to "数据库备份，请使用恢复功能导入"
                         )
                         file.writeText(gson.toJson(data))
@@ -1541,9 +1542,9 @@ fun AboutCard() {
                 Text("关于与法律", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             }
             Spacer(modifier = Modifier.height(12.dp))
-            InfoItem("版本", "1.0.0")
-            InfoItem("预测引擎", "TCN (MAE 0.552) + DallaMan(7室)")
-            InfoItem("构建日期", "2026-06-13")
+            InfoItem("版本", BuildConfig.VERSION_NAME)  // ★ v3.0.21: 动态读
+            InfoItem("预测引擎", "TCN (MAE ${BuildConfig.MODEL_MAE.removeSuffix(" mmol/L")}) + DallaMan(7室)")  // ★ v3.0.21
+            InfoItem("构建日期", BuildConfig.BUILD_TIME)  // ★ v3.0.21: 动态读
             InfoItem("包名", context.packageName)
             Divider(modifier = Modifier.padding(vertical = 8.dp))
             var showAgreement by remember { mutableStateOf(false) }

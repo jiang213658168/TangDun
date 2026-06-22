@@ -355,11 +355,11 @@ class EDOCCorrector(private val context: Context) {
             eta5min = saved5min
             eta30min = saved30min
             eta60min = saved60min
-            // ★ v3.0.17 修复: 批量导入完成清空 errorHistory, 避免批量稀疏数据污染后续实时 ACF1 判白噪声
-            synchronized(trackerLock) {
-                errorHistory.clear()
-                directionTracker.clear()
-            }
+            // ★ v3.0.21 修复: 不再 clear errorHistory!
+            //   修复前: processBatchImport 完成后 errorHistory 被清空 → MAE 永远=0, 误差趋势永远"收集数据中"
+            //   修复后: 保留 errorHistory 累积样本, MAE 和 errorTrend 能正确计算
+            //   副作用规避: 批量导入的误差已在 applyCorrection 内 forceApply=true 跳过白噪声检查,
+            //              后续实时 CGM 到达时继续 append, 不会被批量稀疏样本污染 ACF1 判定
         }
 
         // ★ 修复 Bug 6: import 完成后 dailyChanges 衰减, 避免当天剩余真实 CGM 触发被全部 clamp 到 0

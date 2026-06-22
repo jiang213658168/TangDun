@@ -1,6 +1,9 @@
 // android/app/build.gradle.kts
 // 糖盾 - 临床专业级Android应用
 
+import java.text.SimpleDateFormat
+import java.util.Date
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -16,14 +19,20 @@ android {
         applicationId = "com.tangdun.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 320      // ★ v3.0.20
+        versionName = "3.0.20" // ★ v3.0.20
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
 
         // Room schema export
         ksp { arg("room.schemaLocation", "$projectDir/schemas") }
+
+        // ★ v3.0.20: BuildConfig 暴露构建时间给 UI (替换硬编码 "2026-06-13")
+        buildConfigField("String", "BUILD_TIME", "\"${SimpleDateFormat("yyyy-MM-dd HH:mm").format(Date())}\"")
+        buildConfigField("String", "MODEL_NAME", "\"TCN v3 (5min步长, 15维特征)\"")
+        buildConfigField("String", "MODEL_MAE", "\"0.612 mmol/L\"")
+        buildConfigField("String", "MODEL_CLARKE", "\"92.5%\"")
     }
 
     buildTypes {
@@ -52,6 +61,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true  // ★ v3.0.20: 启用 BuildConfig (读取 versionName/buildTime)
     }
 
     composeOptions {
