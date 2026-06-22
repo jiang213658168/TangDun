@@ -32,8 +32,8 @@ class DallaManModel {
         val bodyWeight: Double = 70.0,    // 体重(kg)
 
         // ── 胃肠道 (min⁻¹) ──
-        val kStomach: Double = 0.055,     // 胃排空率
-        val kGut: Double = 0.056,         // 肠道吸收率
+        val kStomach: Double = 0.055,     // 胃排空率 (forUser覆盖为0.035中式)
+        val kGut: Double = 0.050,         // 肠道吸收率 (★ 0.056→0.050 匹配慢胃排空)
         val fCarbs: Double = 0.9,         // 碳水生物利用度
         val VmaxGastric: Double = 10.0,   // 最大胃排空 (mg/kg/min)
 
@@ -42,7 +42,7 @@ class DallaManModel {
         val k1: Double = 0.065,           // 非胰岛素依赖利用率 (min⁻¹)
         val Vm0: Double = 2.5,            // 基础葡萄糖利用 (mg/kg/min, MM方程)
         val VmX: Double = 0.05,           // 胰岛素乘数 (mg/kg/min per X单位)
-        val Km0: Double = 25.0,           // Michaelis常数 (mg/dL)
+        val Km0: Double = 100.0,           // Michaelis常数 (mg/dL) ★ v3.0.20 论文值
         val Gb: Double = 5.0,             // 基础血糖 (mmol/L)
         val Ib: Double = 10.0,            // 基础胰岛素 (mU/L)
         val renalThreshold: Double = 10.0, // 肾糖阈 (mmol/L)
@@ -56,8 +56,8 @@ class DallaManModel {
         val hepaticBase: Double = 2.4,    // 基础肝糖输出 (mg/kg/min)
 
         // ── 胰岛素皮下吸收 (速效, min⁻¹) ──
-        val ka1: Double = 0.018,          // 非单体→单体
-        val ka2: Double = 0.018,          // 单体→血浆
+        val ka1: Double = 0.024,          // 非单体→单体 (★ 0.018→0.024 速效峰值~75min)
+        val ka2: Double = 0.024,          // 单体→血浆 (★ 0.018→0.024)
         val ke: Double = 0.138,           // 胰岛素清除率
         val ViPerKg: Double = 0.05,       // 胰岛素分布体积 (L/kg)
 
@@ -120,9 +120,9 @@ class DallaManModel {
                 val isfFactor = (1.5 / isf.coerceIn(0.5, 6.0)).coerceIn(0.3, 3.0)
                 return Parameters(
                 bodyWeight = bodyWeight,
-                // 胃肠道: 更抵抗→自主神经病变→更慢排空
-                kStomach = (0.050 - isfFactor * 0.005).coerceIn(0.030, 0.055),
-                kGut = 0.065, fCarbs = 0.9,
+                // 胃肠道: ★ 0.050→0.035 中式饮食胃排空慢 (米饭半衰~20min vs 西方~13min)
+                kStomach = (0.035 - isfFactor * 0.004).coerceIn(0.025, 0.045),
+                kGut = 0.050, fCarbs = 0.9,  // ★ 0.065→0.050 匹配慢胃排空
                 VmaxGastric = (10.0 - isfFactor * 2.0).coerceIn(5.0, 12.0),
                 sigma = sigma,
                 // 葡萄糖动力学: 全部个性化 (★ v3.0.20 改: 改回 DallaMan 2007 论文原始值,
@@ -139,7 +139,7 @@ class DallaManModel {
                 renalClearance = 0.005,
                 // 肝糖输出: ★ 1.8→2.07 重新平衡让 Gb=7.0 是真正稳态 (Vm0↓ 必须 hepaticBase↑ 来补)
                 hepaticBase = (2.07 + isfFactor * 0.4).coerceIn(1.5, 3.0),
-                ka1 = 0.018, ka2 = 0.018, ke = 0.138, ViPerKg = 0.05,
+                ka1 = 0.024, ka2 = 0.024, ke = 0.138, ViPerKg = 0.05,  // ★ 0.018→0.024 速效峰值~75min
                 // 胰岛素远端作用: ISF高(敏感, isfFactor小)→更快起效
                 kp3 = (0.045 - isfFactor * 0.007).coerceIn(0.020, 0.050),
                 kp2 = (0.060 - isfFactor * 0.007).coerceIn(0.035, 0.065)
@@ -149,13 +149,13 @@ class DallaManModel {
             /** 西方人群参数 (文献默认, 默认体重70kg) */
             fun forWestern(bodyWeight: Double = 70.0) = Parameters(
                 bodyWeight = bodyWeight,
-                kStomach = 0.055, kGut = 0.056, fCarbs = 0.9, VmaxGastric = 15.0,
+                kStomach = 0.055, kGut = 0.050, fCarbs = 0.9, VmaxGastric = 15.0,  // ★ kGut→0.050
                 sigma = 0.0,  // T1DM: 无内源性胰岛素
-                VgPerKg = 1.8, k1 = 0.065, Vm0 = 2.5, VmX = 0.05, Km0 = 25.0,
+                VgPerKg = 1.8, k1 = 0.065, Vm0 = 2.5, VmX = 0.05, Km0 = 100.0,  // ★ Km0→100
                 Gb = 5.0, Ib = 10.0,
                 renalThreshold = 10.0, renalClearance = 0.005,
                 hepaticBase = 2.4,
-                ka1 = 0.018, ka2 = 0.018, ke = 0.138, ViPerKg = 0.05,
+                ka1 = 0.024, ka2 = 0.024, ke = 0.138, ViPerKg = 0.05,  // ★ 0.018→0.024 速效峰值~75min
                 kp3 = 0.03, kp2 = 0.06
             )
         }

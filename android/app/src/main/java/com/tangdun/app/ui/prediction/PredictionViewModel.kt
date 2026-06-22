@@ -224,36 +224,37 @@ class PredictionViewModel @Inject constructor(
                             val tcnOffset = tcnRawCurve[0] - g
                             var alignedTcn = tcnRawCurve.map { it - tcnOffset }
 
-                            // ★ v3.0.14 物理约束后处理: TCN 模型实测 c 项恒正 (无论 IOB 都预测上升)
-                            //   实测: f10=8U 时 TCN 仍预测 30min +1.8% ↑, 必须 f10>=20U 才开始预测下降
-                            //   这是 ONNX 模型本身的 bug, app 端通过"实时事件门控"补偿:
-                            //   - IOB > 1U 且无 carb 时: 强制 TCN 输出按 DallaMan slope 衰减 (TCN 不可信)
-                            //   - carb 1h > 30g 时: 强制 TCN 输出按 DallaMan shape 上扬 (TCN 不可信)
-                            val horizon30 = 6  // 30min = 6 个 5min 步长
-                            val physioSlope30 = if (physioCurve.size > horizon30) (physioCurve[horizon30] - g) / 30.0 else 0.0  // mmol/min
+                            // ★ v3.0.22 增强物理门控: TCN c项恒正 → 6条规则覆盖4场景
+                            //   R1: IOB>1 + 无碳水 → TCN不可信 (应下降但ONNX学不会)
+                            //   R2: IOB>0.5 + TCN↑+DM↓ → 方向冲突, 信DM
+                            //   R3: 有碳水 + TCN保守 + DM↓ → 信DM
+                            //   R4: TCN暴涨>3.0/30min → 生理不可能, 全用DM
+                            //   R5: IOB>1 + 有碳水 + TCN涨 → 胰岛素主导
+                            //   R6: 仅碳水 + TCN暴涨>2.0 + 无IOB → TCN过激
+                            val horizon30 = 6
+                            val physioSlope30 = if (physioCurve.size > horizon30) (physioCurve[horizon30] - g) / 30.0 else 0.0
                             val tcnSlope30 = if (alignedTcn.size > horizon30) (alignedTcn[horizon30] - g) / 30.0 else 0.0
+                            val tcnRise30 = if (alignedTcn.size > horizon30) alignedTcn[horizon30] - g else 0.0
 
-                            // 物理门控: 高 IOB 时 TCN 不可信, 用 DallaMan slope 替代 TCN slope
                             val physicalOverride = when {
-                                // 情况1: 高 IOB + 低 carb → TCN 应该预测降, 但 ONNX 学不会 → 用生理 slope
-                                iob > 1.0 && recentCarbs2h < 30 -> true
-                                // 情况2: TCN 方向和 DallaMan 反向 + 物理约束强烈 (IOB 大)
-                                iob > 2.0 && tcnSlope30 > 0.02 && physioSlope30 < -0.02 -> true
-                                // 情况3: 高 carb 摄入 → TCN 应该预测升, 但 ONNX 预测幅度不够
-                                recentCarbs2h >= 30 && tcnSlope30 < 0.02 -> true
+                                iob > 1.0 && recentCarbs2h < 30 -> true                         // R1
+                                iob > 0.5 && tcnSlope30 > 0.01 && physioSlope30 < -0.01 -> true  // R2
+                                recentCarbs2h >= 30 && tcnSlope30 < 0.02 && physioSlope30 < 0 -> true  // R3
+                                tcnRise30 > 3.0 -> true                                          // R4
+                                iob > 1.0 && recentCarbs2h >= 30 && tcnSlope30 > 0.015 -> true   // R5
+                                recentCarbs2h >= 30 && iob < 0.5 && tcnRise30 > 2.0 -> true      // R6
                                 else -> false
                             }
 
                             if (physicalOverride) {
-                                // ★ 用 DallaMan 30min 内 slope 重建 TCN 曲线 (保留起点对齐)
-                                // alignedTcn[i] = g + physioSlope30 * 0.6 * i * 5 (60% 物理 slope, 避免过度修正)
-                                // ★ v3.0.17 修复: 加 coerceIn(1.0, 30.0) 防高 IOB 时 TCN 直线下降到负数 (截图 bug)
-                                alignedTcn = alignedTcn.mapIndexed { i, _ ->
-                                    val tMin = i * 5.0
-                                    (g + physioSlope30 * 0.6 * tMin).coerceIn(1.0, 30.0)
+                                // ★ v3.0.22: 75% DM shape + 25% TCN残差 (而非纯线性斜率)
+                                alignedTcn = alignedTcn.mapIndexed { i, v ->
+                                    val dmNorm = physioCurve.getOrElse(i) { physioCurve.last() } - g
+                                    val tcnNorm = v - g
+                                    (g + 0.75 * dmNorm + 0.25 * tcnNorm).coerceIn(1.0, 30.0)
                                 }
-                                Log.w(TAG, "TCN 物理门控触发: IOB=${"%.1f".format(iob)} carb=${todayCarbs}g, " +
-                                    "用 DallaMan slope ${"%.3f".format(physioSlope30)} mmol/min 替代 TCN")
+                                Log.w(TAG, "TCN门控: IOB=${"%.1f".format(iob)} carb2h=${"%.0f".format(recentCarbs2h)}g " +
+                                    "TCN30=${"%.1f".format(tcnRise30)} DM30=${"%.3f".format(physioSlope30)} → 75%DM+25%TCN")
                             }
 
                             // ★ BMA 三模型权重 (个性化权重基于数据完整度 + 增量更新次数, 永远至少 5%, 最多 30%)
@@ -305,21 +306,26 @@ class PredictionViewModel @Inject constructor(
                         val tcnOffset = tcnResult[0] - g
                         val alignedTcn = tcnResult.map { it - tcnOffset }
 
-                        // ★ 物理门控同样应用到 tcnCurve (UI 显示线)
+                        // ★ v3.0.22: UI显示线用同一套R1-R6门控+75%DM/25%TCN blend
                         val horizon30 = 6
-                        val physioSlope30 = if (physioCurve.size > horizon30) (physioCurve[horizon30] - g) / 30.0 else 0.0
-                        val tcnSlope30Display = if (alignedTcn.size > horizon30) (alignedTcn[horizon30] - g) / 30.0 else 0.0
-                        // ★ v3.0.18 修: UI 显示线物理门控阈值跟 merged 计算路径完全一致 (用 tcnSlope30 + 同一组阈值)
+                        val physioSlope30Disp = if (physioCurve.size > horizon30) (physioCurve[horizon30] - g) / 30.0 else 0.0
+                        val tcnSlope30Disp = if (alignedTcn.size > horizon30) (alignedTcn[horizon30] - g) / 30.0 else 0.0
+                        val tcnRise30Disp = if (alignedTcn.size > horizon30) alignedTcn[horizon30] - g else 0.0
                         val physicalOverrideDisplay = when {
                             iob > 1.0 && recentCarbs2h < 30 -> true
-                            iob > 2.0 && tcnSlope30Display > 0.02 && physioSlope30 < -0.02 -> true
-                            recentCarbs2h >= 30 && tcnSlope30Display < 0.02 -> true
+                            iob > 0.5 && tcnSlope30Disp > 0.01 && physioSlope30Disp < -0.01 -> true
+                            recentCarbs2h >= 30 && tcnSlope30Disp < 0.02 && physioSlope30Disp < 0 -> true
+                            tcnRise30Disp > 3.0 -> true
+                            iob > 1.0 && recentCarbs2h >= 30 && tcnSlope30Disp > 0.015 -> true
+                            recentCarbs2h >= 30 && iob < 0.5 && tcnRise30Disp > 2.0 -> true
                             else -> false
                         }
                         val correctedTcn = if (physicalOverrideDisplay) {
-                            // ★ v3.0.17 修复: 加 coerceIn(1.0, 30.0) 防高 IOB 时 TCN 直线下降到负数 (截图 bug)
-                            // ★ v3.0.18 修: 物理门控阈值跟 merged 路径完全一致 (用 tcnSlope30 不再直接用 alignedTcn[6])
-                            alignedTcn.mapIndexed { i, _ -> (g + physioSlope30 * 0.6 * i * 5.0).coerceIn(1.0, 30.0) }
+                            alignedTcn.mapIndexed { i, v ->
+                                val dmNorm = physioCurve.getOrElse(i) { physioCurve.last() } - g
+                                val tcnNorm = v - g
+                                (g + 0.75 * dmNorm + 0.25 * tcnNorm).coerceIn(1.0, 30.0)
+                            }
                         } else alignedTcn
 
                         // ★ 补全到 futureLen 个点: 25 点之后用最后一个点的延伸 (线性外推)
